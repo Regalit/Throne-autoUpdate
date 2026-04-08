@@ -1119,11 +1119,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         });
     }
 
-    if (Configs::dataManager->settingsRepo->sub_auto_update >= 30) {
-        QTimer::singleShot(0, this, [] {
-            Subscription::updater()->RefreshAll(true);
-        });
-    }
+    // Force refresh all subscription groups once startup settles.
+    QTimer::singleShot(3000, this, [] {
+        Subscription::updater()->RefreshAll(false);
+    });
 
     if (!Configs::dataManager->settingsRepo->flag_tray) show();
     else if (tray->isVisible()) HideWindow(this);

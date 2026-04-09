@@ -7046,6 +7046,48 @@ Name: %1</source>
         <source>IPC error</source>
         <translation>IPC ошибка</translation>
     </message>
+    <message>
+        <source>Update Conf</source>
+        <translation>Обновить Конфиг</translation>
+    </message>
+    <message>
+        <source>Debug</source>
+        <translation>Дебаг</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] Button clicked.</source>
+        <translation>[UpdateConf] Кнопка нажата.</translation>
+    </message>
+    <message>
+        <source>Set Subscription URL</source>
+        <translation>Указать URL подписки</translation>
+    </message>
+    <message>
+        <source>We couldn&apos;t find the dynamic config URL for group &quot;%1&quot;.
+Please type /config into @shadowlos_bot and input one of the URLs that work:</source>
+        <translation>Не удалось найти URL динамической конфигурации для группы «%1».
+Введите /config в @shadowlos_bot и укажите один из рабочих URL:</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] Saved URL for group &quot;%1&quot;.</source>
+        <translation>[UpdateConf] URL сохранён для группы «%1».</translation>
+    </message>
+    <message>
+        <source>Debug check: updating subscriptions...</source>
+        <translation>Проверка: обновление подписок...</translation>
+    </message>
+    <message>
+        <source>Debug check: starting checks for %1 VLess profile(s)...</source>
+        <translation>Проверка: запуск проверки для %1 профиля(ей) VLess...</translation>
+    </message>
+    <message>
+        <source>Debug check [%1/%2]: %3</source>
+        <translation>Проверка [%1/%2]: %3</translation>
+    </message>
+    <message>
+        <source>Debug check finished.</source>
+        <translation>Проверка завершена.</translation>
+    </message>
 </context>
 <context>
     <name>OtpItem</name>
@@ -8156,6 +8198,68 @@ Release note:
     <message>
         <source>The document must be a JSON object.</source>
         <translation>Документ должен представлять собой объект JSON.</translation>
+    </message>
+    <message>
+        <source>Debug Check</source>
+        <translation>Проверка отладки</translation>
+    </message>
+    <message>
+        <source>No VLess profiles found.</source>
+        <translation>Профили VLess не найдены.</translation>
+    </message>
+    <message>
+        <source>Debug Check Results</source>
+        <translation>Результаты проверки</translation>
+    </message>
+    <message>
+        <source>After this is complete, copy the output using the button and send it to support.
+Debug info does not contain any personal information.</source>
+        <translation>После завершения скопируйте результат с помощью кнопки и отправьте в поддержку.
+Отладочная информация не содержит персональных данных.</translation>
+    </message>
+    <message>
+        <source>Wait...</source>
+        <translation>Подождите...</translation>
+    </message>
+    <message>
+        <source>Copy to Clipboard</source>
+        <translation>Копировать в буфер обмена</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] All groups processed.</source>
+        <translation>[UpdateConf] Все группы обработаны.</translation>
+    </message>
+    <message>
+        <source>no URL</source>
+        <translation>нет URL</translation>
+    </message>
+    <message>
+        <source>archived</source>
+        <translation>в архиве</translation>
+    </message>
+    <message>
+        <source>auto-update disabled</source>
+        <translation>автообновление отключено</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] Skipping group %1 (%2)</source>
+        <translation>[UpdateConf] Пропуск группы %1 (%2)</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] Fetching group %1: %2</source>
+        <translation>[UpdateConf] Загрузка группы %1: %2</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] Already updating, please wait...</source>
+        <translation>[UpdateConf] Обновление уже выполняется, подождите...</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] Starting update — %1 group(s) in tab order.</source>
+        <translation>[UpdateConf] Начало обновления — %1 групп(а) в порядке вкладок.</translation>
+    </message>
+    <message>
+        <source>[UpdateConf] No groups found. Add a subscription group with a URL first.</source>
+        <translation>[UpdateConf] Группы не найдены. Сначала добавьте группу подписки с URL.</translation>
     </message>
 </context>
 <context>

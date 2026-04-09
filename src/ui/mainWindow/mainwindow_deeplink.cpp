@@ -264,9 +264,16 @@ void MainWindow::import_text(const QString &text) {
                                                   QObject::tr("%1\nHow to update?").arg(content), items, 0, false, &ok);
         if (!ok) return;
         switch (items.indexOf(choice)) {
-            case 0:
+            case 0: {
+                // Shadowlos: remember the URL so "Update Conf" can re-fetch it later.
+                auto currentGroup = Configs::dataManager->groupsRepo->CurrentGroup();
+                if (currentGroup && currentGroup->url.isEmpty()) {
+                    currentGroup->url = content;
+                    Configs::dataManager->groupsRepo->Save(currentGroup);
+                }
                 Subscription::updater()->ImportUrl(content);
                 return;
+            }
             case 1:
                 Subscription::updater()->SubscribeUrl(content);
                 return;

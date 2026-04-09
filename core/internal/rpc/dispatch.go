@@ -141,6 +141,7 @@ var handlers = map[string]handlerFn{
 	"CaptureDiagnostics":  handle(globalServer.CaptureDiagnostics),
 	"StopDiagnostics":     handle(globalServer.StopDiagnostics),
 	"UpdateRuleSets":      handle(globalServer.UpdateRuleSets),
+	"DebugCheck":          handle(globalServer.DebugCheck),
 }
 
 func dispatch(methodName string, payload []byte) ([]byte, error) {

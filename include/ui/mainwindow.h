@@ -439,6 +439,8 @@ private:
 
     void on_subscription_group_changed(int gid, const QList<int>& disturbed);
 
+    void check_all_vless_profiles();
+
     bool auto_selector_ranked = false;
 
     bool handleXrayGeoAssetError(const QString& error, const QString& contextName);

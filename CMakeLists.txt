@@ -188,6 +188,7 @@ set(PROJECT_SOURCES
         src/ui/mainWindow/mainwindow_profile_lifecycle.cpp
         src/ui/mainWindow/mainwindow_autoselector.cpp
         src/ui/mainWindow/TestRunner.cpp
+        src/ui/mainWindow/mainwindow_debugcheck.cpp
         include/ui/mainWindow/MainWindowInternal.h
         include/ui/mainWindow/TestRunner.h
         include/ui/mainwindow.h

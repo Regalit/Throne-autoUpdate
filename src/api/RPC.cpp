@@ -722,4 +722,19 @@ namespace API {
         }
     }
 
+    libcore::DebugCheckResult Client::DebugCheck(bool *rpcOK, const libcore::DebugCheckRequest &request)
+    {
+        libcore::DebugCheckResult reply;
+        std::vector<uint8_t> resp;
+        auto status = channel->Call("DebugCheck", spb::pb::serialize<std::string>(request), resp, 120000);
+
+        if (status == LocalSocketChannel::CallOK && tryDeserialize(resp, reply)) {
+            *rpcOK = true;
+            return reply;
+        } else {
+            NOT_OK
+            return {};
+        }
+    }
+
 } // namespace API

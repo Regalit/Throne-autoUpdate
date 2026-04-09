@@ -748,6 +748,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_open_config_folder, &QAction::triggered, this, [=,this] { QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::currentPath())); });
     connect(ui->menu_open_dashboard, &QAction::triggered, this, [=,this] { OpenDashboard(); });
     connect(ui->actionRestart_Proxy, &QAction::triggered, this, [=,this] { RestartCore(); });
+    connect(ui->actionDebug_Check_All_Vless, &QAction::triggered, this, [=,this] {
+        runOnNewThread([=,this] { check_all_vless_profiles(); });
+    });
     connect(ui->actionRestart_Program, &QAction::triggered, this, [=,this] { MW_dialog_message(MwMessage::RestartProgram, {}); });
     connect(ui->actionShow_window, &QAction::triggered, this, [=,this] { ActivateWindow(this); });
     connect(ui->actionRemember_last_proxy, &QAction::triggered, this, [=,this](bool checked) {

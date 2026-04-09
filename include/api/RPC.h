@@ -89,6 +89,9 @@ namespace API {
 
         void StopDiagnostics(bool *rpcOK);
 
+        // Shadowlos: IP change, 1MB TCP and UDP DNS through one profile.
+        libcore::DebugCheckResult DebugCheck(bool *rpcOK, const libcore::DebugCheckRequest &request);
+
     private:
         class LocalSocketChannel;
         std::unique_ptr<LocalSocketChannel> channel;

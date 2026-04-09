@@ -58,6 +58,8 @@
 #include <QScrollBar>
 #include <QDesktopServices>
 #include <QTimer>
+#include <QInputDialog>
+#include <QLineEdit>
 #include <QMessageBox>
 #include <QDir>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -753,6 +755,31 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(ui->menu_open_dashboard, &QAction::triggered, this, [=,this] { OpenDashboard(); });
     connect(ui->actionRestart_Proxy, &QAction::triggered, this, [=,this] { RestartCore(); });
     connect(ui->actionDebug_Check_All_Vless, &QAction::triggered, this, [=,this] {
+        runOnNewThread([=,this] { check_all_vless_profiles(); });
+    });
+    connect(ui->toolButton_update_subs, &QToolButton::clicked, this, [=,this] {
+        MW_show_log(tr("[UpdateConf] Button clicked."));
+        // For groups that have profiles but no subscription URL, ask the user once.
+        for (int gid : Configs::dataManager->groupsRepo->GetAllGroupIds()) {
+            auto group = Configs::dataManager->groupsRepo->GetGroup(gid);
+            if (!group || group->archive || !group->url.isEmpty() || group->Profiles().isEmpty())
+                continue;
+            bool ok;
+            QString url = QInputDialog::getText(
+                this,
+                tr("Set Subscription URL"),
+                tr("We couldn't find the dynamic config URL for group \"%1\".\n"
+                   "Please type /config into @shadowlos_bot and input one of the URLs that work:").arg(group->name),
+                QLineEdit::Normal, QString(), &ok);
+            if (ok && !url.trimmed().isEmpty()) {
+                group->url = url.trimmed();
+                Configs::dataManager->groupsRepo->Save(group);
+                MW_show_log(tr("[UpdateConf] Saved URL for group \"%1\".").arg(group->name));
+            }
+        }
+        Subscription::updater()->RefreshAll(false);
+    });
+    connect(ui->toolButton_debug, &QToolButton::clicked, this, [=,this] {
         runOnNewThread([=,this] { check_all_vless_profiles(); });
     });
     connect(ui->actionRestart_Program, &QAction::triggered, this, [=,this] { MW_dialog_message(MwMessage::RestartProgram, {}); });

@@ -365,7 +365,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         m_autoSelectorDialog->raise();
         m_autoSelectorDialog->activateWindow();
     });
-    connect(ui->actionCheck_For_Update, &QAction::triggered, this, [=,this] { runOnNewThread([=,this] { CheckUpdate(); }); });
     connect(ui->actionUpdate_Rule_Sets, &QAction::triggered, this, [=,this] {
         if (m_ruleSetUpdateBusy) return;
         m_ruleSetUpdateBusy = true;
@@ -388,10 +387,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             });
         });
     });
-    if (!QFile::exists(QApplication::applicationDirPath() + "/updater") && !QFile::exists(QApplication::applicationDirPath() + "/updater.exe"))
-    {
-        ui->actionCheck_For_Update->setDisabled(true);
-    }
+    // Keep client self-update hidden in this fork. Dynamic config/subscription updates stay available below.
+    ui->actionCheck_For_Update->setVisible(false);
+    ui->actionCheck_For_Update->setDisabled(true);
 
     setupConnectionList();
     ui->stats_widget->tabBar()->setCurrentIndex(Configs::dataManager->settingsRepo->stats_tab);

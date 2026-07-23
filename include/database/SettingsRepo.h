@@ -74,6 +74,7 @@ namespace Configs {
         int test_concurrent = 10;
         bool disable_traffic_stats = false;
         int current_group = 0;
+        int shadowlos_managed_group = -1; // group provisioned from shadowlos.json, -1 = none
         QString mux_protocol = "smux";
         bool mux_padding = false;
         int mux_concurrency = 8;

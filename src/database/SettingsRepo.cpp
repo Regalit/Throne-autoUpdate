@@ -95,6 +95,7 @@ namespace Configs {
         intMap = {
             {"current_group",          &current_group},
             {"last_filter_column",     &last_filter_column},
+            {"shadowlos_managed_group", &shadowlos_managed_group},
             {"inbound_socks_port",     &inbound_socks_port},
             {"mux_concurrency",        &mux_concurrency},
             {"test_concurrent",        &test_concurrent},

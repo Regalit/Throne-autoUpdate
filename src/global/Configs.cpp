@@ -15,6 +15,7 @@
 
 #include "include/database/GroupsRepo.h"
 #include "include/database/RoutesRepo.h"
+#include "include/global/ShadowlosBootstrap.hpp"
 
 
 #ifdef Q_OS_WIN
@@ -41,6 +42,9 @@ namespace Configs {
             auto defaultRoute = RouteProfile::GetDefaultChain();
             dataManager->routesRepo->AddRouteProfile(defaultRoute);
         }
+
+        // Apply the per-user subscription shipped with a Shadowlos archive.
+        Shadowlos::ApplyBootstrap();
     }
 
     QString FindCoreRealPath() {

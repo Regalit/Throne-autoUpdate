@@ -75,6 +75,8 @@ namespace Configs {
         bool disable_traffic_stats = false;
         int current_group = 0;
         int shadowlos_managed_group = -1; // group provisioned from shadowlos.json, -1 = none
+        int shadowlos_managed_route = -1; // route profile provisioned from shadowlos.json, -1 = none
+        int shadowlos_routing_revision = 0; // preset revision already installed
         QString mux_protocol = "smux";
         bool mux_padding = false;
         int mux_concurrency = 8;

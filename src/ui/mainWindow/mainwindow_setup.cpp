@@ -11,6 +11,7 @@
 #include "include/configs/sub/RouteUpdater.hpp"
 #include "include/global/PeriodicRunner.hpp"
 #include "include/global/Logger.hpp"
+#include "include/global/ShadowlosBootstrap.hpp"
 #include "include/stats/autoselector/AutoSelectorMonitor.hpp"
 #include "include/ui/stats/dialog_auto_selector.h"
 #include "include/sys/Process.hpp"
@@ -1151,6 +1152,15 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     QTimer::singleShot(3000, this, [] {
         Subscription::updater()->RefreshAll(false);
     });
+
+    // A Shadowlos archive ships with TUN pre-selected. Deferred to here rather
+    // than done in ApplyBootstrap because enabling it may raise a privilege
+    // prompt, which needs a window to parent onto.
+    if (Shadowlos::WantsTunOnStart() && !Configs::dataManager->settingsRepo->spmode_vpn) {
+        QTimer::singleShot(0, this, [this] {
+            set_spmode_vpn(true);
+        });
+    }
 
     if (!Configs::dataManager->settingsRepo->flag_tray) show();
     else if (tray->isVisible()) HideWindow(this);

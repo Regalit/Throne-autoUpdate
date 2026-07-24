@@ -96,6 +96,8 @@ namespace Configs {
             {"current_group",          &current_group},
             {"last_filter_column",     &last_filter_column},
             {"shadowlos_managed_group", &shadowlos_managed_group},
+            {"shadowlos_managed_route", &shadowlos_managed_route},
+            {"shadowlos_routing_revision", &shadowlos_routing_revision},
             {"inbound_socks_port",     &inbound_socks_port},
             {"mux_concurrency",        &mux_concurrency},
             {"test_concurrent",        &test_concurrent},

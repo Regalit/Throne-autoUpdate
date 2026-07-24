@@ -110,10 +110,12 @@ namespace Shadowlos {
             if (rules.isEmpty()) return;
 
             const int revision = routing.value("revision").toInt(1);
-            auto* settings = Configs::dataManager->settingsRepo;
+            auto* settings = Configs::dataManager->settingsRepo.get();
             const int managedId = settings->shadowlos_managed_route;
-            auto existing = managedId < 0 ? nullptr
-                                          : Configs::dataManager->routesRepo->GetRouteProfile(managedId);
+            std::shared_ptr<Configs::RouteProfile> existing;
+            if (managedId >= 0) {
+                existing = Configs::dataManager->routesRepo->GetRouteProfile(managedId);
+            }
             if (existing != nullptr && settings->shadowlos_routing_revision >= revision) {
                 // Already installed and unchanged; leave the user's edits alone.
                 settings->current_route_id = existing->id;

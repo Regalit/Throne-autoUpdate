@@ -114,6 +114,13 @@ jobs:
             dest_suffix: linux-amd64
             common: linux-amd64
             launcher: ccache
+          # What Shadowlos actually ships for Linux: small, uses the system's Qt 6.
+          - platform: ubuntu-22.04
+            qt_version: "6.2.0"
+            target: x86_64
+            dest_suffix: linux-amd64-system-qt
+            common: linux-amd64
+            launcher: ccache
       fail-fast: false
     runs-on: ${{ matrix.platform }}
     env:

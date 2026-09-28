@@ -90,13 +90,8 @@ namespace Shadowlos {
 
             // Type drives how the UI renders the rule. The enum is persisted as a
             // raw int, so map from stable names rather than trusting numbers from
-            // the file.
-            const QString type = obj.value("type").toString();
-            if (type == "simple_address_proxy") rule->type = Configs::simpleAddressProxy;
-            else if (type == "simple_address_bypass") rule->type = Configs::simpleAddressBypass;
-            else if (type == "simple_process_name_proxy") rule->type = Configs::simpleProcessNameProxy;
-            else if (type == "simple_process_name_bypass") rule->type = Configs::simpleProcessNameBypass;
-            else rule->type = Configs::custom;
+            // the file -- the same tokens a remote refresh of this profile uses.
+            rule->type = Configs::tokenToRuleType(obj.value("type").toString());
 
             return rule;
         }
@@ -116,8 +111,22 @@ namespace Shadowlos {
             if (managedId >= 0) {
                 existing = Configs::dataManager->routesRepo->GetRouteProfile(managedId);
             }
+            // A remote profile re-fetches its rules daily, so panel edits reach an
+            // installed client without a new archive. Applied even when the
+            // revision gate below skips, so re-running an archive enables it.
+            const QString remoteUrl = routing.value("remote_url").toString().trimmed();
+            const bool remote = isAcceptableSubscriptionUrl(remoteUrl);
+            if (remote && settings->route_auto_update < 30) {
+                settings->route_auto_update = 1440; // minutes; negative or < 30 means off
+            }
             if (existing != nullptr && settings->shadowlos_routing_revision >= revision) {
                 // Already installed and unchanged; leave the user's edits alone.
+                if (remote && (!existing->isRemote || existing->remoteURL != remoteUrl || !existing->autoUpdate)) {
+                    existing->isRemote = true;
+                    existing->remoteURL = remoteUrl;
+                    existing->autoUpdate = true;
+                    Configs::dataManager->routesRepo->Save(existing);
+                }
                 settings->current_route_id = existing->id;
                 return;
             }
@@ -128,6 +137,11 @@ namespace Shadowlos {
                                 : routing.value("name").toString().trimmed();
             profile->defaultOutboundID = Configs::stringToOutboundID(
                 routing.value("default_outbound").toString());
+            if (remote) {
+                profile->isRemote = true;
+                profile->remoteURL = remoteUrl;
+                profile->autoUpdate = true;
+            }
             profile->Rules.clear();
             for (const auto& value : rules) {
                 if (!value.isObject()) continue;

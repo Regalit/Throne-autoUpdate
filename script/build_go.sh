@@ -1,7 +1,10 @@
 #!/bin/bash
 set -e
 
-TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_dhcp,with_tailscale,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0"
+# Shadowlos: no with_tailscale/with_openvpn/with_openconnect. Our users only run
+# our VLESS subscription, and those three add ~7MB to the zipped core, which
+# pushed the Windows archive past Telegram's 50MB bot upload limit.
+TAGS="with_clash_api,with_gvisor,with_quic,with_wireguard,with_utls,with_dhcp,badlinkname,tfogo_checklinkname0"
 
 rm -rf $DEST
 mkdir -p $DEST

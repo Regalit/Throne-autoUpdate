@@ -11,10 +11,10 @@ track — no local branch tracks `upstream/*`.
 
 | Area | Commits | Conflict risk on bump |
 | --- | --- | --- |
-| Auto-update subscriptions on open | `auto update`, `Added updating + better buttons` | **High** — edits `mainwindow.cpp`, `GroupUpdater.cpp`, `mainwindow_rpc.cpp` in place |
-| VLESS config checking | `Added checking of vless configs` | Medium — adds a Go RPC (`DebugCheck`) plus UI wiring |
-| Russian translations | `Added translations` | Medium — `ru_RU.ts`, and wraps upstream strings in `tr()` |
-| Windows build / icons | `windows build`, `hide update client button` | Low |
+| Auto-update subscriptions on open, "Update Conf" button | `auto update`, `Added updating + better buttons` | **High** — edits `src/ui/mainWindow/mainwindow_setup.cpp` and `mainwindow_deeplink.cpp` in place |
+| VLESS config checking | `Added checking of vless configs` | Medium — a Go RPC (`core/internal/rpc/debugcheck.go`, `core/internal/probe/debug_check_utils.go`, one `dispatch.go` line, proto messages) plus UI in our own `src/ui/mainWindow/mainwindow_debugcheck.cpp` |
+| Russian translations | `Added translations` | Medium — our strings appended to upstream's `ru_RU.ts`; merge by (context, source), keep upstream's translations |
+| Desktop build / icons | `windows build`, `hide update client button` | Low — `.github/workflows/windows64-artifact.yml` (name kept so it stays dispatchable; it builds Linux too) is upstream's `build.yml` cut to windows-amd64 + linux-amd64; re-derive it from `build.yml` each bump |
 | Shadowlos provisioning | `provision Shadowlos subscription from shadowlos.json` | **Low by design** — see below |
 
 ### Shadowlos provisioning
@@ -63,8 +63,8 @@ After resolving conflicts, verify our features survived the replay. The rebase
 merges much of this silently, so grep rather than trust it:
 
 ```bash
-for s in "UI_update_all_groups(false)" actionDebug_Check_All_Vless \
-         toolButton_update_subs ApplyBootstrap shadowlos_managed_group; do
+for s in "RefreshAll(false)" actionDebug_Check_All_Vless toolButton_update_subs \
+         ApplyBootstrap shadowlos_managed_group WantsTunOnStart DebugCheck Shadowlos.exe; do
   printf '%-32s -> ' "$s"; grep -rl "$s" src/ include/ core/ | tr '\n' ' '; echo
 done
 ```
@@ -89,3 +89,4 @@ Use `--force-with-lease`, never `--force` — it aborts if someone else pushed t
 | Date | Upstream base | Previous base | Notes |
 | --- | --- | --- | --- |
 | 2026-07-23 | `1.2.0` | `ed7f6dcc` | 97 commits. Two conflicts, both include-block collisions (`mainwindow.ui`, `mainwindow_rpc.cpp`), resolved as unions. |
+| 2026-09-28 | `1.3.1` | `1.2.0` | 215 commits. Upstream split `mainwindow.cpp`/`mainwindow_rpc.cpp` into `src/ui/mainWindow/*`, moved the core to `core/internal/{rpc,probe,parentcheck}`, and replaced `UI_update_all_groups` with `Subscription::updater()->RefreshAll()`. Every UI patch was hand-ported; `CheckNaive` (unused, always true) dropped. Toolchain moved to Go 1.27 / Qt 6.11.2, hence the re-derived workflow. |

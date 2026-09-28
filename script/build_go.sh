@@ -20,9 +20,7 @@ fi
 case "$GOOS" in
   windows)
     export CGO_ENABLED=0
-    if ! $IS_LEGACY; then
-      TAGS+=",with_purego,with_naive_outbound"
-    fi
+    # Shadowlos: no NaiveProxy, so no 9MB libcronet.dll in the archive.
     ;;
   darwin)
     TAGS+=",with_naive_outbound"
@@ -33,7 +31,7 @@ case "$GOOS" in
     fi
     ;;
   linux)
-    TAGS+=",with_naive_outbound"
+    # Shadowlos: no NaiveProxy (it statically links Chromium's network stack).
     export CGO_ENABLED=1
     ;;
 esac
@@ -43,7 +41,7 @@ pushd core
 pushd gen
 protoc -I . --go_out=. --go-grpc_out=. libcore.proto
 popd
-if [[ "$GOOS" == "windows" ]] && ! $IS_LEGACY; then
+if false; then # Shadowlos: NaiveProxy is not built, so libcronet.dll is not needed
   # The lib module ships the DLL, so it is always the binding's generation.
   CRONET_LIB=github.com/sagernet/cronet-go/lib/windows_$GOARCH
   go mod download $CRONET_LIB

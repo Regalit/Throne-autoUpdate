@@ -14,7 +14,7 @@ track — no local branch tracks `upstream/*`.
 | Auto-update subscriptions on open, "Update Conf" button | `auto update`, `Added updating + better buttons` | **High** — edits `src/ui/mainWindow/mainwindow_setup.cpp` and `mainwindow_deeplink.cpp` in place |
 | VLESS config checking | `Added checking of vless configs` | Medium — a Go RPC (`core/internal/rpc/debugcheck.go`, `core/internal/probe/debug_check_utils.go`, one `dispatch.go` line, proto messages) plus UI in our own `src/ui/mainWindow/mainwindow_debugcheck.cpp` |
 | Russian translations | `Added translations` | Medium — our strings appended to upstream's `ru_RU.ts`; merge by (context, source), keep upstream's translations |
-| Slim core | `script/build_go.sh` drops `with_tailscale`, `with_openvpn`, `with_openconnect` | Low — one line; re-apply if upstream rewrites `TAGS`. The archive is sent as a Telegram document, capped at 50MB |
+| Slim core | `script/build_go.sh` drops `with_tailscale`, `with_openvpn`, `with_openconnect` and NaiveProxy (`with_naive_outbound`, `with_purego`, `libcronet.dll`) on Windows and Linux | Low — a few lines; re-apply if upstream rewrites them. The archive is sent as a Telegram document, capped at 50MB; shadowlos's `TestThroneArchivesFitTelegramUploadLimit` fails first if it grows past that |
 | Desktop build / icons | `windows build`, `hide update client button` | Low — `.github/workflows/windows64-artifact.yml` (name kept so it stays dispatchable; it builds Linux too) is upstream's `build.yml` cut to windows-amd64 + linux-amd64; re-derive it from `build.yml` each bump |
 | Shadowlos provisioning | `provision Shadowlos subscription from shadowlos.json` | **Low by design** — see below |
 

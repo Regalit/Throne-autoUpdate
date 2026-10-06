@@ -65,7 +65,7 @@ Almost all of it lives in files upstream will never have:
 
 Upstream-owned files carry only one-line hooks:
 
-- `CMakeLists.txt` — the two sources and `res/shadowlos.qrc`
+- `CMakeLists.txt` — the two sources, `res/shadowlos.qrc`, and `SKIP_UNITY_BUILD_INCLUSION` for `ShadowlosChrome.cpp` (a unity batch-mate that defines `MW_INTERFACE` hides `Ui::MainWindow`)
 - `ThemeManager.cpp` — the `shadowlos` palette, its sheet path, and `ApplyThemeFont()`
 - `mainwindow_setup.cpp` — `Shadowlos::Chrome::Install(this, ui)` right after
   `setupUi`, and `shadowlos` in `themeUsesDarkLog`

@@ -1,6 +1,7 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
-// Brings in ui_mainwindow.h, i.e. the full Ui::MainWindow.
+// Brings in ui_mainwindow.h, i.e. the full Ui::MainWindow. Only when MW_INTERFACE is unset,
+// which is why CMake keeps this file out of unity batches.
 #include "include/ui/mainwindow.h"
 
 #include "include/database/DatabaseManager.h"

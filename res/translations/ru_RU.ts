@@ -7659,7 +7659,7 @@ Name: %1</source>
     </message>
     <message>
         <source>Update Conf</source>
-        <translation>Обновить Конфиг</translation>
+        <translation>Обновить конфиг</translation>
     </message>
     <message>
         <source>Debug</source>
@@ -9640,6 +9640,21 @@ Remove that endpoint from this routing profile as well?</source>
     <message>
         <source>Page %1/%2</source>
         <translation>Страница %1/%2</translation>
+    </message>
+</context>
+<context>
+    <name>ShadowlosChrome</name>
+    <message>
+        <source>Add config</source>
+        <translation>Добавить конфиг</translation>
+    </message>
+    <message>
+        <source>Measure speed</source>
+        <translation>Замерить скорость</translation>
+    </message>
+    <message>
+        <source>Measure latency</source>
+        <translation>Замерить время отклика</translation>
     </message>
 </context>
 </TS>

@@ -12,6 +12,7 @@
 #include "include/global/PeriodicRunner.hpp"
 #include "include/global/Logger.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/stats/autoselector/AutoSelectorMonitor.hpp"
 #include "include/ui/stats/dialog_auto_selector.h"
 #include "include/sys/Process.hpp"
@@ -114,7 +115,7 @@ static bool themeUsesDarkLog(const QString &theme) {
     if (lower.contains("vista") || lower.contains("flatgray") || lower.contains("lightblue") || lower.contains("softpink")) {
         return false;
     }
-    if (lower.contains("qdarkstyle") || lower.contains("blacksoft")) {
+    if (lower.contains("qdarkstyle") || lower.contains("blacksoft") || lower.contains("shadowlos")) {
         return true;
     }
     return isDarkMode();
@@ -154,6 +155,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     }
     themeManager()->ApplyTheme(Configs::dataManager->settingsRepo->theme);
     ui->setupUi(this);
+    Shadowlos::Chrome::Install(this, ui);
 
     setActionsData();
     loadShortcuts();

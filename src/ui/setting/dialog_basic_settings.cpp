@@ -187,6 +187,7 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     ui->theme->addItem("QDarkStyle");
     // Custom stylesheet themes, not QStyleFactory keys.
     ui->theme->addItems({"FlatGray", "LightBlue", "SoftPink", "BlackSoft"});
+    ui->theme->addItem("Shadowlos"); // Shadowlos fork: the product theme, see ShadowlosChrome
     ui->enable_custom_icon->setChecked(Configs::dataManager->settingsRepo->use_custom_icons);
     ui->follow_status_in_taskbar->setChecked(Configs::dataManager->settingsRepo->follow_status_in_taskbar);
     ui->follow_status_in_taskbar->setEnabled(ui->enable_custom_icon->isChecked());

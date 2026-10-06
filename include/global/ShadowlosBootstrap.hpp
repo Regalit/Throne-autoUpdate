@@ -19,8 +19,8 @@ namespace Shadowlos {
     // Reads the bootstrap file from the current directory and reconciles the
     // managed subscription group: created if missing, URL re-asserted if the
     // user changed it. Also installs the routing preset and any settings the
-    // file pins. No-op when the file is absent or malformed, so an ordinary
-    // upstream build is unaffected.
+    // file pins. Without a readable file it only does the one-time switch to the
+    // Shadowlos theme (see ShadowlosChrome.hpp).
     //
     // Must be called after Configs::initDB (needs dataManager).
     void ApplyBootstrap();

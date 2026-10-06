@@ -17,6 +17,7 @@ track — no local branch tracks `upstream/*`.
 | Slim core | `script/build_go.sh` drops `with_tailscale`, `with_openvpn`, `with_openconnect` and NaiveProxy (`with_naive_outbound`, `with_purego`, `libcronet.dll`) on Windows and Linux | Low — a few lines; re-apply if upstream rewrites them. The archive is sent as a Telegram document, capped at 50MB; shadowlos's `TestThroneArchivesFitTelegramUploadLimit` fails first if it grows past that |
 | Desktop build / icons | `windows build`, `hide update client button` | Low — `.github/workflows/windows64-artifact.yml` (name kept so it stays dispatchable; it builds Linux too) is upstream's `build.yml` cut to windows-amd64 + linux-amd64; re-derive it from `build.yml` each bump |
 | Shadowlos provisioning | `provision Shadowlos subscription from shadowlos.json` | **Low by design** — see below |
+| Shadowlos desktop UI | `feat: Shadowlos theme and card layout from the Figma design` | **Low by design** — see below |
 
 ### Shadowlos provisioning
 
@@ -44,6 +45,41 @@ Two traps to avoid if this is ever refactored:
 The archiver side lives in `shadowlos` at `lib/throne_zip.go`. The JSON field
 names are the contract between the two — change both together.
 
+### Shadowlos desktop UI
+
+The look from the "Windows" page of the `Shadolos APK` Figma file. It is the default
+theme ("Shadowlos" in Settings -> Theme); every install is switched to it once, gated by
+the `shadowlos_ui_revision` setting, and a user who picks another theme keeps it.
+
+Almost all of it lives in files upstream will never have:
+
+- `res/shadowlos/shadowlos.qss` — the stylesheet. Paints every window, dialog, menu,
+  form and table, so no upstream `.ui` file is edited for the look.
+- `res/shadowlos/icons/` (PNGs at 1x and @2x, rendered from SVG; Windows' static Qt may
+  lack the SVG plugin), `res/shadowlos/fonts/PTRootUI-VF.ttf` (ParaType's unmodified
+  variable font, OFL), `res/shadowlos.qrc`.
+- `src/ui/shadowlos/ShadowlosChrome.cpp` — rebuilds the main window into the design's
+  cards at runtime by re-parenting the widgets uic made, so `mainwindow.ui` stays
+  upstream's. Also the power button (a `StartStopButton` subclass that only repaints),
+  the connected-row highlight, latency colours, and the dark Windows caption.
+
+Upstream-owned files carry only one-line hooks:
+
+- `CMakeLists.txt` — the two sources and `res/shadowlos.qrc`
+- `ThemeManager.cpp` — the `shadowlos` palette, its sheet path, and `ApplyThemeFont()`
+- `mainwindow_setup.cpp` — `Shadowlos::Chrome::Install(this, ui)` right after
+  `setupUi`, and `shadowlos` in `themeUsesDarkLog`
+- `mainwindow_view.cpp` — the `slVariableWidthMenus` early return in
+  `applyTopBarMetrics`, and `StatusLine()` around the three status-label `setText`s
+- `dialog_basic_settings.cpp` — the "Shadowlos" theme entry
+- `SettingsRepo.h/.cpp` — `shadowlos_ui_revision`
+
+If upstream renames or removes a widget `Install()` moves (the five menu buttons,
+`toolButton_startstop`, `toolButton_update_subs`, `toolButton_debug`, the three mode
+checkboxes, `data_view`, `splitter`, the three status labels, or the layouts
+`horizontalLayout_2`, `verticalLayout_3`, `verticalLayout_4`, `horizontalLayout`), the
+build fails there rather than at runtime — fix `Install()` to match.
+
 ## Bumping to a new upstream release
 
 ```bash
@@ -65,7 +101,8 @@ merges much of this silently, so grep rather than trust it:
 
 ```bash
 for s in "RefreshAll(false)" actionDebug_Check_All_Vless toolButton_update_subs \
-         ApplyBootstrap shadowlos_managed_group WantsTunOnStart DebugCheck Shadowlos.exe; do
+         ApplyBootstrap shadowlos_managed_group WantsTunOnStart DebugCheck Shadowlos.exe \
+         "Chrome::Install" ApplyThemeFont slVariableWidthMenus StatusLine shadowlos_ui_revision; do
   printf '%-32s -> ' "$s"; grep -rl "$s" src/ include/ core/ | tr '\n' ' '; echo
 done
 ```

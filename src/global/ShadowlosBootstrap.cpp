@@ -53,6 +53,17 @@ namespace Shadowlos {
         // Set only when the bootstrap file asks for it; read later by MainWindow.
         bool tunOnStart = false;
 
+        // The Shadowlos theme is the product's look, so every install is switched to it once,
+        // archive or not. Gated by a revision so a user who then picks another theme keeps it.
+        void applyUiDefaults() {
+            constexpr int kUiRevision = 1;
+            auto* settings = Configs::dataManager->settingsRepo.get();
+            if (settings->shadowlos_ui_revision >= kUiRevision) return;
+            settings->theme = QStringLiteral("Shadowlos");
+            settings->shadowlos_ui_revision = kUiRevision;
+            settings->Save();
+        }
+
         QList<QString> stringList(const QJsonValue& value) {
             QList<QString> out;
             for (const auto& item : value.toArray()) {
@@ -167,6 +178,8 @@ namespace Shadowlos {
     }
 
     void ApplyBootstrap() {
+        applyUiDefaults();
+
         QFile file(QDir::current().filePath(BootstrapFileName));
         if (!file.exists()) return; // plain upstream build, nothing to do
         if (!file.open(QIODevice::ReadOnly)) {

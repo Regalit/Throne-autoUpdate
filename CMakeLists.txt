@@ -99,6 +99,8 @@ set(PROJECT_SOURCES
         src/global/Configs.cpp
         include/global/ShadowlosBootstrap.hpp
         src/global/ShadowlosBootstrap.cpp
+        include/ui/shadowlos/ShadowlosChrome.hpp
+        src/ui/shadowlos/ShadowlosChrome.cpp
         src/global/Utils.cpp
         include/global/Logger.hpp
         src/global/Logger.cpp
@@ -424,6 +426,7 @@ set(PROJECT_SOURCES
         include/ui/setting/RawRouteItem.h
 
         res/Throne.qrc
+        res/shadowlos.qrc
         ${QV2RAY_RC}
         res/darkstyle.qrc
         res/theme/feiyangqingyun/qss.qrc

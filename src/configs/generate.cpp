@@ -1917,11 +1917,19 @@ namespace Configs {
             QJsonArray ruleSetArray;
             for (const auto &item: ctx.prerequisites.routing.neededRuleSets) {
                 if (auto url = QUrl(item); url.isValid() && url.fileName().contains(".srs")) {
+                    // Shadowlos: a rule set that is not cached yet is downloaded while the core starts,
+                    // and one failure aborts the whole start. With no detour set the download rides the
+                    // default outbound, i.e. the proxy, before any routing rule exists. Our exit nodes
+                    // refuse Russian destinations and the mirror lives in Russian object storage, so the
+                    // connection was cut (EOF) and Throne could not start at all. Fetch these over the
+                    // user's own connection instead. With TUN on, the core's direct outbound leaves
+                    // through the physical interface (auto_detect_interface), not through the tunnel.
                     ruleSetArray += QJsonObject{
                                 {"type", "remote"},
                                 {"tag", get_rule_set_name(item)},
                                 {"format", "binary"},
                                 {"url", item},
+                                {"http_client", QJsonObject{{"detour", tags::direct}}},
                             };
                 }
                 else

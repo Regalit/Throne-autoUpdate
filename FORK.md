@@ -18,6 +18,7 @@ track — no local branch tracks `upstream/*`.
 | Desktop build / icons | `windows build`, `hide update client button` | Low — `.github/workflows/windows64-artifact.yml` (name kept so it stays dispatchable; it builds Linux too) is upstream's `build.yml` cut to windows-amd64 + linux-amd64; re-derive it from `build.yml` each bump |
 | Shadowlos provisioning | `provision Shadowlos subscription from shadowlos.json` | **Low by design** — see below |
 | Shadowlos desktop UI | `feat: Shadowlos theme and card layout from the Figma design` | **Low by design** — see below |
+| Rule-set downloads go direct | `fix: download remote rule sets over the direct outbound` | Low — one `http_client` key in `buildRuleSetArray` (`src/configs/generate.cpp`); re-apply if upstream rewrites that function. Uses `http_client`, since `download_detour` is deprecated in this sing-box and the two conflict if both are set |
 
 ### Shadowlos provisioning
 

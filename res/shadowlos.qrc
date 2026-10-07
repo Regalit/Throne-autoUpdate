@@ -1,0 +1,49 @@
+<RCC>
+    <!-- Shadowlos theme: see res/shadowlos/shadowlos.qss and src/ui/shadowlos/ShadowlosChrome.cpp -->
+    <qresource prefix="/shadowlos">
+        <file alias="shadowlos.qss">shadowlos/shadowlos.qss</file>
+        <file alias="icons/add-config.png">shadowlos/icons/add-config.png</file>
+        <file alias="icons/add-config@2x.png">shadowlos/icons/add-config@2x.png</file>
+        <file alias="icons/chart.png">shadowlos/icons/chart.png</file>
+        <file alias="icons/chart@2x.png">shadowlos/icons/chart@2x.png</file>
+        <file alias="icons/check-disabled.png">shadowlos/icons/check-disabled.png</file>
+        <file alias="icons/check-disabled@2x.png">shadowlos/icons/check-disabled@2x.png</file>
+        <file alias="icons/check.png">shadowlos/icons/check.png</file>
+        <file alias="icons/check@2x.png">shadowlos/icons/check@2x.png</file>
+        <file alias="icons/chevron-down-disabled.png">shadowlos/icons/chevron-down-disabled.png</file>
+        <file alias="icons/chevron-down-disabled@2x.png">shadowlos/icons/chevron-down-disabled@2x.png</file>
+        <file alias="icons/chevron-down-light.png">shadowlos/icons/chevron-down-light.png</file>
+        <file alias="icons/chevron-down-light@2x.png">shadowlos/icons/chevron-down-light@2x.png</file>
+        <file alias="icons/chevron-down.png">shadowlos/icons/chevron-down.png</file>
+        <file alias="icons/chevron-down@2x.png">shadowlos/icons/chevron-down@2x.png</file>
+        <file alias="icons/chevron-right-light.png">shadowlos/icons/chevron-right-light.png</file>
+        <file alias="icons/chevron-right-light@2x.png">shadowlos/icons/chevron-right-light@2x.png</file>
+        <file alias="icons/chevron-up-disabled.png">shadowlos/icons/chevron-up-disabled.png</file>
+        <file alias="icons/chevron-up-disabled@2x.png">shadowlos/icons/chevron-up-disabled@2x.png</file>
+        <file alias="icons/chevron-up-light.png">shadowlos/icons/chevron-up-light.png</file>
+        <file alias="icons/chevron-up-light@2x.png">shadowlos/icons/chevron-up-light@2x.png</file>
+        <file alias="icons/close.png">shadowlos/icons/close.png</file>
+        <file alias="icons/close@2x.png">shadowlos/icons/close@2x.png</file>
+        <file alias="icons/debug.png">shadowlos/icons/debug.png</file>
+        <file alias="icons/debug@2x.png">shadowlos/icons/debug@2x.png</file>
+        <file alias="icons/filter.png">shadowlos/icons/filter.png</file>
+        <file alias="icons/filter@2x.png">shadowlos/icons/filter@2x.png</file>
+        <file alias="icons/latency.png">shadowlos/icons/latency.png</file>
+        <file alias="icons/latency@2x.png">shadowlos/icons/latency@2x.png</file>
+        <file alias="icons/minus.png">shadowlos/icons/minus.png</file>
+        <file alias="icons/minus@2x.png">shadowlos/icons/minus@2x.png</file>
+        <file alias="icons/radio-dot.png">shadowlos/icons/radio-dot.png</file>
+        <file alias="icons/radio-dot@2x.png">shadowlos/icons/radio-dot@2x.png</file>
+        <file alias="icons/refresh.png">shadowlos/icons/refresh.png</file>
+        <file alias="icons/refresh@2x.png">shadowlos/icons/refresh@2x.png</file>
+        <file alias="icons/toggle-off-disabled.png">shadowlos/icons/toggle-off-disabled.png</file>
+        <file alias="icons/toggle-off-disabled@2x.png">shadowlos/icons/toggle-off-disabled@2x.png</file>
+        <file alias="icons/toggle-off.png">shadowlos/icons/toggle-off.png</file>
+        <file alias="icons/toggle-off@2x.png">shadowlos/icons/toggle-off@2x.png</file>
+        <file alias="icons/toggle-on-disabled.png">shadowlos/icons/toggle-on-disabled.png</file>
+        <file alias="icons/toggle-on-disabled@2x.png">shadowlos/icons/toggle-on-disabled@2x.png</file>
+        <file alias="icons/toggle-on.png">shadowlos/icons/toggle-on.png</file>
+        <file alias="icons/toggle-on@2x.png">shadowlos/icons/toggle-on@2x.png</file>
+        <file alias="fonts/PTRootUI-VF.ttf">shadowlos/fonts/PTRootUI-VF.ttf</file>
+    </qresource>
+</RCC>

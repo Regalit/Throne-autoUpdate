@@ -12,6 +12,7 @@
 #include "include/global/PeriodicRunner.hpp"
 #include "include/global/Logger.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/stats/autoselector/AutoSelectorMonitor.hpp"
 #include "include/ui/stats/dialog_auto_selector.h"
 #include "include/sys/Process.hpp"
@@ -114,7 +115,7 @@ static bool themeUsesDarkLog(const QString &theme) {
     if (lower.contains("vista") || lower.contains("flatgray") || lower.contains("lightblue") || lower.contains("softpink")) {
         return false;
     }
-    if (lower.contains("qdarkstyle") || lower.contains("blacksoft")) {
+    if (lower.contains("qdarkstyle") || lower.contains("blacksoft") || lower.contains("shadowlos")) {
         return true;
     }
     return isDarkMode();
@@ -154,6 +155,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     }
     themeManager()->ApplyTheme(Configs::dataManager->settingsRepo->theme);
     ui->setupUi(this);
+    Shadowlos::Chrome::Install(this, ui);
 
     setActionsData();
     loadShortcuts();
@@ -692,6 +694,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(filterHeader, &ProfilesTableFilterHeader::focusTableRequested, this,
             [this](bool selectFirst) { focusProfilesTable(selectFirst); });
 
+    connect(Subscription::updater(), &Subscription::GroupUpdater::asyncUpdateCallback, this, [this](int gid) {
+        if (gid >= 0) updateTabToolTip(gid);
+    });
+
     this->refresh_groups();
 
     tray = new TrayIcon(this);
@@ -785,8 +791,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         Configs::dataManager->settingsRepo->Save();
     });
     connect(ui->actionStart_with_system, &QAction::triggered, this, [=,this](bool checked) {
-        AutoRun_SetEnabled(checked);
-        ui->actionStart_with_system->setChecked(checked);
+        if (QString error; !AutoRun_SetEnabled(checked, &error)) {
+            MessageBoxWarning(tr("Start with system"), tr("Could not update the autostart entry:") + "\n" + error);
+        }
+        ui->actionStart_with_system->setChecked(AutoRun_IsEnabled());
     });
     connect(ui->actionAllow_LAN, &QAction::triggered, this, [=,this](bool checked) {
         Configs::dataManager->settingsRepo->inbound_address = checked ? "::" : "127.0.0.1";
@@ -1126,15 +1134,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         auto* runner = Throne::PeriodicRunner::instance();
         // Interval is sign-encoded in settings (negative = disabled); < 30 min counts as off.
         const auto minutesOf = [](int v) { return v >= 30 ? v : 0; };
+        // Every poll while enabled: each group keeps its own schedule, persisted as its sub_last_update.
         runner->Add({
-            tr("subscriptions"),
-            [minutesOf] { return minutesOf(Configs::dataManager->settingsRepo->sub_auto_update); },
-            [] { return Configs::dataManager->settingsRepo->sub_auto_update_last; },
-            [](qint64 t) {
-                Configs::dataManager->settingsRepo->sub_auto_update_last = t;
-                Configs::dataManager->settingsRepo->Save();
-            },
-            [] { Subscription::updater()->RefreshAll(true); },
+            {},
+            [minutesOf] { return minutesOf(Configs::dataManager->settingsRepo->sub_auto_update) > 0 ? 1 : 0; },
+            nullptr,
+            nullptr,
+            [] { Subscription::updater()->CheckAutoUpdate(); },
         });
         runner->Add({
             tr("routing profiles"),

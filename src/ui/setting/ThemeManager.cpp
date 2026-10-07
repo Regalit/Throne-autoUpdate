@@ -16,6 +16,7 @@
 #include <cmath>
 
 #include "include/ui/setting/ThemeManager.hpp"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
 #include <QGlobalStatic>
 
@@ -147,6 +148,26 @@ static const QMap<QString, QPalette> &customThemePalettes() {
             .tooltipBase = "#346792", .tooltipText = "#DFE1E2",
             .placeholder = "#9DA9B5", .disabledText = "#788D9C",
         });
+
+        // Shadowlos fork: the product theme. Sheet is res/shadowlos/shadowlos.qss.
+        {
+            QPalette shadowlos = buildThemePalette({
+                .window = "#0B0D0F", .windowText = "#FFFFFF",
+                .base = "#111517", .alternateBase = "#161A1D",
+                .text = "#FFFFFF",
+                .button = "#1A2023", .buttonText = "#FFFFFF",
+                .brightText = "#FFFFFF",
+                .highlight = "#0072CC", .highlightedText = "#FFFFFF",
+                .link = "#33A5FF",
+                .tooltipBase = "#1A2023", .tooltipText = "#FFFFFF",
+                .placeholder = "#5E676E", .disabledText = "#5E676E",
+            });
+#if QT_VERSION >= QT_VERSION_CHECK(6, 6, 0)
+            shadowlos.setColor(QPalette::Active, QPalette::Accent, QColor("#33A5FF"));
+            shadowlos.setColor(QPalette::Inactive, QPalette::Accent, QColor("#33A5FF"));
+#endif
+            m["shadowlos"] = shadowlos;
+        }
 
         return m;
     }();
@@ -334,7 +355,8 @@ void ThemeManager::ApplyTheme(const QString &theme, bool force) {
     if (enteringCustom) {
         // The whole palette goes on first, or a colour role leaks from Qt or the previous theme.
         qApp->setPalette(palettes.value(lowerTheme));
-        themeSheet = lowerTheme == "qdarkstyle" ? ReadFileText(":/qdarkstyle/dark/darkstyle.qss")
+        themeSheet = lowerTheme == "shadowlos"  ? ReadFileText(":/shadowlos/shadowlos.qss")
+                   : lowerTheme == "qdarkstyle" ? ReadFileText(":/qdarkstyle/dark/darkstyle.qss")
                                                 : ReadFileText(":/qss/" + lowerTheme + ".css");
     } else {
         if (leavingCustom) {
@@ -348,6 +370,9 @@ void ThemeManager::ApplyTheme(const QString &theme, bool force) {
         windows11Tabs = styleName.compare(QStringLiteral("windows11"), Qt::CaseInsensitive) == 0;
         macosPane = styleName.compare(QStringLiteral("macos"), Qt::CaseInsensitive) == 0;
     }
+
+    // Shadowlos fork: PT Root UI rides on the app font while the theme is on.
+    Shadowlos::Chrome::ApplyThemeFont(Shadowlos::Chrome::IsThemeName(lowerTheme));
 
     // After setStyle(), which reinstalls the style's palette. Setting the sheet last is also
     // what clears the render-rule cache; a bare setPalette() does not.

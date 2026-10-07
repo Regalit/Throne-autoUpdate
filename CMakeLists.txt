@@ -99,6 +99,8 @@ set(PROJECT_SOURCES
         src/global/Configs.cpp
         include/global/ShadowlosBootstrap.hpp
         src/global/ShadowlosBootstrap.cpp
+        include/ui/shadowlos/ShadowlosChrome.hpp
+        src/ui/shadowlos/ShadowlosChrome.cpp
         src/global/Utils.cpp
         include/global/Logger.hpp
         src/global/Logger.cpp
@@ -205,6 +207,8 @@ set(PROJECT_SOURCES
         src/ui/widget/TrayProfileSelector.cpp
         include/ui/widget/TrayOtpCodes.hpp
         src/ui/widget/TrayOtpCodes.cpp
+        include/ui/widget/SubscriptionInfoCard.hpp
+        src/ui/widget/SubscriptionInfoCard.cpp
         include/ui/widget/json/JsonTree.h
         src/ui/widget/json/JsonTree.cpp
         include/ui/widget/json/JsonValidator.h
@@ -240,6 +244,8 @@ set(PROJECT_SOURCES
 
         include/ui/profile/dialog_edit_profile.h
         src/ui/profile/dialog_edit_profile.cpp
+        src/ui/profile/dialog_edit_profile_singbox.cpp
+        src/ui/profile/dialog_edit_profile_xray.cpp
         src/ui/profile/dialog_edit_profile_xhttp.cpp
         include/ui/profile/dialog_edit_profile.ui
         include/ui/group/dialog_edit_group.h
@@ -420,6 +426,7 @@ set(PROJECT_SOURCES
         include/ui/setting/RawRouteItem.h
 
         res/Throne.qrc
+        res/shadowlos.qrc
         ${QV2RAY_RC}
         res/darkstyle.qrc
         res/theme/feiyangqingyun/qss.qrc
@@ -620,6 +627,8 @@ if (WIN32 AND MSVC)
     set_target_properties(Throne PROPERTIES UNITY_BUILD ON)
 endif ()
 set_property(SOURCE "3rdparty/SQLiteCpp/src/sqlite3.c" PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
+# Shadowlos: needs the full Ui::MainWindow, which a batch-mate defining MW_INTERFACE would hide.
+set_property(SOURCE src/ui/shadowlos/ShadowlosChrome.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Verified to link. OMIT_VIRTUALTABLE/VIEW/ANALYZE/CTE/WINDOWFUNC/DECLTYPE all break this build.
 target_compile_definitions(Throne PRIVATE

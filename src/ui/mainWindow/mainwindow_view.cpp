@@ -19,6 +19,7 @@
 #include "include/ui/utils/ProfilesTableFilterHeader.h"
 #include "include/ui/utils/ProfilesTableModel.h"
 #include "include/ui/widget/StartStopButton.hpp"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
 // Mirrors the language switch in main.cpp; QLocale() alone follows the system, not an explicit setting.
 bool MainWindow::usesTightLabels() const {
@@ -35,6 +36,13 @@ void MainWindow::applyTopBarMetrics() {
     };
     // Drop the previous run's floor: a stale minimum gets baked into minimumSizeHint() below.
     for (auto* b : menuButtons) b->setMinimumWidth(0);
+    // Shadowlos chrome sizes each menu button to its own label.
+    if (property("slVariableWidthMenus").toBool()) {
+        const QSize contentMin = minimumSizeHint();
+        setMinimumSize(qMax(designMinimumSize.width(), contentMin.width()),
+                       qMax(designMinimumSize.height(), contentMin.height()));
+        return;
+    }
 
     int uniformButtonWidth = 0;
     for (auto* b : menuButtons) {
@@ -123,9 +131,9 @@ void MainWindow::refresh_status(const QString &traffic_update) {
             ui->label_speed->setText("");
         }
         else if (traffic_update_cache == "") {
-            ui->label_speed->setText(QObject::tr("Proxy: %1\nDirect: %2").arg("", ""));
+            ui->label_speed->setText(Shadowlos::Chrome::StatusLine(QObject::tr("Proxy: %1\nDirect: %2").arg("", "")));
         } else {
-            ui->label_speed->setText(traffic_update_cache);
+            ui->label_speed->setText(Shadowlos::Chrome::StatusLine(traffic_update_cache));
         }
     };
 
@@ -161,7 +169,7 @@ void MainWindow::refresh_status(const QString &traffic_update) {
         } else {
             runningLabelText = tr("Not Running");
         }
-        ui->label_running->setText(runningLabelText);
+        ui->label_running->setText(Shadowlos::Chrome::StatusLine(runningLabelText));
     }
     const auto inbound_disabled = settings->disable_mixed_inbound;
     auto display_socks = DisplayAddress(settings->inbound_address, settings->inbound_socks_port);

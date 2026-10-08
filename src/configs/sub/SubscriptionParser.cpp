@@ -277,6 +277,7 @@ namespace Subscription {
             void openConnectProfile(std::string_view text);
             void link(std::string_view line, int depth);
             void jsonLink(const QString &str, bool throneAdd);
+            void awgLink(const QString &str);
             void vpnLink(const QString &str, int depth);
         };
 
@@ -523,6 +524,12 @@ namespace Subscription {
                 return;
             }
 
+            // Shadowlos: our subscription serves AmneziaWG as awg://<base64 .conf>#name.
+            if (scan::startsWithNoCase(line, "awg://")) {
+                awgLink(toQString(line));
+                return;
+            }
+
             const char *profileType = typeForScheme(line);
             if (profileType == nullptr) return;
             const auto str = toQString(line);
@@ -533,6 +540,32 @@ namespace Subscription {
                 ent = Configs::ProfilesRepo::NewProfile(profileType);
             }
             if (!ent->outbound->ParseFromLink(str)) return;
+            produce(ent);
+        }
+
+        // awg://<base64 of an AmneziaWG .conf>#<name>
+        //
+        // The payload is the standard [Interface]/[Peer] file, which the WireGuard parser
+        // already reads in full, Jc/Jmin/Jmax, S1-S4 and H1-H4 included, so this only
+        // unwraps it. The base64 arrives unpadded, which the strict decoder rejects, so
+        // it is padded first; the URL-safe alphabet is accepted as a fallback.
+        void Parser::awgLink(const QString &str) {
+            QString payload = str.mid(6); // past "awg://"
+            QString name;
+            if (const auto hash = payload.indexOf('#'); hash >= 0) {
+                name = QUrl::fromPercentEncoding(payload.mid(hash + 1).toUtf8()).trimmed();
+                payload.truncate(hash);
+            }
+            payload = payload.trimmed();
+            while (payload.size() % 4 != 0) payload += '=';
+
+            auto conf = DecodeB64IfValid(payload);
+            if (conf.isEmpty()) conf = DecodeB64IfValid(payload, QByteArray::Base64UrlEncoding);
+            if (conf.isEmpty()) return;
+
+            auto ent = Configs::ProfilesRepo::NewProfile("wireguard");
+            if (!ent->Wireguard()->ParseFromLink(QString::fromUtf8(conf))) return;
+            if (!name.isEmpty()) ent->outbound->name = name;
             produce(ent);
         }
 

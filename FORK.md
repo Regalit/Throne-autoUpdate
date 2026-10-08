@@ -18,7 +18,8 @@ track — no local branch tracks `upstream/*`.
 | Desktop build / icons | `windows build`, `hide update client button` | Low — `.github/workflows/windows64-artifact.yml` (name kept so it stays dispatchable; it builds Linux too) is upstream's `build.yml` cut to windows-amd64 + linux-amd64; re-derive it from `build.yml` each bump |
 | Shadowlos provisioning | `provision Shadowlos subscription from shadowlos.json` | **Low by design** — see below |
 | Shadowlos desktop UI | `feat: Shadowlos theme and card layout from the Figma design` | **Low by design** — see below |
-| Rule-set downloads go direct | `fix: download remote rule sets over the direct outbound` | Low — one `http_client` key in `buildRuleSetArray` (`src/configs/generate.cpp`); re-apply if upstream rewrites that function. Uses `http_client`, since `download_detour` is deprecated in this sing-box and the two conflict if both are set |
+| Rule-set downloads go direct | `fix: download remote rule sets over the direct outbound` | Low — one `download_detour` key in `buildRuleSetArray` (`src/configs/generate.cpp`); re-apply if upstream rewrites that function. Must stay the legacy `download_detour`: `http_client{detour:"direct"}` is refused at start for a plain direct outbound. `core/internal/boxmain/ruleset_download_test.go` pins this; sing-box removes the legacy key in 1.16, so when a bump trips that test switch to a second direct outbound that carries a `domain_resolver` and point `http_client.detour` at it |
+| AmneziaWG subscription links | `feat: import awg:// subscription links` | Low — `awgLink` plus a three-line dispatch in `Parser::link` (`src/configs/sub/SubscriptionParser.cpp`); re-apply if upstream rewrites `Parser::link`. Our subscription serves `awg://<base64 .conf>#name`, which upstream drops because it only knows `wg://` and `wireguard://`. The WireGuard parser already reads the Amnezia keys, so this only unwraps the base64 |
 
 ### Shadowlos provisioning
 

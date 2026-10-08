@@ -1938,12 +1938,16 @@ namespace Configs {
                     // connection was cut (EOF) and Throne could not start at all. Fetch these over the
                     // user's own connection instead. With TUN on, the core's direct outbound leaves
                     // through the physical interface (auto_detect_interface), not through the tunnel.
+                    // Must be the legacy download_detour: the newer http_client{detour:"direct"} is
+                    // rejected at start for a plain direct outbound ("detour to an empty direct outbound
+                    // makes no sense"), while the legacy path skips that check. Pinned by
+                    // core/internal/boxmain/ruleset_download_test.go. sing-box drops it in 1.16.
                     ruleSetArray += QJsonObject{
                                 {"type", "remote"},
                                 {"tag", get_rule_set_name(item)},
                                 {"format", "binary"},
                                 {"url", item},
-                                {"http_client", QJsonObject{{"detour", tags::direct}}},
+                                {"download_detour", tags::direct},
                             };
                 }
                 else

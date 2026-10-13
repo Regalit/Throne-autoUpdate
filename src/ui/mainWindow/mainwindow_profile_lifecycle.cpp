@@ -99,7 +99,7 @@ namespace {
     // UDP queries to the adapters' DNS servers, and when it finds none it falls back to 127.0.0.1, where
     // nothing answers. Browsers still work through the Windows DNS client, so only Throne fails, at start,
     // on the first remote rule-set download. Retry once over DoH to an IP, which needs no lookup itself.
-    const QString fallbackDirectDns = QStringLiteral("https://8.8.8.8/dns-query");
+    const QString fallbackDirectDns = QStringLiteral("https://1.1.1.1/dns-query");
 
     bool usesSystemDirectDns() {
         return Configs::dataManager->settingsRepo->direct_dns.trimmed().startsWith("local");

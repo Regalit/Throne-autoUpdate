@@ -525,6 +525,7 @@ namespace Shadowlos::Chrome {
     }
 
     void installSimpleView(Ui::MainWindow *ui) {
+        using namespace Shadowlos::ChromeImpl;
         auto *filter = ui->tabWidget->cornerWidget(Qt::TopRightCorner);
         auto *corner = new QWidget(ui->tabWidget);
         auto *layout = new QHBoxLayout(corner);

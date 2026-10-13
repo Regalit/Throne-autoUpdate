@@ -32,6 +32,7 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPointer>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QStyle>
 #include <QStyledItemDelegate>
@@ -646,6 +647,61 @@ namespace Shadowlos::Chrome {
         applySimpleView(ui);
     }
 
+    // A 24px pause or play glyph in the accent blue, drawn at 2x.
+    QIcon logGlyph(bool pause) {
+        QPixmap pixmap(48, 48);
+        pixmap.fill(Qt::transparent);
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(Shadowlos::ChromeImpl::hex(0x33A5FF));
+        if (pause) {
+            painter.drawRoundedRect(QRectF(13, 10, 8, 28), 2, 2);
+            painter.drawRoundedRect(QRectF(27, 10, 8, 28), 2, 2);
+        } else {
+            painter.drawPolygon(QPolygonF({QPointF(15, 10), QPointF(38, 24), QPointF(15, 38)}));
+        }
+        painter.end();
+        pixmap.setDevicePixelRatio(2);
+        return QIcon(pixmap);
+    }
+
+    // Pause / resume for the log, in the corner of the Logs / Apps tabs while Logs is open.
+    // Paused, new lines still arrive but the view holds still (MainWindow::flush_log_batch
+    // reads slLogPaused); resuming jumps to the newest line.
+    void installLogPause(Ui::MainWindow *ui) {
+        using namespace Shadowlos::ChromeImpl;
+        auto *tabs = ui->stats_widget;
+        auto *log = ui->masterLogBrowser;
+        auto *button = new QToolButton(tabs);
+        button->setObjectName(QStringLiteral("slLogPause"));
+        button->setProperty("slRole", "pill");
+        button->setIconSize(QSize(16, 16));
+        button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        button->setCursor(Qt::PointingHandCursor);
+        const auto sync = [button, log] {
+            const bool paused = log->property("slLogPaused").toBool();
+            button->setText(paused ? translate("Resume log") : translate("Pause log"));
+            button->setIcon(logGlyph(!paused));
+        };
+        sync();
+        repolish(button);
+        tabs->setCornerWidget(button, Qt::TopRightCorner);
+        button->show();
+        QObject::connect(button, &QToolButton::clicked, button, [log, sync] {
+            const bool paused = !log->property("slLogPaused").toBool();
+            log->setProperty("slLogPaused", paused);
+            sync();
+            if (!paused) log->verticalScrollBar()->setValue(log->verticalScrollBar()->maximum());
+        });
+        const auto showForLog = [tabs, log, button](int index) {
+            QWidget *page = tabs->widget(index);
+            button->setVisible(page != nullptr && page->isAncestorOf(log));
+        };
+        QObject::connect(tabs, &QTabWidget::currentChanged, button, showForLog);
+        showForLog(tabs->currentIndex());
+    }
+
     // Measures latency once at startup, as the "Measure latency" pill would, as soon as the
     // core is up and the current group has servers (on a first run the subscription has to
     // arrive first). Gives up after two minutes.
@@ -866,6 +922,7 @@ namespace Shadowlos::Chrome {
 
             installSimpleView(ui, simpleBox);
             installStartupLatencyTest(window, ui);
+            installLogPause(ui);
 
             applyCaptionToVisibleWindows();
         });

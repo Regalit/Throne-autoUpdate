@@ -106,7 +106,11 @@ void MainWindow::flush_log_batch() {
     if (batch.isEmpty()) return;
 
     auto bar = ui->masterLogBrowser->verticalScrollBar();
-    if (Configs::dataManager->settingsRepo->log_auto_scroll) {
+    // Shadowlos: follow the tail only while the reader is at the bottom and has not paused
+    // the log (the pause button sets slLogPaused), so scrolling up to read holds the view.
+    const bool atBottom = bar->value() >= bar->maximum() - 4;
+    const bool paused = ui->masterLogBrowser->property("slLogPaused").toBool();
+    if (Configs::dataManager->settingsRepo->log_auto_scroll && atBottom && !paused) {
         FastAppendTextDocument(batch, qvLogDocument);
         bar->setValue(bar->maximum());
     } else {

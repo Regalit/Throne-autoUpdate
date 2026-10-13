@@ -9685,6 +9685,14 @@ Remove that endpoint from this routing profile as well?</source>
 <context>
     <name>ShadowlosChrome</name>
     <message>
+        <source>Pause log</source>
+        <translation>Пауза</translation>
+    </message>
+    <message>
+        <source>Resume log</source>
+        <translation>Продолжить</translation>
+    </message>
+    <message>
         <source>Add config</source>
         <translation>Добавить конфиг</translation>
     </message>

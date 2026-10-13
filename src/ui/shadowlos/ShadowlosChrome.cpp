@@ -343,12 +343,25 @@ namespace Shadowlos::ChromeImpl {
         layout->setContentsMargins(0, 0, 0, 0);
         layout->setSpacing(12);
 
-        auto *label = new QLabel(box->text(), row);
+        // A long name puts its bracketed part on a second, smaller grey line:
+        // "Только браузеры" over "(системный прокси)", so the card stays narrow.
+        const QString text = box->text();
+        const int bracket = text.indexOf(QStringLiteral(" ("));
+        auto *label = new QLabel(row);
+        if (bracket > 0 && text.endsWith(QLatin1Char(')'))) {
+            label->setTextFormat(Qt::RichText);
+            label->setText(QStringLiteral("%1<br><span style=\"color:#8A949B; font-size:11px; font-weight:400\">%2</span>")
+                               .arg(text.left(bracket).toHtmlEscaped(), text.mid(bracket + 1).toHtmlEscaped()));
+        } else {
+            label->setText(text);
+        }
         label->setProperty("slRole", "toggleLabel");
         label->setToolTip(box->toolTip());
         label->setCursor(Qt::PointingHandCursor);
-        label->ensurePolished();
-        label->setMinimumWidth(label->sizeHint().width()); // never clip the mode names
+        // Never clip the mode names: the layout asks the label for its width each time, so
+        // it follows the font the sheet and the system settle on (a width fixed here goes
+        // stale when that font is wider, and the switch then covers the text).
+        label->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
 
         box->setText(QString());
         box->setProperty("slRole", "toggle");
@@ -392,9 +405,11 @@ namespace Shadowlos::ChromeImpl {
     // their icons (the label stays in the tooltip), so the window can still be made small.
     class CompactPills final : public QObject {
     public:
-        CompactPills(QWidget *central, const QList<QToolButton *> &pills, int fixedWidth)
+        CompactPills(QWidget *central, const QList<QToolButton *> &pills, const QList<QWidget *> &cards,
+                     int fixedWidth)
             : QObject(central), m_central(central), m_fixedWidth(fixedWidth) {
             for (QToolButton *pill : pills) m_pills << pill;
+            for (QWidget *card : cards) m_cards << card;
             central->installEventFilter(this);
         }
 
@@ -413,6 +428,9 @@ namespace Shadowlos::ChromeImpl {
         void relayout() {
             if (m_central.isNull()) return;
             int needed = m_fixedWidth;
+            for (const auto &card : m_cards) {
+                if (!card.isNull() && !card->isHidden()) needed += card->sizeHint().width();
+            }
             for (const auto &pill : m_pills) {
                 if (!pill.isNull() && !pill->isHidden()) needed += labelledWidth(pill.data());
             }
@@ -424,6 +442,7 @@ namespace Shadowlos::ChromeImpl {
 
         QPointer<QWidget> m_central;
         QList<QPointer<QToolButton>> m_pills;
+        QList<QPointer<QWidget>> m_cards;
         int m_fixedWidth;
     };
 
@@ -617,27 +636,7 @@ namespace Shadowlos::Chrome {
         QTimer m_timer;
     };
 
-    // The simple / full view switch sits in the tab corner, left of the filter button.
-    void installSimpleView(Ui::MainWindow *ui) {
-        using namespace Shadowlos::ChromeImpl;
-        auto *filter = ui->tabWidget->cornerWidget(Qt::TopRightCorner);
-        auto *corner = new QWidget(ui->tabWidget);
-        auto *layout = new QHBoxLayout(corner);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(12);
-        auto *box = new QCheckBox(translate("Simple view"), corner);
-        box->setChecked(simpleViewOn());
-        auto *row = makeToggleRow(corner, box);
-        row->setMinimumWidth(0);
-        layout->addWidget(row);
-        // setCornerWidget hides the widget it replaces, so re-show the filter in the new corner.
-        ui->tabWidget->setCornerWidget(corner, Qt::TopRightCorner);
-        if (filter != nullptr) {
-            layout->addWidget(filter);
-            filter->show();
-        }
-        corner->show();
-
+    void installSimpleView(Ui::MainWindow *ui, QCheckBox *box) {
         QObject::connect(box, &QCheckBox::toggled, box, [ui](bool checked) {
             auto *settings = Configs::dataManager->settingsRepo.get();
             settings->shadowlos_simple_view = checked ? 1 : 0;
@@ -766,6 +765,19 @@ namespace Shadowlos::Chrome {
         debugLayout->addWidget(ui->toolButton_debug);
         actionsRow->addWidget(debugCard);
 
+        // View card: the simple / full view switch, right of Debug.
+        auto *viewCard = makeCard(central, "slCard");
+        auto *viewLayout = new QVBoxLayout(viewCard);
+        viewLayout->setContentsMargins(16, 8, 16, 8);
+        auto *simpleBox = new QCheckBox(translate("Simple view"), viewCard);
+        simpleBox->setChecked(simpleViewOn());
+        auto *simpleRow = makeToggleRow(viewCard, simpleBox);
+        simpleRow->setMinimumWidth(0);
+        viewLayout->addStretch(1);
+        viewLayout->addWidget(simpleRow);
+        viewLayout->addStretch(1);
+        actionsRow->addWidget(viewCard);
+
         // Modes card: just the switches, sized to them. The status panel (speed tests,
         // restart notices) takes the rest of the row, outside any card.
         auto *modesCard = makeCard(central, "slCard");
@@ -788,13 +800,13 @@ namespace Shadowlos::Chrome {
 
         root->addLayout(actionsRow);
 
-        // Everything on the row except the pills' labels: root margins, power card, row gaps,
-        // card margins, gaps between pills, and the modes card's switches (sized for the
-        // long Russian label "Только браузеры (системный прокси)").
-        constexpr int kRowFixedWidth = 24 + 96 + 3 * 8 + 32 + 3 * 8 + 32 + (300 + 32);
+        // Besides the pills' labels and the cards measured live (power, view, modes): root
+        // margins, gaps between the six row items, the actions and debug cards' margins,
+        // and the gaps between the actions card's pills.
+        constexpr int kRowFixedWidth = 24 + 5 * 8 + 32 + 32 + 3 * 8;
         new CompactPills(central,
                          {add, ui->toolButton_update_subs, speedtest, latency, ui->toolButton_debug},
-                         kRowFixedWidth);
+                         {powerCard, viewCard, modesCard}, kRowFixedWidth);
 
         // Profile tabs over the Logs / Connections / Graph tabs, as before.
         ui->verticalLayout_3->removeWidget(ui->splitter);
@@ -839,7 +851,7 @@ namespace Shadowlos::Chrome {
         QObject::connect(themeManager(), &ThemeManager::themeChanged, window, [] { applyCaptionToVisibleWindows(); });
 
         // After MainWindow's constructor, which sets these up later than this runs.
-        QTimer::singleShot(0, window, [window, ui] {
+        QTimer::singleShot(0, window, [window, ui, simpleBox] {
             // MainWindow sizes the start button to the menu buttons' height; the card wants 64.
             ui->toolButton_program->removeEventFilter(window);
             ui->toolButton_startstop->setFixedSize(64, 64);
@@ -853,7 +865,7 @@ namespace Shadowlos::Chrome {
                 repolish(filter);
             }
 
-            installSimpleView(ui);
+            installSimpleView(ui, simpleBox);
             installStartupLatencyTest(window, ui);
 
             applyCaptionToVisibleWindows();

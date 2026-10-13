@@ -10,6 +10,7 @@
 #include "include/ui/utils/ProfilesTableModel.h"
 #include "include/ui/widget/StartStopButton.hpp"
 
+#include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
 #include <QCheckBox>
@@ -37,6 +38,7 @@
 #include <QTableView>
 #include <QTextBrowser>
 #include <QTimer>
+#include <algorithm>
 #include <QToolButton>
 #include <QVBoxLayout>
 #ifdef Q_OS_WIN
@@ -339,6 +341,8 @@ namespace Shadowlos::ChromeImpl {
         label->setProperty("slRole", "toggleLabel");
         label->setToolTip(box->toolTip());
         label->setCursor(Qt::PointingHandCursor);
+        label->ensurePolished();
+        label->setMinimumWidth(label->sizeHint().width()); // never clip the mode names
 
         box->setText(QString());
         box->setProperty("slRole", "toggle");
@@ -513,16 +517,72 @@ namespace Shadowlos::Chrome {
 
     // "Simple view" (the default) shows only what a user picks a server by: name, test
     // result and traffic, without the logs/connections panel. The full view is upstream's.
-    void applySimpleView(Ui::MainWindow *ui, bool simple) {
+    bool simpleViewOn() {
+        return Configs::dataManager->settingsRepo->shadowlos_simple_view != 0;
+    }
+
+    // Upstream keeps the columns Interactive and re-applies the widths it saved for the group
+    // (any resize is saved), so the name column is stretched here to fill the row in either
+    // view, and that width is what gets saved and re-applied. In the full view, a column that
+    // was hidden when the widths were saved comes back at a usable width.
+    void fitColumns(Ui::MainWindow *ui) {
         auto *table = ui->profilesTableView;
         auto *header = table->horizontalHeader();
-        for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress}) {
-            table->setColumnHidden(col, simple);
-            if (!simple && header->sectionSize(col) < 40) header->resizeSection(col, 140);
+        for (int col : {ProfilesTableModel::ColTestResult, ProfilesTableModel::ColTraffic}) {
+            const int hint = std::max(header->sectionSizeHint(col), static_cast<QAbstractItemView *>(table)->sizeHintForColumn(col));
+            if (header->sectionSize(col) < hint) header->resizeSection(col, hint);
         }
+        if (!simpleViewOn()) {
+            for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress})
+                if (header->sectionSize(col) < 40) header->resizeSection(col, 140);
+        }
+        // The name column takes whatever the other visible columns leave.
+        int others = 0;
+        for (int col = 0; col < header->count(); ++col)
+            if (col != ProfilesTableModel::ColName && !header->isSectionHidden(col)) others += header->sectionSize(col);
+        const int name = std::max(160, table->viewport()->width() - others);
+        if (header->sectionSize(ProfilesTableModel::ColName) != name) {
+            header->setSectionResizeMode(ProfilesTableModel::ColName, QHeaderView::Interactive);
+            header->resizeSection(ProfilesTableModel::ColName, name);
+        }
+    }
+
+    void applySimpleView(Ui::MainWindow *ui) {
+        const bool simple = simpleViewOn();
+        auto *table = ui->profilesTableView;
+        for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress})
+            table->setColumnHidden(col, simple);
         table->verticalHeader()->setVisible(!simple);
         if (QWidget *panel = ui->splitter->widget(1)) panel->setVisible(!simple);
+        fitColumns(ui);
     }
+
+    // Refits after the table resizes or upstream re-lays its columns out (it does that on a
+    // zero timer after each refresh, so ours runs a little later).
+    class ColumnFitter final : public QObject {
+    public:
+        explicit ColumnFitter(Ui::MainWindow *ui) : QObject(ui->profilesTableView), m_ui(ui) {
+            ui->profilesTableView->viewport()->installEventFilter(this);
+            m_timer.setSingleShot(true);
+            m_timer.setInterval(50);
+            QObject::connect(&m_timer, &QTimer::timeout, this, [this] { fitColumns(m_ui); });
+            auto *model = ui->profilesTableView->model();
+            if (model == nullptr) return;
+            QObject::connect(model, &QAbstractItemModel::modelReset, this, [this] { m_timer.start(); });
+            QObject::connect(model, &QAbstractItemModel::layoutChanged, this, [this] { m_timer.start(); });
+            QObject::connect(model, &QAbstractItemModel::rowsInserted, this, [this] { m_timer.start(); });
+        }
+
+    protected:
+        bool eventFilter(QObject *, QEvent *event) override {
+            if (event->type() == QEvent::Resize) m_timer.start();
+            return false;
+        }
+
+    private:
+        Ui::MainWindow *m_ui;
+        QTimer m_timer;
+    };
 
     void installSimpleView(Ui::MainWindow *ui) {
         using namespace Shadowlos::ChromeImpl;
@@ -533,8 +593,7 @@ namespace Shadowlos::Chrome {
         layout->setSpacing(12);
 
         auto *box = new QCheckBox(translate("Simple view"), corner);
-        auto *settings = Configs::dataManager->settingsRepo.get();
-        box->setChecked(settings->shadowlos_simple_view != 0);
+        box->setChecked(simpleViewOn());
         auto *row = makeToggleRow(corner, box);
         row->setMinimumWidth(0);
         layout->addWidget(row);
@@ -551,9 +610,10 @@ namespace Shadowlos::Chrome {
             auto *settings = Configs::dataManager->settingsRepo.get();
             settings->shadowlos_simple_view = checked ? 1 : 0;
             settings->Save();
-            applySimpleView(ui, checked);
+            applySimpleView(ui);
         });
-        applySimpleView(ui, box->isChecked());
+        new ColumnFitter(ui);
+        applySimpleView(ui);
     }
 
     void Install(QMainWindow *window, Ui::MainWindow *ui) {

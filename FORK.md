@@ -75,7 +75,7 @@ Upstream-owned files carry only one-line hooks:
 - `mainwindow_view.cpp` — the `slVariableWidthMenus` early return in
   `applyTopBarMetrics`, and `StatusLine()` around the three status-label `setText`s
 - `dialog_basic_settings.cpp` — the "Shadowlos" theme entry
-- `SettingsRepo.h/.cpp` — `shadowlos_ui_revision`, `shadowlos_simple_view` (the "Упрощённый вид" switch over the server list: hides the Type and Address columns, row numbers and the logs/connections panel)
+- `SettingsRepo.h/.cpp` — `shadowlos_ui_revision`, `shadowlos_simple_view` (the "Упрощённый вид" switch, its own card right of Debug: hides the Type and Address columns, row numbers and the logs/connections panel)
 
 If upstream renames or removes a widget `Install()` moves (the five menu buttons,
 `toolButton_startstop`, `toolButton_update_subs`, `toolButton_debug`, the three mode

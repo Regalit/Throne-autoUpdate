@@ -584,29 +584,8 @@ namespace Shadowlos::Chrome {
         QTimer m_timer;
     };
 
-    void installSimpleView(Ui::MainWindow *ui) {
-        using namespace Shadowlos::ChromeImpl;
-        auto *filter = ui->tabWidget->cornerWidget(Qt::TopRightCorner);
-        auto *corner = new QWidget(ui->tabWidget);
-        auto *layout = new QHBoxLayout(corner);
-        layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(12);
-
-        auto *box = new QCheckBox(translate("Simple view"), corner);
-        box->setChecked(simpleViewOn());
-        auto *row = makeToggleRow(corner, box);
-        row->setMinimumWidth(0);
-        layout->addWidget(row);
-
-        // setCornerWidget hides the widget it replaces, so re-show the filter in the new corner.
-        ui->tabWidget->setCornerWidget(corner, Qt::TopRightCorner);
-        if (filter != nullptr) {
-            layout->addWidget(filter);
-            filter->show();
-        }
-        corner->show();
-
-        QObject::connect(box, &QCheckBox::toggled, corner, [ui](bool checked) {
+    void installSimpleView(Ui::MainWindow *ui, QCheckBox *box) {
+        QObject::connect(box, &QCheckBox::toggled, box, [ui](bool checked) {
             auto *settings = Configs::dataManager->settingsRepo.get();
             settings->shadowlos_simple_view = checked ? 1 : 0;
             settings->Save();
@@ -710,8 +689,21 @@ namespace Shadowlos::Chrome {
         debugLayout->addWidget(ui->toolButton_debug);
         actionsRow->addWidget(debugCard);
 
-        // Modes card: the switches, then the status panel (speed tests, restart notices)
-        // in the width the design leaves to this card.
+        // View card: the simple / full view switch, right of Debug.
+        auto *viewCard = makeCard(central, "slCard");
+        auto *viewLayout = new QVBoxLayout(viewCard);
+        viewLayout->setContentsMargins(16, 8, 16, 8);
+        auto *simpleBox = new QCheckBox(translate("Simple view"), viewCard);
+        simpleBox->setChecked(simpleViewOn());
+        auto *simpleRow = makeToggleRow(viewCard, simpleBox);
+        simpleRow->setMinimumWidth(0);
+        viewLayout->addStretch(1);
+        viewLayout->addWidget(simpleRow);
+        viewLayout->addStretch(1);
+        actionsRow->addWidget(viewCard);
+
+        // Modes card: just the switches, sized to them. The status panel (speed tests,
+        // restart notices) takes the rest of the row, outside any card.
         auto *modesCard = makeCard(central, "slCard");
         auto *modesLayout = new QHBoxLayout(modesCard);
         modesLayout->setContentsMargins(16, 8, 16, 8);
@@ -725,16 +717,17 @@ namespace Shadowlos::Chrome {
         }
         toggles->addStretch(1);
         modesLayout->addLayout(toggles);
+        actionsRow->addWidget(modesCard);
         ui->horizontalLayout_2->removeWidget(ui->data_view);
-        modesLayout->addWidget(ui->data_view, 1);
-        actionsRow->addWidget(modesCard, 1);
+        ui->data_view->setParent(central);
+        actionsRow->addWidget(ui->data_view, 1);
 
         root->addLayout(actionsRow);
 
         // Everything on the row except the pills' labels: root margins, power card, row gaps,
-        // card margins, gaps between pills, and the modes card's switches (sized for the long
-        // Russian labels, "Только браузеры (системный прокси)").
-        constexpr int kRowFixedWidth = 24 + 96 + 3 * 8 + 32 + 3 * 8 + 32 + (300 + 32 + 16);
+        // card margins, gaps between pills, the view card's switch, and the modes card's
+        // switches (sized for the long Russian label "Только браузеры (системный прокси)").
+        constexpr int kRowFixedWidth = 24 + 96 + 4 * 8 + 32 + 3 * 8 + 32 + (190 + 32) + (300 + 32);
         new CompactPills(central,
                          {add, ui->toolButton_update_subs, speedtest, latency, ui->toolButton_debug},
                          kRowFixedWidth);
@@ -782,7 +775,7 @@ namespace Shadowlos::Chrome {
         QObject::connect(themeManager(), &ThemeManager::themeChanged, window, [] { applyCaptionToVisibleWindows(); });
 
         // After MainWindow's constructor, which sets these up later than this runs.
-        QTimer::singleShot(0, window, [window, ui] {
+        QTimer::singleShot(0, window, [window, ui, simpleBox] {
             // MainWindow sizes the start button to the menu buttons' height; the card wants 64.
             ui->toolButton_program->removeEventFilter(window);
             ui->toolButton_startstop->setFixedSize(64, 64);
@@ -798,7 +791,7 @@ namespace Shadowlos::Chrome {
                 repolish(filter);
             }
 
-            installSimpleView(ui);
+            installSimpleView(ui, simpleBox);
 
             applyCaptionToVisibleWindows();
         });

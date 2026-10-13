@@ -8,6 +8,10 @@ on:
         description: "Version for artifact naming"
         required: true
         default: "1.0.0"
+      publish:
+        description: "Also attach the Windows and Linux (system Qt) builds to a prerelease named after the tag"
+        type: boolean
+        default: false
 jobs:
   build-go:
     permissions:
@@ -250,3 +254,28 @@ jobs:
           name: Throne-${{ github.sha }}-${{ matrix.dest_suffix }}
           path: artifacts.tgz
           compression-level: 0
+  # Release assets download from anywhere; Actions artifacts need a signed-in browser or API
+  # token, which the machines that copy builds into shadowlos's client/Shadowlos do not have.
+  publish:
+    if: ${{ inputs.publish }}
+    needs: build-cpp
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: Throne-${{ github.sha }}-*
+          path: artifacts
+      - name: Create prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir out
+          for target in windows-amd64 linux-amd64-system-qt; do
+            cp "artifacts/Throne-${{ github.sha }}-${target}/artifacts.tgz" "out/Throne-${{ inputs.tag }}-${target}.tgz"
+          done
+          gh release create "${{ inputs.tag }}" out/* --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" --prerelease --title "${{ inputs.tag }}" \
+            --notes "Shadowlos desktop build from ${{ github.sha }}."

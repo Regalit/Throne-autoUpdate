@@ -78,6 +78,7 @@ namespace Configs {
         int shadowlos_managed_route = -1; // route profile provisioned from shadowlos.json, -1 = none
         int shadowlos_routing_revision = 0; // preset revision already installed
         int shadowlos_ui_revision = 0; // Shadowlos look already applied as the default theme
+        int shadowlos_simple_view = 1; // main window shows the simple server list, not the full one
         QString mux_protocol = "smux";
         bool mux_padding = false;
         int mux_concurrency = 8;

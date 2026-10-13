@@ -100,6 +100,7 @@ namespace Configs {
             {"shadowlos_managed_route", &shadowlos_managed_route},
             {"shadowlos_routing_revision", &shadowlos_routing_revision},
             {"shadowlos_ui_revision", &shadowlos_ui_revision},
+            {"shadowlos_simple_view", &shadowlos_simple_view},
             {"inbound_socks_port",     &inbound_socks_port},
             {"mux_concurrency",        &mux_concurrency},
             {"test_concurrent",        &test_concurrent},

@@ -6501,11 +6501,11 @@ Improves hole-punching reliability. Requires IPv4.</source>
     </message>
     <message>
         <source>Tun Mode</source>
-        <translation>Режим TUN</translation>
+        <translation>Все приложения (TUN)</translation>
     </message>
     <message>
         <source>System Proxy</source>
-        <translation>Системный прокси</translation>
+        <translation>Только браузеры (системный прокси)</translation>
     </message>
     <message>
         <source>Test Result</source>
@@ -7263,7 +7263,7 @@ Error: %1</source>
     </message>
     <message>
         <source>Connections</source>
-        <translation>Подключения</translation>
+        <translation>Приложения</translation>
     </message>
     <message>
         <source>Logs</source>
@@ -9561,6 +9561,46 @@ Remove that endpoint from this routing profile as well?</source>
         <source>Technical Support: %1</source>
         <translation>Техническая поддержка: %1</translation>
     </message>
+    <message>
+        <source>Telegram app</source>
+        <translation>Telegram-приложение</translation>
+    </message>
+    <message>
+        <source>Telegram app: %1</source>
+        <translation>Telegram-приложение: %1</translation>
+    </message>
+    <message>
+        <source>Subscription details</source>
+        <translation>Подробнее о подписке</translation>
+    </message>
+    <message>
+        <source>Traffic: %1</source>
+        <translation>Трафик: %1</translation>
+    </message>
+    <message>
+        <source>Subscription until %1</source>
+        <translation>Подписка до %1</translation>
+    </message>
+    <message>
+        <source>Updated daily</source>
+        <translation>Обновление раз в день</translation>
+    </message>
+    <message>
+        <source>Updated every %1 d</source>
+        <translation>Обновление раз в %1 дн.</translation>
+    </message>
+    <message>
+        <source>Updated hourly</source>
+        <translation>Обновление раз в час</translation>
+    </message>
+    <message>
+        <source>Updated every %1 h</source>
+        <translation>Обновление раз в %1 ч.</translation>
+    </message>
+    <message>
+        <source>Updated every %1 min</source>
+        <translation>Обновление раз в %1 мин</translation>
+    </message>
 </context>
 <context>
     <name>TrafficChartWidget</name>
@@ -9655,6 +9695,10 @@ Remove that endpoint from this routing profile as well?</source>
     <message>
         <source>Measure latency</source>
         <translation>Замерить время отклика</translation>
+    </message>
+    <message>
+        <source>Simple view</source>
+        <translation>Упрощённый вид</translation>
     </message>
 </context>
 </TS>

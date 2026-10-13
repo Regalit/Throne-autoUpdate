@@ -25,6 +25,8 @@ public:
     [[nodiscard]] bool hasSubscription() const;
 
     static QString expiryText(qint64 expire);
+    static QString intervalText(qint64 seconds);
+    static QString planLine(const QString &announce);
 
 signals:
     void cardVisibilityChanged();
@@ -42,6 +44,7 @@ private:
     void setLinksCompact(bool compact);
     [[nodiscard]] int requiredWidth() const;
     void reportGeometry();
+    void showDetails();
 
     std::shared_ptr<Configs::Group> m_group;
     QString m_fullAnnounce;

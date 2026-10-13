@@ -225,6 +225,16 @@ QTableView#profilesTableView::item {
     padding: 0px 8px;
 }
 
+/* Simple view (ShadowlosChrome sets slSimple and the bigger row font): a left indent. */
+QTableView#profilesTableView[slSimple="true"]::item {
+    padding: 0px 8px 0px 24px;
+}
+
+QTableView#profilesTableView[slSimple="true"] QHeaderView::section {
+    font-size: 13px;
+    padding: 11px 12px 11px 24px;
+}
+
 QTableView#profilesTableView::item:selected {
     background-color: #2A3B4A;
     color: #FFFFFF;

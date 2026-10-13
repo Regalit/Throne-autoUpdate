@@ -5,6 +5,7 @@
 #include "include/ui/mainwindow.h"
 
 #include "include/database/DatabaseManager.h"
+#include "include/database/GroupsRepo.h"
 #include "include/database/SettingsRepo.h"
 #include "include/ui/setting/ThemeManager.hpp"
 #include "include/ui/utils/ProfilesTableModel.h"
@@ -261,6 +262,8 @@ namespace Shadowlos::ChromeImpl {
     }
 
     // Paints the connected profile's row as the design's highlighted row.
+    constexpr int kSimpleFontPx = 17;
+
     class RowDelegate final : public QStyledItemDelegate {
     public:
         using QStyledItemDelegate::QStyledItemDelegate;
@@ -287,6 +290,9 @@ namespace Shadowlos::ChromeImpl {
     protected:
         void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override {
             QStyledItemDelegate::initStyleOption(option, index);
+            // The simple view's bigger rows. Set here, not in the sheet: a re-polish does not
+            // re-apply a sheet font to a view that is already shown.
+            if (parent() != nullptr && parent()->property("slSimple").toBool()) option->font.setPixelSize(kSimpleFontPx);
             if (!Shadowlos::Chrome::ThemeActive()) return;
             const QVariant foreground = index.data(Qt::ForegroundRole);
             if (!foreground.isValid()) return;
@@ -522,37 +528,64 @@ namespace Shadowlos::Chrome {
     }
 
     // Upstream keeps the columns Interactive and re-applies the widths it saved for the group
-    // (any resize is saved), so the name column is stretched here to fill the row in either
-    // view, and that width is what gets saved and re-applied. In the full view, a column that
-    // was hidden when the widths were saved comes back at a usable width.
+    // (any resize is saved), so the widths are set here on every refit and that is what gets
+    // saved and re-applied. Test result and traffic fit their contents. In the full view the
+    // name column takes the rest of the row. In the simple view the name column fits the
+    // names too, so the three columns sit together on the left, and traffic, the last one,
+    // takes what is left. In the full view, a column that was hidden when the widths were
+    // saved comes back at a usable width.
     void fitColumns(Ui::MainWindow *ui) {
         auto *table = ui->profilesTableView;
         auto *header = table->horizontalHeader();
-        for (int col : {ProfilesTableModel::ColTestResult, ProfilesTableModel::ColTraffic}) {
-            const int hint = std::max(header->sectionSizeHint(col), static_cast<QAbstractItemView *>(table)->sizeHintForColumn(col));
-            if (header->sectionSize(col) < hint) header->resizeSection(col, hint);
-        }
-        if (!simpleViewOn()) {
+        auto *view = static_cast<QAbstractItemView *>(table);
+        const bool simple = simpleViewOn();
+        const int padding = simple ? 48 : 0;
+        const auto fit = [&](int col) {
+            return std::max(header->sectionSizeHint(col), view->sizeHintForColumn(col)) + padding;
+        };
+        const auto setWidth = [&](int col, int width) {
+            if (header->sectionSize(col) == width) return;
+            header->setSectionResizeMode(col, QHeaderView::Interactive);
+            header->resizeSection(col, width);
+        };
+        if (!simple) {
             for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress})
                 if (header->sectionSize(col) < 40) header->resizeSection(col, 140);
         }
-        // The name column takes whatever the other visible columns leave.
+        const int viewport = table->viewport()->width();
+        const int test = fit(ProfilesTableModel::ColTestResult);
+        int traffic = fit(ProfilesTableModel::ColTraffic);
         int others = 0;
         for (int col = 0; col < header->count(); ++col)
-            if (col != ProfilesTableModel::ColName && !header->isSectionHidden(col)) others += header->sectionSize(col);
-        const int name = std::max(160, table->viewport()->width() - others);
-        if (header->sectionSize(ProfilesTableModel::ColName) != name) {
-            header->setSectionResizeMode(ProfilesTableModel::ColName, QHeaderView::Interactive);
-            header->resizeSection(ProfilesTableModel::ColName, name);
+            if (col != ProfilesTableModel::ColName && col != ProfilesTableModel::ColTestResult &&
+                col != ProfilesTableModel::ColTraffic && !header->isSectionHidden(col))
+                others += header->sectionSize(col);
+        int name;
+        if (simple) {
+            name = std::clamp(fit(ProfilesTableModel::ColName), 240, std::max(240, viewport - test - traffic));
+            traffic = std::max(traffic, viewport - name - test);
+        } else {
+            name = std::max(160, viewport - others - test - traffic);
         }
+        setWidth(ProfilesTableModel::ColTestResult, test);
+        setWidth(ProfilesTableModel::ColTraffic, traffic);
+        setWidth(ProfilesTableModel::ColName, name);
     }
 
     void applySimpleView(Ui::MainWindow *ui) {
+        using namespace Shadowlos::ChromeImpl;
         const bool simple = simpleViewOn();
         auto *table = ui->profilesTableView;
         for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress})
             table->setColumnHidden(col, simple);
         table->verticalHeader()->setVisible(!simple);
+        // The sheet sets a bigger font and a left indent on the rows in the simple view.
+        table->setProperty("slSimple", simple);
+        repolish(table);
+        repolish(table->horizontalHeader());
+        // Column titles over their values: the simple view's last column is wide.
+        table->horizontalHeader()->setDefaultAlignment(simple ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignCenter);
+        table->verticalHeader()->setDefaultSectionSize(simple ? 64 : 44);
         if (QWidget *panel = ui->splitter->widget(1)) panel->setVisible(!simple);
         fitColumns(ui);
     }
@@ -584,7 +617,27 @@ namespace Shadowlos::Chrome {
         QTimer m_timer;
     };
 
-    void installSimpleView(Ui::MainWindow *ui, QCheckBox *box) {
+    // The simple / full view switch sits in the tab corner, left of the filter button.
+    void installSimpleView(Ui::MainWindow *ui) {
+        using namespace Shadowlos::ChromeImpl;
+        auto *filter = ui->tabWidget->cornerWidget(Qt::TopRightCorner);
+        auto *corner = new QWidget(ui->tabWidget);
+        auto *layout = new QHBoxLayout(corner);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(12);
+        auto *box = new QCheckBox(translate("Simple view"), corner);
+        box->setChecked(simpleViewOn());
+        auto *row = makeToggleRow(corner, box);
+        row->setMinimumWidth(0);
+        layout->addWidget(row);
+        // setCornerWidget hides the widget it replaces, so re-show the filter in the new corner.
+        ui->tabWidget->setCornerWidget(corner, Qt::TopRightCorner);
+        if (filter != nullptr) {
+            layout->addWidget(filter);
+            filter->show();
+        }
+        corner->show();
+
         QObject::connect(box, &QCheckBox::toggled, box, [ui](bool checked) {
             auto *settings = Configs::dataManager->settingsRepo.get();
             settings->shadowlos_simple_view = checked ? 1 : 0;
@@ -593,6 +646,30 @@ namespace Shadowlos::Chrome {
         });
         new ColumnFitter(ui);
         applySimpleView(ui);
+    }
+
+    // Measures latency once at startup, as the "Measure latency" pill would, as soon as the
+    // core is up and the current group has servers (on a first run the subscription has to
+    // arrive first). Gives up after two minutes.
+    void installStartupLatencyTest(QMainWindow *window, Ui::MainWindow *ui) {
+        auto *timer = new QTimer(window);
+        timer->setInterval(1000);
+        auto tries = std::make_shared<int>(0);
+        QObject::connect(timer, &QTimer::timeout, window, [timer, ui, tries] {
+            if (++*tries > 120) {
+                timer->deleteLater();
+                return;
+            }
+            if (!Configs::dataManager->settingsRepo->core_running) return;
+            auto group = Configs::dataManager->groupsRepo->CurrentGroup();
+            if (group == nullptr || group->Profiles().isEmpty()) return;
+            if (!ui->actionUrl_Test_Group->isEnabled()) return;
+            timer->stop();
+            timer->deleteLater();
+            // A moment for the core to finish starting before it is asked to dial out.
+            QTimer::singleShot(1500, ui->actionUrl_Test_Group, &QAction::trigger);
+        });
+        timer->start();
     }
 
     void Install(QMainWindow *window, Ui::MainWindow *ui) {
@@ -689,19 +766,6 @@ namespace Shadowlos::Chrome {
         debugLayout->addWidget(ui->toolButton_debug);
         actionsRow->addWidget(debugCard);
 
-        // View card: the simple / full view switch, right of Debug.
-        auto *viewCard = makeCard(central, "slCard");
-        auto *viewLayout = new QVBoxLayout(viewCard);
-        viewLayout->setContentsMargins(16, 8, 16, 8);
-        auto *simpleBox = new QCheckBox(translate("Simple view"), viewCard);
-        simpleBox->setChecked(simpleViewOn());
-        auto *simpleRow = makeToggleRow(viewCard, simpleBox);
-        simpleRow->setMinimumWidth(0);
-        viewLayout->addStretch(1);
-        viewLayout->addWidget(simpleRow);
-        viewLayout->addStretch(1);
-        actionsRow->addWidget(viewCard);
-
         // Modes card: just the switches, sized to them. The status panel (speed tests,
         // restart notices) takes the rest of the row, outside any card.
         auto *modesCard = makeCard(central, "slCard");
@@ -725,9 +789,9 @@ namespace Shadowlos::Chrome {
         root->addLayout(actionsRow);
 
         // Everything on the row except the pills' labels: root margins, power card, row gaps,
-        // card margins, gaps between pills, the view card's switch, and the modes card's
-        // switches (sized for the long Russian label "Только браузеры (системный прокси)").
-        constexpr int kRowFixedWidth = 24 + 96 + 4 * 8 + 32 + 3 * 8 + 32 + (190 + 32) + (300 + 32);
+        // card margins, gaps between pills, and the modes card's switches (sized for the
+        // long Russian label "Только браузеры (системный прокси)").
+        constexpr int kRowFixedWidth = 24 + 96 + 3 * 8 + 32 + 3 * 8 + 32 + (300 + 32);
         new CompactPills(central,
                          {add, ui->toolButton_update_subs, speedtest, latency, ui->toolButton_debug},
                          kRowFixedWidth);
@@ -775,12 +839,10 @@ namespace Shadowlos::Chrome {
         QObject::connect(themeManager(), &ThemeManager::themeChanged, window, [] { applyCaptionToVisibleWindows(); });
 
         // After MainWindow's constructor, which sets these up later than this runs.
-        QTimer::singleShot(0, window, [window, ui, simpleBox] {
+        QTimer::singleShot(0, window, [window, ui] {
             // MainWindow sizes the start button to the menu buttons' height; the card wants 64.
             ui->toolButton_program->removeEventFilter(window);
             ui->toolButton_startstop->setFixedSize(64, 64);
-
-            ui->profilesTableView->verticalHeader()->setDefaultSectionSize(44);
 
             if (auto *filter = qobject_cast<QToolButton *>(ui->tabWidget->cornerWidget(Qt::TopRightCorner))) {
                 filter->setObjectName(QStringLiteral("slFilterButton"));
@@ -791,7 +853,8 @@ namespace Shadowlos::Chrome {
                 repolish(filter);
             }
 
-            installSimpleView(ui, simpleBox);
+            installSimpleView(ui);
+            installStartupLatencyTest(window, ui);
 
             applyCaptionToVisibleWindows();
         });

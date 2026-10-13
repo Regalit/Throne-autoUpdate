@@ -9696,5 +9696,9 @@ Remove that endpoint from this routing profile as well?</source>
         <source>Measure latency</source>
         <translation>Замерить время отклика</translation>
     </message>
+    <message>
+        <source>Simple view</source>
+        <translation>Упрощённый вид</translation>
+    </message>
 </context>
 </TS>

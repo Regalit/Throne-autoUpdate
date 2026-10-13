@@ -509,6 +509,52 @@ namespace Shadowlos::Chrome {
         return line;
     }
 
+    // ----------------------------------------------------------- simple view
+
+    // "Simple view" (the default) shows only what a user picks a server by: name, test
+    // result and traffic, without the logs/connections panel. The full view is upstream's.
+    void applySimpleView(Ui::MainWindow *ui, bool simple) {
+        auto *table = ui->profilesTableView;
+        auto *header = table->horizontalHeader();
+        for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress}) {
+            table->setColumnHidden(col, simple);
+            if (!simple && header->sectionSize(col) < 40) header->resizeSection(col, 140);
+        }
+        table->verticalHeader()->setVisible(!simple);
+        if (QWidget *panel = ui->splitter->widget(1)) panel->setVisible(!simple);
+    }
+
+    void installSimpleView(Ui::MainWindow *ui) {
+        auto *filter = ui->tabWidget->cornerWidget(Qt::TopRightCorner);
+        auto *corner = new QWidget(ui->tabWidget);
+        auto *layout = new QHBoxLayout(corner);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(12);
+
+        auto *box = new QCheckBox(translate("Simple view"), corner);
+        auto *settings = Configs::dataManager->settingsRepo.get();
+        box->setChecked(settings->shadowlos_simple_view != 0);
+        auto *row = makeToggleRow(corner, box);
+        row->setMinimumWidth(0);
+        layout->addWidget(row);
+
+        // setCornerWidget hides the widget it replaces, so re-show the filter in the new corner.
+        ui->tabWidget->setCornerWidget(corner, Qt::TopRightCorner);
+        if (filter != nullptr) {
+            layout->addWidget(filter);
+            filter->show();
+        }
+        corner->show();
+
+        QObject::connect(box, &QCheckBox::toggled, corner, [ui](bool checked) {
+            auto *settings = Configs::dataManager->settingsRepo.get();
+            settings->shadowlos_simple_view = checked ? 1 : 0;
+            settings->Save();
+            applySimpleView(ui, checked);
+        });
+        applySimpleView(ui, box->isChecked());
+    }
+
     void Install(QMainWindow *window, Ui::MainWindow *ui) {
         using namespace Shadowlos::ChromeImpl;
 
@@ -690,6 +736,8 @@ namespace Shadowlos::Chrome {
                 filter->setCursor(Qt::PointingHandCursor);
                 repolish(filter);
             }
+
+            installSimpleView(ui);
 
             applyCaptionToVisibleWindows();
         });

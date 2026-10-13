@@ -6,6 +6,7 @@
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -27,6 +28,7 @@
 namespace {
     enum class Glyph {
         Globe,
+        Plane,
         Chat,
         Hourglass,
         Warn,
@@ -53,6 +55,19 @@ namespace {
             p.drawLine(QPointF(1.2, 6.0), QPointF(10.8, 6.0));
             p.drawEllipse(QRectF(3.6, 1.0, 4.8, 10.0));
             break;
+        case Glyph::Plane: {
+            // Telegram's paper plane.
+            QPainterPath plane;
+            plane.moveTo(11.0, 1.4);
+            plane.lineTo(1.0, 5.6);
+            plane.lineTo(4.6, 7.0);
+            plane.lineTo(9.0, 3.4);
+            plane.lineTo(5.6, 7.6);
+            plane.lineTo(8.4, 10.6);
+            plane.closeSubpath();
+            p.drawPath(plane);
+            break;
+        }
         case Glyph::Chat: {
             QPainterPath path;
             path.addRoundedRect(QRectF(1.0, 1.2, 10.0, 7.2), 1.6, 1.6);
@@ -223,6 +238,14 @@ void SubscriptionInfoCard::setupUi() {
     m_titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     row->addWidget(m_titleLabel);
 
+    // Shadowlos fork: the plan sits first; everything else about the subscription is behind a click on it.
+    m_sepAnnounce = createDivider();
+    m_sepAnnounce->hide();
+    m_announceBadge = createBadge(QStringLiteral("subAnnounceBadge"), m_announceIcon, m_announceLabel);
+    m_announceBadge->setCursor(Qt::PointingHandCursor);
+    m_announceBadge->installEventFilter(this);
+    row->addWidget(m_announceBadge);
+
     m_sepQuota = createDivider();
     row->addWidget(m_sepQuota);
 
@@ -253,20 +276,12 @@ void SubscriptionInfoCard::setupUi() {
     m_intervalLabel->setProperty("colorRole", QStringLiteral("muted"));
     row->addWidget(m_intervalBadge);
 
-    m_sepAnnounce = createDivider();
-    row->addWidget(m_sepAnnounce);
-
-    m_announceBadge = createBadge(QStringLiteral("subAnnounceBadge"), m_announceIcon, m_announceLabel);
-    m_announceBadge->setCursor(Qt::PointingHandCursor);
-    m_announceBadge->installEventFilter(this);
-    row->addWidget(m_announceBadge);
-
     row->addStretch(1);
 
     m_sepActions = createDivider();
     row->addWidget(m_sepActions);
 
-    m_btnPortal = createLink(tr("Portal"));
+    m_btnPortal = createLink(tr("Telegram app"));
     connect(m_btnPortal, &QPushButton::clicked, this, [this] { QDesktopServices::openUrl(m_webUrl); });
     row->addWidget(m_btnPortal);
 
@@ -308,7 +323,7 @@ void SubscriptionInfoCard::setLinksCompact(bool compact) {
             btn->setMaximumSize(QWIDGETSIZE_MAX, m_chipHeight);
         }
     };
-    apply(m_btnPortal, tr("Portal"));
+    apply(m_btnPortal, tr("Telegram app"));
     apply(m_btnSupport, tr("Support"));
 }
 
@@ -327,6 +342,47 @@ QString SubscriptionInfoCard::expiryText(qint64 expire) {
     if (left < 86400)
         return tr("%1h left").arg(left / 3600);
     return tr("%1d left").arg(left / 86400);
+}
+
+QString SubscriptionInfoCard::intervalText(qint64 seconds) {
+    if (seconds > 0 && seconds % 86400 == 0)
+        return seconds == 86400 ? tr("Updated daily") : tr("Updated every %1 d").arg(seconds / 86400);
+    if (seconds > 0 && seconds % 3600 == 0)
+        return seconds == 3600 ? tr("Updated hourly") : tr("Updated every %1 h").arg(seconds / 3600);
+    return tr("Updated every %1 min").arg(std::max<qint64>(1, seconds / 60));
+}
+
+// Shadowlos fork: the strip shows only the plan. Our announcement opens with a
+// "Текущий план" heading followed by the plan; anyone else's shows its first line.
+QString SubscriptionInfoCard::planLine(const QString &announce) {
+    QStringList lines;
+    for (const QString &line : announce.split(QLatin1Char('\n'))) {
+        const QString trimmed = line.trimmed();
+        if (!trimmed.isEmpty()) lines << trimmed;
+    }
+    for (int i = 0; i + 1 < lines.size(); ++i) {
+        if (lines[i].contains(QStringLiteral("Текущий план")))
+            return lines[i + 1];
+    }
+    return lines.isEmpty() ? QString() : lines.first();
+}
+
+void SubscriptionInfoCard::showDetails() {
+    const auto &sub = m_group->sub_info;
+    QStringList text;
+    const QString announce = sub.announce.trimmed();
+    if (!m_fullAnnounce.isEmpty())
+        text << announce;
+    if (sub.has_quota)
+        text << tr("Traffic: %1").arg(m_quotaLabel->text());
+    if (sub.expire > 0)
+        text << tr("Subscription until %1").arg(QDateTime::fromSecsSinceEpoch(sub.expire).toString(QStringLiteral("dd.MM.yyyy")));
+    const auto plan = Subscription::ResolveAutoUpdate(*m_group);
+    if (plan.interval > 0)
+        text << intervalText(plan.interval);
+    if (m_group->sub_last_update > 0)
+        text << tr("Last updated: %1").arg(DisplayTime(m_group->sub_last_update, QLocale::ShortFormat));
+    QMessageBox::information(GetMessageBoxParent(), m_group->name, text.join(QStringLiteral("\n\n")));
 }
 
 void SubscriptionInfoCard::setGroup(const std::shared_ptr<Configs::Group> &group) {
@@ -357,10 +413,10 @@ void SubscriptionInfoCard::changeEvent(QEvent *event) {
 }
 
 bool SubscriptionInfoCard::eventFilter(QObject *watched, QEvent *event) {
-    if (watched == m_announceBadge && event->type() == QEvent::MouseButtonRelease && m_group && !m_fullAnnounce.isEmpty()) {
+    if (watched == m_announceBadge && event->type() == QEvent::MouseButtonRelease && m_group) {
         const auto *me = static_cast<QMouseEvent *>(event);
         if (me->button() == Qt::LeftButton && m_announceBadge->rect().contains(me->position().toPoint())) {
-            MessageBoxScrollable(tr("Announcement - %1").arg(m_group->name), m_group->sub_info.announce.trimmed());
+            showDetails();
             return true;
         }
     }
@@ -398,10 +454,10 @@ void SubscriptionInfoCard::updateAnnouncementLayout() {
 
     for (QWidget *w : std::initializer_list<QWidget *>{m_sepQuota, m_progressBar, m_quotaLabel})
         w->setVisible(sub.has_quota);
-    m_sepExpiry->setVisible(sub.expire > 0);
-    m_expiryBadge->setVisible(sub.expire > 0);
-    for (QWidget *w : {m_sepInterval, m_intervalBadge, m_sepAnnounce, m_announceBadge})
+    // Shadowlos fork: expiry and update interval live in the details dialog, not on the strip.
+    for (QWidget *w : {m_sepExpiry, m_expiryBadge, m_sepInterval, m_intervalBadge, m_sepAnnounce, m_announceBadge})
         w->hide();
+    m_titleLabel->setVisible(m_fullAnnounce.isEmpty());
     m_btnPortal->setVisible(!m_webUrl.isEmpty());
     m_btnSupport->setVisible(!m_supportUrl.isEmpty());
     m_sepActions->setVisible(!m_webUrl.isEmpty() || !m_supportUrl.isEmpty());
@@ -417,7 +473,7 @@ void SubscriptionInfoCard::updateAnnouncementLayout() {
         elideTitle(std::max(avgChar * 6, m_titleLabel->sizeHint().width() - overflow));
         overflow = requiredWidth() - width();
     }
-    const QList<QList<QWidget *>> dropOrder{{m_progressBar}, {m_sepQuota, m_quotaLabel}, {m_sepExpiry, m_expiryBadge}, {m_sepActions, m_btnPortal, m_btnSupport}};
+    const QList<QList<QWidget *>> dropOrder{{m_progressBar}, {m_sepQuota, m_quotaLabel}, {m_sepActions, m_btnPortal, m_btnSupport}};
     for (const auto &widgets : dropOrder) {
         if (overflow <= 0)
             break;
@@ -428,18 +484,8 @@ void SubscriptionInfoCard::updateAnnouncementLayout() {
     if (overflow > 0)
         elideTitle(std::max(0, m_titleLabel->sizeHint().width() - overflow));
 
-    if (m_hasInterval) {
-        m_sepInterval->show();
-        m_intervalBadge->show();
-        if (requiredWidth() + avgChar * 10 > width()) {
-            m_sepInterval->hide();
-            m_intervalBadge->hide();
-        }
-    }
-
     if (!m_fullAnnounce.isEmpty()) {
         m_announceLabel->setText(m_fullAnnounce);
-        m_sepAnnounce->show();
         m_announceBadge->show();
         overflow = requiredWidth() - width();
         if (overflow > 0) {
@@ -447,8 +493,8 @@ void SubscriptionInfoCard::updateAnnouncementLayout() {
             const QFontMetrics fm = m_announceLabel->fontMetrics();
             const int textWidth = m_announceLabel->sizeHint().width() - overflow;
             if (textWidth < avgChar * 4) {
-                m_sepAnnounce->hide();
                 m_announceBadge->hide();
+                m_titleLabel->show();
             } else {
                 m_announceLabel->setText(fm.elidedText(m_fullAnnounce, Qt::ElideRight, textWidth));
             }
@@ -516,20 +562,20 @@ void SubscriptionInfoCard::updateData() {
         }
         if (plan.source != Subscription::AutoUpdatePlan::Source::server && sub.server_interval > 0)
             tip << tr("Server suggests every %n hour(s)", nullptr, sub.server_interval);
-        m_intervalLabel->setText(tr("Every %1").arg(Stats::HumanizeDuration(plan.interval)));
+        m_intervalLabel->setText(intervalText(plan.interval));
         m_intervalBadge->setToolTip(Qt::convertFromPlainText(tip.join(QLatin1Char('\n'))));
         m_intervalIcon->setPixmap(renderGlyph(Glyph::Sync, tk.muted, m_iconSize));
     }
 
     m_webUrl = linkUrl(sub.web_url, false);
     m_supportUrl = linkUrl(sub.support_url, true);
-    m_btnPortal->setToolTip(Qt::convertFromPlainText(tr("Website / Portal: %1").arg(sub.web_url.trimmed())));
+    m_btnPortal->setToolTip(Qt::convertFromPlainText(tr("Telegram app: %1").arg(sub.web_url.trimmed())));
     m_btnSupport->setToolTip(Qt::convertFromPlainText(tr("Technical Support: %1").arg(sub.support_url.trimmed())));
 
     const QString announce = sub.announce.trimmed();
     if (!announce.isEmpty() && announce.compare(QLatin1String("base64:"), Qt::CaseInsensitive) != 0) {
-        m_fullAnnounce = announce.simplified();
-        m_announceBadge->setToolTip(Qt::convertFromPlainText(announce, Qt::WhiteSpaceNormal));
+        m_fullAnnounce = planLine(announce);
+        m_announceBadge->setToolTip(tr("Subscription details"));
     } else {
         m_fullAnnounce.clear();
     }
@@ -574,6 +620,6 @@ void SubscriptionInfoCard::applyTheme() {
         setStyleSheet(sheet);
 
     m_announceIcon->setPixmap(renderGlyph(Glyph::Info, tk.accent, m_iconSize));
-    m_btnPortal->setIcon(QIcon(renderGlyph(Glyph::Globe, tk.onSurface, m_iconSize)));
+    m_btnPortal->setIcon(QIcon(renderGlyph(Glyph::Plane, tk.onSurface, m_iconSize)));
     m_btnSupport->setIcon(QIcon(renderGlyph(Glyph::Chat, tk.onSurface, m_iconSize)));
 }

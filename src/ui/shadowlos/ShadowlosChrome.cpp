@@ -625,8 +625,9 @@ namespace Shadowlos::Chrome {
         root->addLayout(actionsRow);
 
         // Everything on the row except the pills' labels: root margins, power card, row gaps,
-        // card margins, gaps between pills, and the modes card's switches.
-        constexpr int kRowFixedWidth = 24 + 96 + 3 * 8 + 32 + 3 * 8 + 32 + (180 + 32 + 16);
+        // card margins, gaps between pills, and the modes card's switches (sized for the long
+        // Russian labels, "Только браузеры (системный прокси)").
+        constexpr int kRowFixedWidth = 24 + 96 + 3 * 8 + 32 + 3 * 8 + 32 + (300 + 32 + 16);
         new CompactPills(central,
                          {add, ui->toolButton_update_subs, speedtest, latency, ui->toolButton_debug},
                          kRowFixedWidth);

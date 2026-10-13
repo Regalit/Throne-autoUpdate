@@ -109,7 +109,9 @@ namespace Configs
     // sing-box duration grammar: one or more "<number><unit>" with unit ns/us/ms/s/m/h/d.
     bool IsValidDuration(const QString &text);
 
-    std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile> &ent);
+    // directDnsOverride replaces the direct DNS setting for this build only; it is not saved.
+    std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile> &ent,
+                                                          const QString &directDnsOverride = {});
 
     // coreUnreachable is set when a false came from a failed core call rather than from the config.
     bool IsValid(const std::shared_ptr<Profile> &ent, bool *coreUnreachable = nullptr);

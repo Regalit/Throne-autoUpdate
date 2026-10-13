@@ -189,6 +189,7 @@ namespace Configs {
             std::shared_ptr<Profile> ent = std::make_shared<Profile>(nullptr, nullptr);
             BuildPrerequisites prerequisites;
             osType os = getOS();
+            QString directDnsOverride;
 
             QString error;
             QJsonArray outbounds;
@@ -936,7 +937,7 @@ namespace Configs {
                 }
             }
 
-            auto directDnsObj = buildDnsObj(ctx, settings.direct_dns);
+            auto directDnsObj = buildDnsObj(ctx, ctx.directDnsOverride.isEmpty() ? settings.direct_dns : ctx.directDnsOverride);
             directDnsObj["tag"] = tags::dnsDirect;
             directDnsObj["domain_resolver"] = tags::dnsLocal;
             servers.append(directDnsObj);
@@ -2340,7 +2341,7 @@ namespace Configs {
         return re.match(text).hasMatch();
     }
 
-    std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile>& ent) {
+    std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile>& ent, const QString &directDnsOverride) {
         if (ent->type == "custom")
         {
             auto res = std::make_shared<BuildConfigResult>();
@@ -2376,6 +2377,7 @@ namespace Configs {
 
         BuildContext ctx;
         ctx.ent = ent;
+        ctx.directDnsOverride = directDnsOverride;
         ctx.result->involvedProfiles = {ent->id};
         buildProfileSink = &ctx.result->involvedProfiles;
         const auto clearProfileSink = qScopeGuard([] { buildProfileSink = nullptr; });

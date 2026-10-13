@@ -597,7 +597,6 @@ namespace Shadowlos::Chrome {
         auto *table = ui->profilesTableView;
         for (int col : {ProfilesTableModel::ColType, ProfilesTableModel::ColAddress})
             table->setColumnHidden(col, simple);
-        table->verticalHeader()->setVisible(!simple);
         // The sheet sets a bigger font and a left indent on the rows in the simple view.
         table->setProperty("slSimple", simple);
         repolish(table);

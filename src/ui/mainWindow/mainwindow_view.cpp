@@ -193,7 +193,7 @@ void MainWindow::refresh_status(const QString &traffic_update) {
     }
 
     const auto route = Configs::dataManager->routesRepo->GetRouteProfile(settings->current_route_id);
-    const QString activeRouteName = (route && route->name != "Default") ? route->name : "";
+    const QString activeRouteName = (route && route->name != Configs::RouteProfile::DefaultChainName()) ? route->name : "";
 
     auto make_title = [=,this](bool isTray) {
         QStringList tt;

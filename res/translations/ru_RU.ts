@@ -7350,6 +7350,10 @@ Error: %1</source>
         <translation>Тест профиля прерван</translation>
     </message>
     <message>
+        <source>Server picked automatically: %1 (%2 ms)</source>
+        <translation>Сервер выбран автоматически: %1 (%2 мс)</translation>
+    </message>
+    <message>
         <source>Something is very wrong, the subject ent cannot be found!</source>
         <translation>Что-то явно не так, объект ent не может быть найден!</translation>
     </message>

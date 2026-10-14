@@ -203,7 +203,7 @@ void TestRunner::runUrlProbe(const Target& target) {
             runOnUiThread([=, this] { mw_->refresh_proxy_list(updated); });
         }, kLatencyPollIntervalMs);
 
-        result = defaultClient->Test(&rpcOK, req, &coreError, batchRpcTimeoutMs(target.outboundTags.size(), 2));
+        result = defaultClient->Test(&rpcOK, req, &coreError, batchRpcTimeoutMs(target.outboundTags.size(), 3));
     }
 
     if (!rpcOK || result.results.empty()) {

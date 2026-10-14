@@ -869,16 +869,15 @@ namespace Shadowlos::Chrome {
         actionsLayout->addWidget(latency);
         actionsRow->addWidget(actionsCard);
 
-        // Debug card.
-        auto *debugCard = makeCard(central, "slCard");
-        auto *debugLayout = new QHBoxLayout(debugCard);
-        debugLayout->setContentsMargins(16, 8, 16, 8);
+        // Debug is rarely used, so it lives in the Tools menu instead of the row.
         ui->horizontalLayout_2->removeWidget(ui->toolButton_debug);
-        stylePill(ui->toolButton_debug, "debug");
-        debugLayout->addWidget(ui->toolButton_debug);
-        actionsRow->addWidget(debugCard);
+        ui->toolButton_debug->hide();
+        auto *debugAction = new QAction(ui->toolButton_debug->text(), ui->menuTools);
+        QObject::connect(debugAction, &QAction::triggered, ui->toolButton_debug, &QToolButton::click);
+        ui->menuTools->addSeparator();
+        ui->menuTools->addAction(debugAction);
 
-        // View card: the simple / full view switch, right of Debug.
+        // View card: the simple / full view switch, right of the actions.
         auto *viewCard = makeCard(central, "slCard");
         auto *viewLayout = new QVBoxLayout(viewCard);
         viewLayout->setContentsMargins(16, 8, 16, 8);
@@ -914,11 +913,11 @@ namespace Shadowlos::Chrome {
         root->addLayout(actionsRow);
 
         // Besides the pills' labels and the cards measured live (power, view, modes): root
-        // margins, gaps between the six row items, the actions and debug cards' margins,
-        // and the gaps between the actions card's pills.
-        constexpr int kRowFixedWidth = 24 + 5 * 8 + 32 + 32 + 3 * 8;
+        // margins, gaps between the five row items, the actions card's margins, and the gaps
+        // between its pills.
+        constexpr int kRowFixedWidth = 24 + 4 * 8 + 32 + 3 * 8;
         new CompactPills(central,
-                         {add, ui->toolButton_update_subs, speedtest, latency, ui->toolButton_debug},
+                         {add, ui->toolButton_update_subs, speedtest, latency},
                          {powerCard, viewCard, modesCard}, kRowFixedWidth);
 
         // Profile tabs over the Logs / Connections / Graph tabs, as before.

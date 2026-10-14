@@ -64,6 +64,35 @@ namespace Shadowlos {
             settings->Save();
         }
 
+        // The managed «Удобный» profile: Russian sites direct, everything else through the VPN.
+        const QString ComfyRouteName = QStringLiteral("Удобный");
+
+        // Three seconds was too little on slow lines: a working server read as down. Existing
+        // installs still carry the old default, so it is raised once; a user's own value stays.
+        void applyTestDefaults() {
+            constexpr int kTestRevision = 1;
+            auto* settings = Configs::dataManager->settingsRepo.get();
+            if (settings->shadowlos_test_revision >= kTestRevision) return;
+            if (settings->url_test_timeout_ms == 3000) settings->url_test_timeout_ms = 8000;
+            settings->shadowlos_test_revision = kTestRevision;
+            settings->Save();
+        }
+
+        // Installs made before the rename still carry the old names ("Default" from upstream,
+        // "Shadowlos" from the archive); they get the names new installs get.
+        void renameRoutes() {
+            const int managedId = Configs::dataManager->settingsRepo->shadowlos_managed_route;
+            for (const auto& profile : Configs::dataManager->routesRepo->GetAllRouteProfiles()) {
+                if (profile == nullptr) continue;
+                QString name;
+                if (profile->name == QStringLiteral("Default")) name = Configs::RouteProfile::DefaultChainName();
+                else if (profile->id == managedId && profile->name == QStringLiteral("Shadowlos")) name = ComfyRouteName;
+                if (name.isEmpty()) continue;
+                profile->name = name;
+                Configs::dataManager->routesRepo->Save(profile);
+            }
+        }
+
         QList<QString> stringList(const QJsonValue& value) {
             QList<QString> out;
             for (const auto& item : value.toArray()) {
@@ -143,9 +172,8 @@ namespace Shadowlos {
             }
 
             auto profile = existing != nullptr ? existing : Configs::RoutesRepo::NewRouteProfile();
-            profile->name = routing.value("name").toString().trimmed().isEmpty()
-                                ? QStringLiteral("Shadowlos")
-                                : routing.value("name").toString().trimmed();
+            // Named for what it does, not after the brand the server labels it with.
+            profile->name = ComfyRouteName;
             profile->defaultOutboundID = Configs::stringToOutboundID(
                 routing.value("default_outbound").toString());
             if (remote) {
@@ -179,6 +207,8 @@ namespace Shadowlos {
 
     void ApplyBootstrap() {
         applyUiDefaults();
+        renameRoutes();
+        applyTestDefaults();
 
         QFile file(QDir::current().filePath(BootstrapFileName));
         if (!file.exists()) return; // plain upstream build, nothing to do

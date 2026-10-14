@@ -30,9 +30,14 @@ func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string,
 			}
 			client, closeClient := outboundHTTPClient(ctx, outbound)
 			defer closeClient()
-			duration, err := urlTest(ctx, client, url, firstRequestTimeout(i, tag, twice, timeout))
+			// Shadowlos: one slow or unlucky first request no longer marks a working server down.
+			targets := testTargets(url)
+			duration, err := raceURLTest(ctx, client, targets, firstRequestTimeout(i, tag, twice, timeout))
+			if err != nil && ctx.Err() == nil {
+				duration, err = raceURLTest(ctx, client, targets, timeout)
+			}
 			if err == nil && twice {
-				duration, err = urlTest(ctx, client, url, timeout)
+				duration, err = raceURLTest(ctx, client, targets, timeout)
 			}
 			return &URLTestResult{Duration: duration, Tag: tag, Error: err}
 		},
@@ -43,6 +48,53 @@ func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string,
 	})
 	URLReporter.Reclaim(results)
 	return results
+}
+
+// Shadowlos: besides the configured URL, two more targets answer the same probe, so one
+// endpoint being slow or filtered does not mark a working server down.
+var fallbackTestURLs = []string{
+	"https://www.gstatic.com/generate_204",
+	"https://www.youtube.com/generate_204",
+}
+
+func testTargets(url string) []string {
+	targets := []string{url}
+	for _, u := range fallbackTestURLs {
+		if u != url {
+			targets = append(targets, u)
+		}
+	}
+	return targets
+}
+
+// raceURLTest asks every target at once through the same client and reports the first answer;
+// it fails only when all of them do, with the configured URL's error.
+func raceURLTest(ctx context.Context, client *http.Client, urls []string, timeout time.Duration) (time.Duration, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type result struct {
+		idx      int
+		duration time.Duration
+		err      error
+	}
+	results := make(chan result, len(urls))
+	for idx, u := range urls {
+		go func() {
+			d, err := urlTest(ctx, client, u, timeout)
+			results <- result{idx, d, err}
+		}()
+	}
+	var firstErr error
+	for range urls {
+		r := <-results
+		if r.err == nil {
+			return r.duration, nil
+		}
+		if r.idx == 0 || firstErr == nil {
+			firstErr = r.err
+		}
+	}
+	return 0, firstErr
 }
 
 func urlTest(ctx context.Context, client *http.Client, url string, timeout time.Duration) (time.Duration, error) {

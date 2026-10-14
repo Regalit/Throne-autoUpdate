@@ -65,6 +65,9 @@ namespace Configs {
         static QList<int> CollectRawOutboundIds(const QJsonObject& route);
         static QJsonObject TranslateRawOutbounds(const QJsonObject& route, const std::map<int, QString>& outboundMap);
 
+        // Shadowlos: the built-in profile's name. Its only rule hijacks DNS and everything else
+        // takes the default outbound, the proxy, so it sends all traffic through the VPN.
+        static QString DefaultChainName();
         static std::shared_ptr<RouteProfile> GetDefaultChain();
 
         // The positional placeholder paired with an endpoint, correlated by type + outboundID.

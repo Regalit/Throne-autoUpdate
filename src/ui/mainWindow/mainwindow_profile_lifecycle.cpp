@@ -67,12 +67,44 @@ bool MainWindow::set_system_dns(bool set, bool save_set) {
     return true;
 }
 
+namespace {
+    // Shadowlos: a Russian exit is no use for a VPN that exists to get around Russian blocks.
+    bool isRussianExit(const std::shared_ptr<Configs::Profile>& ent) {
+        if (ent->test_country.compare(QStringLiteral("RU"), Qt::CaseInsensitive) == 0) return true;
+        const QString name = ent->outbound ? ent->outbound->name : QString();
+        static const QRegularExpression ru(QStringLiteral("Росси|Russia|\\bRU\\b|🇷🇺"),
+                                           QRegularExpression::CaseInsensitiveOption);
+        return ru.match(name).hasMatch();
+    }
+
+    // Shadowlos: with nothing picked, start goes to the fastest server of the last latency test.
+    // The server started last stays while it is within 30% of the best, so equal servers do not
+    // flip the user between countries on every start. -1 when no test has a working result.
+    int bestProfileToStart(int lastId) {
+        const auto group = Configs::dataManager->groupsRepo->CurrentGroup();
+        if (!group) return -1;
+        std::shared_ptr<Configs::Profile> best, last;
+        for (const int id : group->Profiles()) {
+            const auto ent = Configs::dataManager->profilesRepo->GetProfile(id);
+            if (ent == nullptr || ent->latency <= 0 || isRussianExit(ent)) continue;
+            if (id == lastId) last = ent;
+            if (best == nullptr || ent->latency < best->latency) best = ent;
+        }
+        if (best == nullptr) return -1;
+        if (last != nullptr && last->latency <= best->latency * 13 / 10) return last->id;
+        return best->id;
+    }
+}
+
 int MainWindow::get_profile_to_start() {
     const auto ents = get_now_selected_list();
     if (ents.size() == 1) {
         return ents.first();
     }
     if (ents.isEmpty()) {
+        const int lastId = last_running_profile_id >= 0 ? last_running_profile_id
+                                                        : Configs::dataManager->settingsRepo->remember_id;
+        if (const int best = bestProfileToStart(lastId); best >= 0) return best;
         if (last_running_profile_id >= 0 && Configs::dataManager->profilesRepo->GetProfile(last_running_profile_id) != nullptr) {
             return last_running_profile_id;
         }
@@ -204,6 +236,9 @@ void MainWindow::profile_start(int _id) {
         const int startId = get_profile_to_start();
         if (startId >= 0) {
             ent = Configs::dataManager->profilesRepo->GetProfile(startId);
+            if (ent != nullptr && ent->latency > 0 && get_now_selected_list().isEmpty()) {
+                MW_show_log(tr("Server picked automatically: %1 (%2 ms)").arg(ent->outbound->name).arg(ent->latency));
+            }
         }
     }
     if (ent == nullptr) return;

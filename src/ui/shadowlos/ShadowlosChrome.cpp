@@ -26,6 +26,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
+#include <QConicalGradient>
 #include <QLinearGradient>
 #include <QMainWindow>
 #include <QMenu>
@@ -43,6 +44,8 @@
 #include <algorithm>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
+#include <QEasingCurve>
 #ifdef Q_OS_WIN
 #include <QLibrary>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
@@ -153,13 +156,20 @@ namespace Shadowlos::ChromeImpl {
     // ---------------------------------------------------------- power button
 
     // The design's connect button: a ring and a disc, green while ready to connect and blue
-    // while connected. Takes over
-    // StartStopButton's painting only; state, tooltips and animations stay the base class's.
+    // while connected, cross-fading between the two. Takes over StartStopButton's painting
+    // only; state, tooltips and animations stay the base class's.
     class PowerButton final : public StartStopButton {
     public:
         explicit PowerButton(QWidget *parent) : StartStopButton(parent) {
             setAttribute(Qt::WA_Hover, true);
             setFixedSize(64, 64);
+            m_tintAnim = new QVariantAnimation(this);
+            m_tintAnim->setDuration(1000);
+            m_tintAnim->setEasingCurve(QEasingCurve::InOutSine);
+            QObject::connect(m_tintAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
+                m_tint = v.toReal();
+                update();
+            });
         }
 
         QSize sizeHint() const override { return {64, 64}; }
@@ -182,7 +192,31 @@ namespace Shadowlos::ChromeImpl {
             const State st = state();
             const bool running = st == State::Running;
             const bool busy = st == State::Connecting || st == State::Disconnecting;
+            const bool disabled = st == State::Disabled;
             const bool hovered = underMouse() && isEnabled();
+
+            // 0 = green (ready to connect), 1 = blue (connected). Connecting already heads
+            // for blue and disconnecting for green, so the colour moves with the spinner.
+            const qreal target = running || st == State::Connecting ? 1.0 : 0.0;
+            if (target != m_tintTarget) {
+                const bool first = m_tintTarget < 0;
+                m_tintTarget = target;
+                m_tintAnim->stop();
+                if (first) {
+                    m_tint = target;
+                } else {
+                    m_tintAnim->setStartValue(m_tint);
+                    m_tintAnim->setEndValue(target);
+                    m_tintAnim->start();
+                }
+            }
+            const qreal t = m_tint;
+            const auto mix = [t](quint32 green, quint32 blue) {
+                const QColor a = hex(green), b = hex(blue);
+                return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * t,
+                                        a.greenF() + (b.greenF() - a.greenF()) * t,
+                                        a.blueF() + (b.blueF() - a.blueF()) * t);
+            };
 
             const qreal side = qMin(width(), height()) - 2.0;
             const QPointF c = QRectF(rect()).center();
@@ -195,17 +229,16 @@ namespace Shadowlos::ChromeImpl {
             // Ring: 64px in the design, 1.33px accent outline.
             const QRectF outer(c.x() - side / 2, c.y() - side / 2, side, side);
             QLinearGradient ring(outer.topLeft(), outer.bottomLeft());
-            ring.setColorAt(0, running ? hex(0x0072CC) : hex(0x111517));
-            ring.setColorAt(1, running ? hex(0x1A374D) : hex(0x1A2023));
-            // Stopped and ready, the button is green so it reads as the one thing to press.
-            const bool ready = !running && !busy && st != State::Disabled;
-            if (ready) {
-                ring.setColorAt(0, hex(0x2E6B1F));
-                ring.setColorAt(1, hex(0x1F4A16));
+            QColor outline;
+            if (disabled) {
+                ring.setColorAt(0, hex(0x111517));
+                ring.setColorAt(1, hex(0x1A2023));
+                outline = hex(0x2E3438);
+            } else {
+                ring.setColorAt(0, mix(0x2E6B1F, 0x0072CC));
+                ring.setColorAt(1, mix(0x1F4A16, 0x1A374D));
+                outline = hovered ? mix(0xA6E88A, 0x66BBFF) : mix(0x86D75E, 0x33A5FF);
             }
-            QColor outline = running || hovered ? hex(0x33A5FF) : hex(0x2E3438);
-            if (ready) outline = hovered ? hex(0xA6E88A) : hex(0x86D75E);
-            else if (!running && hovered) outline.setAlphaF(0.6);
             p.setPen(QPen(outline, 1.33));
             p.setBrush(ring);
             p.drawEllipse(outer.adjusted(0.67, 0.67, -0.67, -0.67));
@@ -214,26 +247,38 @@ namespace Shadowlos::ChromeImpl {
             const qreal inset = side * 3.5 / 64.0;
             const QRectF inner = outer.adjusted(inset, inset, -inset, -inset);
             QLinearGradient disc(inner.topLeft(), inner.bottomLeft());
-            disc.setColorAt(0, running ? hex(0x33A5FF) : ready ? hex(0x86D75E) : hex(0x0B0D0F));
-            disc.setColorAt(1, running ? hex(0x008FFF) : ready ? hex(0x5DB83A) : hex(0x111517));
+            disc.setColorAt(0, disabled ? hex(0x0B0D0F) : mix(0x86D75E, 0x33A5FF));
+            disc.setColorAt(1, disabled ? hex(0x111517) : mix(0x5DB83A, 0x008FFF));
             p.setPen(Qt::NoPen);
             p.setBrush(disc);
             p.drawEllipse(inner);
 
             if (busy) {
-                QPen arc(hex(0x33A5FF), qMax(2.0, side * 0.045));
+                // A comet: a bright head running clockwise and a tail that fades out behind it.
+                constexpr qreal kSpan = 270.0;
+                const qreal head = -spin() - kSpan; // the arc's clockwise end leads
+                QConicalGradient comet(c, head);
+                QColor tail(Qt::white);
+                tail.setAlphaF(0.0);
+                // Alpha falls off along an ease-out curve, so the tail has no visible edge.
+                for (int i = 0; i <= 8; ++i) {
+                    const qreal k = i / 8.0;
+                    QColor stop(Qt::white);
+                    stop.setAlphaF((1.0 - k) * (1.0 - k));
+                    comet.setColorAt(k * kSpan / 360.0, stop);
+                }
+                comet.setColorAt(0.97, tail);
+                comet.setColorAt(1.0, Qt::white); // the head's round cap
+                QPen arc(QBrush(comet), qMax(2.0, side * 0.045));
                 arc.setCapStyle(Qt::RoundCap);
                 p.setPen(arc);
                 p.setBrush(Qt::NoBrush);
                 const qreal a = arc.widthF() / 2 + 0.5;
-                p.drawArc(outer.adjusted(a, a, -a, -a), static_cast<int>(-spin() * 16), -100 * 16);
+                p.drawArc(outer.adjusted(a, a, -a, -a), static_cast<int>(-spin() * 16),
+                          static_cast<int>(-kSpan * 16));
             }
 
-            QColor glyph;
-            if (running) glyph = Qt::white;
-            else if (busy) glyph = hex(0x33A5FF);
-            else if (st == State::Disabled) glyph = hex(0x474D53);
-            else glyph = Qt::white;
+            const QColor glyph = disabled ? hex(0x474D53) : QColor(Qt::white);
 
             // Power symbol, 28px in the design: an open ring with a stroke through the gap.
             const qreal g = side * 28.0 / 64.0;
@@ -245,6 +290,11 @@ namespace Shadowlos::ChromeImpl {
             p.drawArc(QRectF(c.x() - r, c.y() - r + g * 0.05, 2 * r, 2 * r), (90 + 38) * 16, (360 - 76) * 16);
             p.drawLine(QPointF(c.x(), c.y() - g * 0.42), QPointF(c.x(), c.y() - g * 0.02));
         }
+
+    private:
+        QVariantAnimation *m_tintAnim = nullptr;
+        qreal m_tint = 0.0;
+        qreal m_tintTarget = -1.0;
     };
 
     // --------------------------------------------------------- profile table

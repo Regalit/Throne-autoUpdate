@@ -26,6 +26,7 @@
 #include <QHeaderView>
 #include <QIcon>
 #include <QLabel>
+#include <QConicalGradient>
 #include <QLinearGradient>
 #include <QMainWindow>
 #include <QMenu>
@@ -253,12 +254,23 @@ namespace Shadowlos::ChromeImpl {
             p.drawEllipse(inner);
 
             if (busy) {
-                QPen arc(Qt::white, qMax(2.0, side * 0.045));
+                // A comet: a bright head running clockwise and a tail that fades out behind it.
+                constexpr qreal kSpan = 270.0;
+                const qreal head = -spin() - kSpan; // the arc's clockwise end leads
+                QConicalGradient comet(c, head);
+                QColor tail(Qt::white);
+                tail.setAlphaF(0.0);
+                comet.setColorAt(0.0, Qt::white);
+                comet.setColorAt(kSpan / 360.0, tail);
+                comet.setColorAt(0.97, tail);
+                comet.setColorAt(1.0, Qt::white); // the head's round cap
+                QPen arc(QBrush(comet), qMax(2.0, side * 0.045));
                 arc.setCapStyle(Qt::RoundCap);
                 p.setPen(arc);
                 p.setBrush(Qt::NoBrush);
                 const qreal a = arc.widthF() / 2 + 0.5;
-                p.drawArc(outer.adjusted(a, a, -a, -a), static_cast<int>(-spin() * 16), -100 * 16);
+                p.drawArc(outer.adjusted(a, a, -a, -a), static_cast<int>(-spin() * 16),
+                          static_cast<int>(-kSpan * 16));
             }
 
             const QColor glyph = disabled ? hex(0x474D53) : QColor(Qt::white);

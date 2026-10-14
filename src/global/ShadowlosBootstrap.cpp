@@ -159,6 +159,19 @@ namespace Shadowlos {
             if (remote && settings->route_auto_update < 30) {
                 settings->route_auto_update = 1440; // minutes; negative or < 30 means off
             }
+            // Copies of «Удобный» made before «Клонировать» dropped the link still
+            // follow its URL, so the daily refresh wipes the rules the user added.
+            // Make them the user's own, as a new copy is.
+            const QString managedUrl = existing != nullptr ? existing->remoteURL : QString();
+            for (const auto& other : Configs::dataManager->routesRepo->GetAllRouteProfiles()) {
+                if (other == nullptr || other->id == managedId || !other->isRemote) continue;
+                if (other->remoteURL.isEmpty() || (other->remoteURL != remoteUrl && other->remoteURL != managedUrl)) continue;
+                other->isRemote = false;
+                other->remoteURL.clear();
+                other->autoUpdate = false;
+                other->remoteLastUpdate = 0;
+                Configs::dataManager->routesRepo->Save(other);
+            }
             if (existing != nullptr && settings->shadowlos_routing_revision >= revision) {
                 // Already installed and unchanged; leave the user's edits alone.
                 if (remote && (!existing->isRemote || existing->remoteURL != remoteUrl || !existing->autoUpdate)) {
@@ -200,8 +213,13 @@ namespace Shadowlos {
 
             settings->shadowlos_managed_route = profile->id;
             settings->shadowlos_routing_revision = revision;
-            settings->current_route_id = profile->id;
-            settings->active_routing = profile->name;
+            // Ours goes active on a first install. After that the user's pick stays,
+            // also when a newer archive lands over the old folder or when they
+            // deleted «Удобный» and it is recreated here.
+            if (managedId < 0 || Configs::dataManager->routesRepo->GetRouteProfile(settings->current_route_id) == nullptr) {
+                settings->current_route_id = profile->id;
+                settings->active_routing = profile->name;
+            }
         }
     }
 

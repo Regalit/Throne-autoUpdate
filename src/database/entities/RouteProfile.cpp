@@ -706,7 +706,7 @@ namespace Configs {
     }
 
     QString RouteProfile::DefaultChainName() {
-        return QStringLiteral("Весь трафик через VPN");
+        return QStringLiteral("Все через VPN");
     }
 
     std::shared_ptr<RouteProfile> RouteProfile::GetDefaultChain() {

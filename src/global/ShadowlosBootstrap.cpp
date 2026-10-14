@@ -64,6 +64,16 @@ namespace Shadowlos {
             settings->Save();
         }
 
+        // Installs made before the rename still carry upstream's "Default" profile; it says
+        // nothing about what it does, so it gets the name new installs get.
+        void renameDefaultRoute() {
+            for (const auto& profile : Configs::dataManager->routesRepo->GetAllRouteProfiles()) {
+                if (profile == nullptr || profile->name != QStringLiteral("Default")) continue;
+                profile->name = Configs::RouteProfile::DefaultChainName();
+                Configs::dataManager->routesRepo->Save(profile);
+            }
+        }
+
         QList<QString> stringList(const QJsonValue& value) {
             QList<QString> out;
             for (const auto& item : value.toArray()) {
@@ -179,6 +189,7 @@ namespace Shadowlos {
 
     void ApplyBootstrap() {
         applyUiDefaults();
+        renameDefaultRoute();
 
         QFile file(QDir::current().filePath(BootstrapFileName));
         if (!file.exists()) return; // plain upstream build, nothing to do

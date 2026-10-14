@@ -705,9 +705,13 @@ namespace Configs {
         Rules = kept;
     }
 
+    QString RouteProfile::DefaultChainName() {
+        return QStringLiteral("Весь трафик через VPN");
+    }
+
     std::shared_ptr<RouteProfile> RouteProfile::GetDefaultChain() {
         auto defaultChain = std::make_shared<RouteProfile>();
-        defaultChain->name = "Default";
+        defaultChain->name = DefaultChainName();
         auto defaultRule = std::make_shared<RouteRule>();
         defaultRule->name = "Route DNS";
         defaultRule->action = "hijack-dns";

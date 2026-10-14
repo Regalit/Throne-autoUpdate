@@ -10,6 +10,7 @@
 #include "include/ui/utils/RestartPrompt.h"
 #include "include/ui/stats/dialog_endpoint_details.h"
 
+#include <QDateTime>
 #include <QPushButton>
 #include <QMessageBox>
 #include <QJsonDocument>
@@ -77,22 +78,24 @@ namespace {
         return ru.match(name).hasMatch();
     }
 
-    // Shadowlos: with nothing picked, start goes to the fastest server of the last latency test.
-    // The server started last stays while it is within 30% of the best, so equal servers do not
-    // flip the user between countries on every start. -1 when no test has a working result.
+    // Shadowlos: with nothing picked, start goes to the fastest server of a recent latency test.
+    // The server started last stays whenever that test still shows it working: a user is only
+    // moved off a server that has stopped answering. Results older than half an hour are ignored,
+    // since a server that answered then may be down now. -1 leaves the choice to the old rules.
     int bestProfileToStart(int lastId) {
         const auto group = Configs::dataManager->groupsRepo->CurrentGroup();
         if (!group) return -1;
-        std::shared_ptr<Configs::Profile> best, last;
+        constexpr qint64 kFreshSecs = 30 * 60;
+        const qint64 now = QDateTime::currentSecsSinceEpoch();
+        std::shared_ptr<Configs::Profile> best;
         for (const int id : group->Profiles()) {
             const auto ent = Configs::dataManager->profilesRepo->GetProfile(id);
             if (ent == nullptr || ent->latency <= 0 || isRussianExit(ent)) continue;
-            if (id == lastId) last = ent;
+            if (now - ent->latency_at > kFreshSecs) continue;
+            if (id == lastId) return id;
             if (best == nullptr || ent->latency < best->latency) best = ent;
         }
-        if (best == nullptr) return -1;
-        if (last != nullptr && last->latency <= best->latency * 13 / 10) return last->id;
-        return best->id;
+        return best != nullptr ? best->id : -1;
     }
 }
 

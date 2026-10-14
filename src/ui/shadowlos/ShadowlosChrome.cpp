@@ -164,8 +164,8 @@ namespace Shadowlos::ChromeImpl {
             setAttribute(Qt::WA_Hover, true);
             setFixedSize(64, 64);
             m_tintAnim = new QVariantAnimation(this);
-            m_tintAnim->setDuration(450);
-            m_tintAnim->setEasingCurve(QEasingCurve::InOutCubic);
+            m_tintAnim->setDuration(1000);
+            m_tintAnim->setEasingCurve(QEasingCurve::InOutSine);
             QObject::connect(m_tintAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
                 m_tint = v.toReal();
                 update();
@@ -260,8 +260,13 @@ namespace Shadowlos::ChromeImpl {
                 QConicalGradient comet(c, head);
                 QColor tail(Qt::white);
                 tail.setAlphaF(0.0);
-                comet.setColorAt(0.0, Qt::white);
-                comet.setColorAt(kSpan / 360.0, tail);
+                // Alpha falls off along an ease-out curve, so the tail has no visible edge.
+                for (int i = 0; i <= 8; ++i) {
+                    const qreal k = i / 8.0;
+                    QColor stop(Qt::white);
+                    stop.setAlphaF((1.0 - k) * (1.0 - k));
+                    comet.setColorAt(k * kSpan / 360.0, stop);
+                }
                 comet.setColorAt(0.97, tail);
                 comet.setColorAt(1.0, Qt::white); // the head's round cap
                 QPen arc(QBrush(comet), qMax(2.0, side * 0.045));

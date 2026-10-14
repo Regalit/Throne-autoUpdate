@@ -167,7 +167,11 @@ namespace Shadowlos {
                     existing->autoUpdate = true;
                     Configs::dataManager->routesRepo->Save(existing);
                 }
-                settings->current_route_id = existing->id;
+                // Keep the user's choice of profile («Все через VPN» or their own copy);
+                // fall back to ours only when the selected one is gone.
+                if (Configs::dataManager->routesRepo->GetRouteProfile(settings->current_route_id) == nullptr) {
+                    settings->current_route_id = existing->id;
+                }
                 return;
             }
 

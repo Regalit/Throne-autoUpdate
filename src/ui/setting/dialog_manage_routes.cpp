@@ -741,8 +741,14 @@ void DialogManageRoutes::on_clone_route_clicked() {
     if (idx < 0) return;
 
     auto chainCopy = std::make_shared<Configs::RouteProfile>(*chainList[idx]);
-    chainCopy->name = chainCopy->name + " clone";
+    chainCopy->name = tr("%1 (copy)").arg(chainCopy->name);
     chainCopy->id = -1;
+    // A copy is the user's own profile: it no longer follows the source URL, so
+    // a remote refresh can't overwrite the rules they add to it.
+    chainCopy->isRemote = false;
+    chainCopy->remoteURL.clear();
+    chainCopy->autoUpdate = false;
+    chainCopy->remoteLastUpdate = 0;
     chainList.append(chainCopy);
     reloadProfileItems();
 }

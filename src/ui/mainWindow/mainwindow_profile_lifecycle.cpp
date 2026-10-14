@@ -94,6 +94,23 @@ int MainWindow::get_profile_to_start() {
     return -1;
 }
 
+namespace {
+    // Shadowlos plan B for the direct DNS. With "localhost" the core does not ask Windows: it sends its own
+    // UDP queries to the adapters' DNS servers, and when it finds none it falls back to 127.0.0.1, where
+    // nothing answers. Browsers still work through the Windows DNS client, so only Throne fails, at start,
+    // on the first remote rule-set download. Retry once over DoH to an IP, which needs no lookup itself.
+    const QString fallbackDirectDns = QStringLiteral("https://1.1.1.1/dns-query");
+
+    bool usesSystemDirectDns() {
+        return Configs::dataManager->settingsRepo->direct_dns.trimmed().startsWith("local");
+    }
+
+    bool isDnsTimeoutError(const QString &error) {
+        return error.contains("lookup ") &&
+               (error.contains("context deadline exceeded") || error.contains("i/o timeout"));
+    }
+}
+
 bool MainWindow::handleXrayGeoAssetError(const QString& error, const QString& contextName) {
     const bool refGeoip = error.contains("geoip.dat");
     const bool refGeosite = error.contains("geosite.dat");
@@ -221,12 +238,15 @@ void MainWindow::profile_start(int _id) {
     }
     auto_selector_ranked = false;
 
-    const auto result = Configs::BuildSingBoxConfig(ent);
-    if (!result->error.isEmpty()) {
-        MessageBoxWarning(tr("BuildConfig return error"), result->error);
+    const auto builtResult = Configs::BuildSingBoxConfig(ent);
+    if (!builtResult->error.isEmpty()) {
+        MessageBoxWarning(tr("BuildConfig return error"), builtResult->error);
         return;
     }
-    auto profile_start_stage2 = [=, this](const QPointer<RestartPrompt> &restartPrompt) {
+    // dnsTimedOut, when given, takes a DNS timeout instead of the error dialog so the caller can retry.
+    auto profile_start_stage2 = [=, this](const QPointer<RestartPrompt> &restartPrompt,
+                                          const std::shared_ptr<Configs::BuildConfigResult> &result,
+                                          bool *dnsTimedOut) {
         libcore::LoadConfigReq req;
         req.core_config = QJsonObject2QString(result->coreConfig, true).toStdString();
         req.tun_ipv4_cidr = result->tunIPv4CIDR.toStdString();
@@ -260,6 +280,11 @@ void MainWindow::profile_start(int _id) {
             return false;
         }
         if (!error.isEmpty()) {
+            if (dnsTimedOut != nullptr && isDnsTimeoutError(error)) {
+                *dnsTimedOut = true;
+                MW_show_log(error);
+                return false;
+            }
             if (handleXrayGeoAssetError(error, ent->outbound->DisplayTypeAndName())) {
                 return false;
             }
@@ -398,7 +423,19 @@ void MainWindow::profile_start(int _id) {
             mu_stopping.unlock();
         }
         MW_show_log(">>>>>>>> " + tr("Starting profile %1").arg(ent->outbound->DisplayTypeAndName()));
-        if (!profile_start_stage2(restartPrompt)) {
+        bool dnsTimedOut = false;
+        bool started = profile_start_stage2(restartPrompt, builtResult, usesSystemDirectDns() ? &dnsTimedOut : nullptr);
+        if (!started && dnsTimedOut) {
+            MW_show_log(tr("System DNS did not answer, retrying with %1").arg(fallbackDirectDns));
+            std::shared_ptr<Configs::BuildConfigResult> retryResult;
+            runOnUiThread([&] { retryResult = Configs::BuildSingBoxConfig(ent, fallbackDirectDns); }, true);
+            if (!retryResult->error.isEmpty()) {
+                runOnUiThread([=, this] { MessageBoxWarning(tr("BuildConfig return error"), retryResult->error); });
+            } else {
+                started = profile_start_stage2(restartPrompt, retryResult, nullptr);
+            }
+        }
+        if (!started) {
             MW_show_log("<<<<<<<< " + tr("Failed to start profile %1").arg(ent->outbound->DisplayTypeAndName()));
         }
         mu_starting.unlock();

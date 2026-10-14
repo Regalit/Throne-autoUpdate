@@ -152,7 +152,8 @@ namespace Shadowlos::ChromeImpl {
 
     // ---------------------------------------------------------- power button
 
-    // The design's connect button: a ring and a disc, blue while connected. Takes over
+    // The design's connect button: a ring and a disc, green while ready to connect and blue
+    // while connected. Takes over
     // StartStopButton's painting only; state, tooltips and animations stay the base class's.
     class PowerButton final : public StartStopButton {
     public:
@@ -196,8 +197,15 @@ namespace Shadowlos::ChromeImpl {
             QLinearGradient ring(outer.topLeft(), outer.bottomLeft());
             ring.setColorAt(0, running ? hex(0x0072CC) : hex(0x111517));
             ring.setColorAt(1, running ? hex(0x1A374D) : hex(0x1A2023));
+            // Stopped and ready, the button is green so it reads as the one thing to press.
+            const bool ready = !running && !busy && st != State::Disabled;
+            if (ready) {
+                ring.setColorAt(0, hex(0x2E6B1F));
+                ring.setColorAt(1, hex(0x1F4A16));
+            }
             QColor outline = running || hovered ? hex(0x33A5FF) : hex(0x2E3438);
-            if (!running && hovered) outline.setAlphaF(0.6);
+            if (ready) outline = hovered ? hex(0xA6E88A) : hex(0x86D75E);
+            else if (!running && hovered) outline.setAlphaF(0.6);
             p.setPen(QPen(outline, 1.33));
             p.setBrush(ring);
             p.drawEllipse(outer.adjusted(0.67, 0.67, -0.67, -0.67));
@@ -206,8 +214,8 @@ namespace Shadowlos::ChromeImpl {
             const qreal inset = side * 3.5 / 64.0;
             const QRectF inner = outer.adjusted(inset, inset, -inset, -inset);
             QLinearGradient disc(inner.topLeft(), inner.bottomLeft());
-            disc.setColorAt(0, running ? hex(0x33A5FF) : hex(0x0B0D0F));
-            disc.setColorAt(1, running ? hex(0x008FFF) : hex(0x111517));
+            disc.setColorAt(0, running ? hex(0x33A5FF) : ready ? hex(0x86D75E) : hex(0x0B0D0F));
+            disc.setColorAt(1, running ? hex(0x008FFF) : ready ? hex(0x5DB83A) : hex(0x111517));
             p.setPen(Qt::NoPen);
             p.setBrush(disc);
             p.drawEllipse(inner);
@@ -225,7 +233,7 @@ namespace Shadowlos::ChromeImpl {
             if (running) glyph = Qt::white;
             else if (busy) glyph = hex(0x33A5FF);
             else if (st == State::Disabled) glyph = hex(0x474D53);
-            else glyph = hovered ? QColor(Qt::white) : hex(0xC7CDD1);
+            else glyph = Qt::white;
 
             // Power symbol, 28px in the design: an open ring with a stroke through the gap.
             const qreal g = side * 28.0 / 64.0;

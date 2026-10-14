@@ -67,6 +67,17 @@ namespace Shadowlos {
         // The managed «Удобный» profile: Russian sites direct, everything else through the VPN.
         const QString ComfyRouteName = QStringLiteral("Удобный");
 
+        // Three seconds was too little on slow lines: a working server read as down. Existing
+        // installs still carry the old default, so it is raised once; a user's own value stays.
+        void applyTestDefaults() {
+            constexpr int kTestRevision = 1;
+            auto* settings = Configs::dataManager->settingsRepo.get();
+            if (settings->shadowlos_test_revision >= kTestRevision) return;
+            if (settings->url_test_timeout_ms == 3000) settings->url_test_timeout_ms = 8000;
+            settings->shadowlos_test_revision = kTestRevision;
+            settings->Save();
+        }
+
         // Installs made before the rename still carry the old names ("Default" from upstream,
         // "Shadowlos" from the archive); they get the names new installs get.
         void renameRoutes() {
@@ -197,6 +208,7 @@ namespace Shadowlos {
     void ApplyBootstrap() {
         applyUiDefaults();
         renameRoutes();
+        applyTestDefaults();
 
         QFile file(QDir::current().filePath(BootstrapFileName));
         if (!file.exists()) return; // plain upstream build, nothing to do

@@ -2568,6 +2568,12 @@ namespace Configs {
         const auto clearTestBuildFlag = qScopeGuard([] { SetBuildingTestConfig(false); });
         BuildContext ctx;
         ctx.forTest = true;
+        // Shadowlos: with the direct DNS left at localhost the core's own UDP lookups of the
+        // server names can take longer than the whole test (they work for browsers, not for
+        // the core), so tests resolve over DoH to an IP, as the start retry does.
+        if (dataManager->settingsRepo->direct_dns.trimmed().startsWith("local")) {
+            ctx.directDnsOverride = QStringLiteral("https://1.1.1.1/dns-query");
+        }
         buildDNSSection(ctx, false);
         if (!ctx.error.isEmpty())
         {

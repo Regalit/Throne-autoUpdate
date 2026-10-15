@@ -2,8 +2,10 @@ package boxmain
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -24,8 +26,10 @@ func parseConfig(ctx context.Context, configContent []byte) (*option.Options, er
 	return &options, nil
 }
 
+// createOnce builds and starts the box exactly as given. Create wraps it with the rule-set fallback.
+//
 // onCreated runs between New and Start: the Xray sidecars start first and resolve through this box.
-func Create(configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*option.Options)) (*boxbox.Box, context.CancelFunc, error) {
+func createOnce(configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*option.Options)) (*boxbox.Box, context.CancelFunc, error) {
 	// Fresh context per call: concurrent boxes sharing one service.Registry clobber each other's OutboundManager.
 	ctx := newBoxContext()
 	options, err := parseConfig(ctx, configContent)
@@ -68,8 +72,26 @@ func Create(configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*o
 			closeMonitor(startCtx)
 		}
 	}()
+	// A remote rule set that connects but never answers would hold the start forever and
+	// the rule-set fallback in Create would never get its turn. Cancelling the context
+	// aborts the pending downloads, which then fail as rule sets and take that path.
+	var watchdog *time.Timer
+	var overBudget atomic.Bool
+	if hasRemoteRuleSets(configContent) {
+		watchdog = time.AfterFunc(ruleSetStartBudget, func() {
+			overBudget.Store(true)
+			cancel()
+		})
+	}
 	err = instance.Start()
+	if watchdog != nil {
+		watchdog.Stop()
+	}
 	finishStart()
+	if err != nil && overBudget.Load() {
+		// sing-box reports the abort as a bare "context canceled"; name the cause.
+		err = fmt.Errorf("%w (%s): %v", errRuleSetBudget, ruleSetStartBudget, err)
+	}
 	if err != nil {
 		cancel()
 		return nil, nil, E.Cause(err, "start service")

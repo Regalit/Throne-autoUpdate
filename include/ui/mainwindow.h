@@ -276,6 +276,8 @@ private:
     QMutex mu_stopping;
     QMutex mu_exit;
     ExitReason exit_reason = ExitReason::None;
+    // A Shadowlos archive ships with TUN pre-selected; turned on at the first CoreStarted.
+    bool shadowlosTunOnStart = false;
     QMutex mu_download_update;
     QMutex mu_download_dashboard;
     class ConnectionsTreeModel *connectionsModel = nullptr;

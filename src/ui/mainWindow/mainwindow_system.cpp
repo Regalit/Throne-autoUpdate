@@ -242,6 +242,9 @@ bool MainWindow::get_elevated_permissions(ExitReason reason) {
             auto chmodArgs = QString("u+s " + Configs::FindCoreRealPath());
             ret = Linux_Run_Command("chmod", chmodArgs);
             if (ret == 0) {
+                // The core comes back setuid root; CoreStarted then turns TUN on, as it does
+                // after the Windows elevated restart.
+                Configs::dataManager->settingsRepo->flag_restart_tun_on = true;
                 StopVPNProcess();
             } else {
                 MW_show_log(QString("Failed to run chmod %1").arg(chmodArgs));

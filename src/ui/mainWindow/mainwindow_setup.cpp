@@ -1159,14 +1159,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         Subscription::updater()->RefreshAll(false);
     });
 
-    // A Shadowlos archive ships with TUN pre-selected. Deferred to here rather
-    // than done in ApplyBootstrap because enabling it may raise a privilege
-    // prompt, which needs a window to parent onto.
-    if (Shadowlos::WantsTunOnStart() && !Configs::dataManager->settingsRepo->spmode_vpn) {
-        QTimer::singleShot(0, this, [this] {
-            set_spmode_vpn(true);
-        });
-    }
+    // A Shadowlos archive ships with TUN pre-selected. Turned on at CoreStarted, not
+    // here: before the core answers whether it is privileged, IsAdmin() says no on
+    // Linux, so asking now always raised the root prompt, even under sudo.
+    shadowlosTunOnStart = Shadowlos::WantsTunOnStart() && !Configs::dataManager->settingsRepo->spmode_vpn;
 
     if (!Configs::dataManager->settingsRepo->flag_tray) show();
     else if (tray->isVisible()) HideWindow(this);

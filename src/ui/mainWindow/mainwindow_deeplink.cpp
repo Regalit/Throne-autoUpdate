@@ -389,6 +389,12 @@ void MainWindow::dialog_message_impl(MwMessage cmd, const QStringList &args) {
             set_spmode_vpn(true, settings->flag_restart_tun_on);
             settings->flag_restart_tun_on = false;
         }
+        if (shadowlosTunOnStart) {
+            // The archive's TUN pre-selection, see mainwindow_setup.cpp. Once: a later core
+            // restart must not switch TUN back on behind the user.
+            shadowlosTunOnStart = false;
+            if (!settings->spmode_vpn) set_spmode_vpn(true);
+        }
         if (settings->flag_dns_set) {
             set_system_dns(true);
         }

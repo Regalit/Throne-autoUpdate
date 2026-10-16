@@ -2915,6 +2915,10 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
         <source>Add these remote routing profiles?</source>
         <translation>Добавить эти удалённые профили маршрутизации?</translation>
     </message>
+    <message>
+        <source>%1 (copy)</source>
+        <translation>%1 (копия)</translation>
+    </message>
 </context>
 <context>
     <name>DialogOtpManager</name>

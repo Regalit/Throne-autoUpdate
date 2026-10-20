@@ -465,6 +465,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         } else {
             return;
         }
+        // Arrow follows the click: first click ascending, second descending.
+        auto *header = ui->profilesTableView->horizontalHeader();
+        header->setSortIndicatorShown(true);
+        header->setSortIndicator(logicalIndex, action.descending ? Qt::DescendingOrder : Qt::AscendingOrder);
         runOnNewThread([=, this] {
             auto currGroup = Configs::dataManager->groupsRepo->CurrentGroup();
             if (currGroup == nullptr) return;

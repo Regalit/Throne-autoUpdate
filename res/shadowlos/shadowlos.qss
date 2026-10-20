@@ -1073,7 +1073,7 @@ QHeaderView::section {
     font-weight: 500;
     border: none;
     border-bottom: 1px solid #2E3438;
-    padding: 11px 12px;
+    padding: 2px 12px;
 }
 
 QHeaderView::section:hover {

@@ -27,7 +27,7 @@ public:
         : QHeaderView(Qt::Horizontal, parent), m_subCard(new SubscriptionInfoCard(this)) {
         setSectionsClickable(true);
         setSortIndicatorShown(true);
-        setDefaultAlignment(Qt::AlignHCenter | Qt::AlignTop);
+        setDefaultAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
         // Clicks on the band must not reach QHeaderView, which would sort by the section under them.
         m_subCard->setAttribute(Qt::WA_NoMousePropagation, true);
@@ -146,6 +146,8 @@ protected:
 public slots:
     void setFiltersVisible(bool visible) {
         m_filtersVisible = visible;
+        // Top-aligned only to leave room for the filter fields underneath.
+        setDefaultAlignment(visible ? (Qt::AlignLeft | Qt::AlignTop) : (Qt::AlignLeft | Qt::AlignVCenter));
 
         QLineEdit *focused = focusedEdit();
         if (!visible) {

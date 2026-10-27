@@ -32,7 +32,7 @@ namespace Configs_network {
         QNetworkAccessManager accessManager;
         accessManager.setTransferTimeout(10000);
         request.setUrl(url);
-        if (Configs::dataManager->settingsRepo->net_use_proxy || Configs::dataManager->settingsRepo->spmode_system_proxy || options.useProxy) {
+        if (!options.direct && (Configs::dataManager->settingsRepo->net_use_proxy || Configs::dataManager->settingsRepo->spmode_system_proxy || options.useProxy)) {
             if (Configs::dataManager->settingsRepo->started_id < 0) {
                 return HTTPResponse{QObject::tr("Request with proxy but no profile started.")};
             }

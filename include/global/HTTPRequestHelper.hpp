@@ -29,6 +29,9 @@ namespace Configs_network {
         bool http2 = true;
         // Verifies the certificate even when net_insecure is on.
         bool strictTls = false;
+        // Shadowlos: straight to the host, never through our own inbound (net_use_proxy,
+        // system proxy mode), e.g. for requests that must come from the user's own network.
+        bool direct = false;
     };
 
     class NetworkRequestHelper : QObject {

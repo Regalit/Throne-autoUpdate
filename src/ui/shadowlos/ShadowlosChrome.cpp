@@ -1,5 +1,6 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
+#include "include/ui/shadowlos/ShadowlosRouting.hpp"
 
 // Brings in ui_mainwindow.h, i.e. the full Ui::MainWindow. Only when MW_INTERFACE is unset,
 // which is why CMake keeps this file out of unity batches.
@@ -823,6 +824,10 @@ namespace Shadowlos::Chrome {
         appUpdate->setCursor(Qt::PointingHandCursor);
         menuRow->addWidget(appUpdate);
         Shadowlos::Updater::Install(window, appUpdate);
+        // Routing: «Удобный» / «Настройка под ваш регион» / «Все через VPN», one click,
+        // also in the simple view (the menu card is never hidden).
+        menuRow->addSpacing(8);
+        menuRow->addWidget(Shadowlos::Routing::MakeSwitch(menuCard));
         menuRow->addStretch(1);
         root->addWidget(menuCard);
         // Read by MainWindow::applyTopBarMetrics: the design sizes these to their labels.

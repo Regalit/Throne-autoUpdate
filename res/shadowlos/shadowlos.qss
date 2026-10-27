@@ -132,15 +132,25 @@ QToolButton[slRole="pill"]:disabled {
     color: #5E676E;
 }
 
-/* «Обновить» in the menu card: dim until an update is ready, then the power button's green. */
-QToolButton#slAppUpdate[slUpdateReady="true"] {
-    background-color: #5DB83A;
-    color: #0B0D0F;
-    font-weight: 600;
+/* Routing switch in the menu card: three segments, the active one marked like a selected tab. */
+QToolButton[slRole="segment"] {
+    background-color: #111517;
+    border: 1px solid #2E3438;
+    border-radius: 10px;
+    color: #C7CDD1;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
 }
 
-QToolButton#slAppUpdate[slUpdateReady="true"]:hover {
-    background-color: #86D75E;
+QToolButton[slRole="segment"]:hover {
+    background-color: #232A2E;
+}
+
+QToolButton[slRole="segment"]:checked {
+    background-color: #1A374D;
+    border-color: #33A5FF;
+    color: #33A5FF;
 }
 
 QToolButton[slRole="pill"]::menu-indicator {

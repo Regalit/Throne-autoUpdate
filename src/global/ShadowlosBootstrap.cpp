@@ -1,4 +1,5 @@
 #include "include/global/ShadowlosBootstrap.hpp"
+#include "include/configs/sub/GroupUpdater.hpp"
 
 #include "include/global/Configs.hpp"
 #include "include/database/GroupsRepo.h"
@@ -52,6 +53,10 @@ namespace Shadowlos {
 
         // Set only when the bootstrap file asks for it; read later by MainWindow.
         bool tunOnStart = false;
+
+        // shadowlos.json "static_profiles": the subscription as it was when the archive was
+        // built. Same secret as subscription_url: kept in memory, never logged.
+        QString staticProfiles;
 
         // The Shadowlos theme is the product's look, so every install is switched to it once,
         // archive or not. Gated by a revision so a user who then picks another theme keeps it.
@@ -231,6 +236,18 @@ namespace Shadowlos {
         return ComfyRouteName;
     }
 
+    void ImportStaticProfilesIfEmpty() {
+        if (staticProfiles.trimmed().isEmpty()) return;
+        const auto group = Configs::dataManager->groupsRepo->GetGroup(Configs::dataManager->settingsRepo->shadowlos_managed_group);
+        // Only before the first successful refresh: a user who later deletes every server
+        // does not get the archive's old rows back.
+        if (group == nullptr || !group->Profiles().isEmpty() || group->sub_last_update > 0) return;
+        // Queued ahead of the startup refresh on the same updater queue: a refresh that
+        // works replaces these rows as it replaces any; one that fails leaves them.
+        qInfo() << "[Shadowlos] the group is empty; adding the servers that came with the archive";
+        Subscription::updater()->ImportText(staticProfiles, group->id);
+    }
+
     bool WantsTunOnStart() {
         return tunOnStart;
     }
@@ -311,6 +328,8 @@ namespace Shadowlos {
             Configs::dataManager->settingsRepo->current_group = group->id;
             settingsDirty = true;
         }
+
+        staticProfiles = root.value("static_profiles").toString();
 
         // Routing preset (.ru and friends direct, everything else tunnelled).
         if (root.contains("routing")) {

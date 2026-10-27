@@ -29,6 +29,7 @@
 #include "include/sys/windows/MiniDump.h"
 #include "include/sys/windows/eventHandler.h"
 #include "include/sys/windows/WinVersion.h"
+#include "NkrVersion.h"
 #include <qfontdatabase.h>
 #endif
 #ifdef Q_OS_LINUX
@@ -264,7 +265,12 @@ int main(int argc, char* argv[]) {
 #ifdef NKR_CPP_USE_APPDATA
     useAppdata = true;
 #endif
+#ifdef Q_OS_WIN
+    // Shadowlos: the %APPDATA% fallback folder follows the exe, so prod and dev keep apart.
+    QApplication::setApplicationName(SHADOWLOS_EXE_NAME);
+#else
     QApplication::setApplicationName("Throne");
+#endif
     if(useAppdata) {
         if (!appdataDir.isEmpty()) {
             wd.setPath(appdataDir);

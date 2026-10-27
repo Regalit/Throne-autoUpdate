@@ -626,6 +626,10 @@ set_target_properties(Throne PROPERTIES
 if (WIN32 AND MSVC)
     set_target_properties(Throne PROPERTIES UNITY_BUILD ON)
 endif ()
+# Shadowlos: ShadowLosThrone.exe / ShadowLosThroneDev.exe, so prod and dev install side by side.
+if (WIN32)
+    set_target_properties(Throne PROPERTIES OUTPUT_NAME "${SHADOWLOS_EXE_NAME}")
+endif ()
 set_property(SOURCE "3rdparty/SQLiteCpp/src/sqlite3.c" PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 # Shadowlos: needs the full Ui::MainWindow, which a batch-mate defining MW_INTERFACE would hide.
 set_property(SOURCE src/ui/shadowlos/ShadowlosChrome.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)

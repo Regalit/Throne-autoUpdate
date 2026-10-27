@@ -5,9 +5,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version for artifact naming"
+        description: "Version: X.Y.Z for prod, X.Y.Z-dev for dev (compiled into the Windows build; the build fails on anything else)"
         required: true
-        default: "1.0.0"
+      channel:
+        description: "Windows build channel: dev turns on SHADOWLOS_DEV (dev-only features, dev update channel)"
+        type: choice
+        options: [dev, prod]
+        required: true
       publish:
         description: "Also attach the Windows and Linux (system Qt) builds to a prerelease named after the tag"
         type: boolean
@@ -204,7 +208,7 @@ jobs:
           mkdir build
           cd build
           curl -fLso srslist.h "https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h"
-          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo $LAUNCHER_ARGS ..
+          cmake -GNinja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DSHADOWLOS_DEV=${{ inputs.channel == 'dev' && 'ON' || 'OFF' }} $LAUNCHER_ARGS ..
           ninja
           cd ..
           ./script/deploy_windows.sh

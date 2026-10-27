@@ -42,8 +42,8 @@ namespace Shadowlos::Journal {
     void Event(const char *layer, const char *step, const char *outcome,
                const QString &d = {}, const QString &err = {}, qint64 ms = -1);
 
-    // Text on its way to the log view (MW_show_log): core and GUI log lines. Warnings and
-    // errors are kept; info only within 30 s after a connect starts. Rate capped. Thread-safe.
+    // Text on its way to the log view (MW_show_log): core and GUI log lines. Errors (fail) and
+    // warnings (ok) are kept; info only within 30 s after a connect starts. Rate capped. Thread-safe.
     void CoreLog(const QString &text);
 
     // profile_start / profile_stop. Thread-safe.

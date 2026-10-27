@@ -45,6 +45,26 @@ namespace Shadowlos::Journal {
             return exts.contains(ext.toString().toLower());
         }
 
+        // Name endings that are files, not top-level domains (ThroneCore.exe, throne.db, geoip.dat).
+        bool isFileExt(QStringView ext) {
+            static const QSet<QString> exts{"exe", "dll", "sys", "log", "txt", "jsonl", "db", "dat", "dmp", "png", "jpg",
+                                            "ico", "svg", "qss", "qrc", "qm", "ts", "ini", "cfg", "conf", "yaml", "yml",
+                                            "toml", "md", "bat", "cmd", "ps1", "sh", "zip", "gz", "tmp", "lock", "pid",
+                                            "marker", "rs", "cs", "hxx", "cxx", "mm", "kts", "proto", "srs"};
+            return isSourceExt(ext) || exts.contains(ext.toString().toLower());
+        }
+
+        // A last label in mixed case is a dotted identifier (java.net.SocketException,
+        // QApplication.MainWindow), not a host name: those are written in one case.
+        bool isIdentifierLabel(QStringView label) {
+            bool upper = false, lower = false;
+            for (const QChar c : label) {
+                if (c.isUpper()) upper = true;
+                else if (c.isLower()) lower = true;
+            }
+            return upper && lower;
+        }
+
         QStringView extOf(QStringView name) {
             return name.mid(name.lastIndexOf(u'.') + 1);
         }
@@ -68,18 +88,22 @@ namespace Shadowlos::Journal {
         static const Rx jwt(QStringLiteral(R"(\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*)"));
         static const Rx bearer(QStringLiteral(R"(\bbearer\s+[A-Za-z0-9._~+/=-]+)"), CI);
         static const Rx keyValue(QStringLiteral(
-            R"(\b(password|passwd|pwd|pass|token|secret|psk|private_key|public_key|key|auth|authorization|cookie|uuid|sid|pbk|sni|host|server|address|addr|telegram_id|tg_id|tgid|user_id|userid|user_id_hash)(\s*[=:]\s*)("[^"]*"|[^\s,;&"']+))"), CI);
+            R"(\b(password|passwd|pwd|pass|token|secret|psk|private_key|public_key|key|auth|authorization|cookie|uuid|sid|pbk|sni|host|server|address|addr|telegram_id|tg_id|tgid|user_id|userid|user_id_hash)("?\s*[=:]\s*)("[^"]*"|[^\s,;&"']+))"), CI);
         static const Rx uuid(QStringLiteral(R"(\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b)"), CI);
         static const Rx email(QStringLiteral(R"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"));
         static const Rx ipv4(QStringLiteral(R"(\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?::\d{1,5})?\b)"));
         static const Rx ipv6(QStringLiteral(R"([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7})"), CI);
         static const Rx hostPort(QStringLiteral(R"(\b((?:[a-z0-9-]+\.)+[a-z][a-z0-9-]{1,62}):(\d{2,5})\b)"), CI);
-        static const Rx domain(QStringLiteral(
-            R"(\b(?:[a-z0-9-]+\.)+(?:com|net|org|ru|su|io|me|info|xyz|app|dev|cc|club|online|site|top|pro|biz|xn--p1ai)\b)"), CI);
-        static const Rx hex(QStringLiteral(R"(\b[0-9a-f]{32,}\b)"), CI);
+        // Any dotted name whose last label is 2-24 letters, or a punycode one (xn--p1ai).
+        static const Rx domain(QStringLiteral(R"(\b(?:[a-z0-9-]+\.)+(?:xn--[a-z0-9-]{2,59}|[a-z]{2,24})\b)"), CI);
+        // Lookarounds, not \b: hex glued to a word (hash_<64 hex>) is still a key.
+        static const Rx hex(QStringLiteral(R"((?<![0-9a-f])[0-9a-f]{32,}(?![0-9a-f]))"), CI);
+        // \Users\<name>\ in either slash style; a name with spaces only up to the next slash.
+        static const Rx userDir(QStringLiteral(R"(([\\/])Users([\\/])(?:[^\\/"'<>\r\n]{1,64}?(?=[\\/])|[^\\/\s"'<>]+))"), CI);
         static const Rx base64(QStringLiteral(R"([A-Za-z0-9+/_-]{32,}={0,2})"));
 
         QString s = text;
+        s.replace(userDir, QStringLiteral("\\1Users\\2<user>"));
         s.replace(uri, QStringLiteral("\\1://<redacted>"));
         s.replace(jwt, QStringLiteral("<jwt>"));
         s.replace(bearer, QStringLiteral("Bearer <redacted>"));
@@ -99,12 +123,13 @@ namespace Shadowlos::Journal {
             if (isSourceExt(extOf(m.capturedView(1)))) return m.captured();
             return QStringLiteral("<host>:") + m.captured(2);
         });
-        // A match followed by ".<letter>" is a dotted identifier (java.net.SocketException),
-        // and one ending in a source extension is a file name (dart_vm_initializer.cc).
+        // Kept: a match followed by ".<letter>" (a dotted identifier cut short), one ending in a
+        // file extension (dart_vm_initializer.cc, ThroneCore.exe) or in a mixed-case label.
         s = replaceEach(s, domain, [&s](const QRegularExpressionMatch &m) {
             const qsizetype end = m.capturedEnd();
             if (end + 1 < s.size() && s.at(end) == u'.' && s.at(end + 1).isLetter()) return m.captured();
-            if (isSourceExt(extOf(m.capturedView()))) return m.captured();
+            const QStringView last = extOf(m.capturedView());
+            if (isFileExt(last) || isIdentifierLabel(last)) return m.captured();
             return QStringLiteral("<host>");
         });
         s.replace(hex, QStringLiteral("<hex>"));
@@ -191,6 +216,15 @@ namespace Shadowlos::Journal {
             {"blob AbcdefGhijklmnopqrstuvwxyz0123456789", "blob <secret>"},
             {"io/flutter/embedding/engine/FlutterJNI", "io/flutter/embedding/engine/FlutterJNI"},
             {"Не удалось подключиться v1.0.4-dev build 10004", "Не удалось подключиться v1.0.4-dev build 10004"},
+            // Review fixes: any TLD, JSON keys, hex glued to a word, the Windows user name.
+            {"lookup node1.example.de: no such host", "lookup <host>: no such host"},
+            {"via edge.example.co.uk and xn--80ak6aa92e.xn--p1ai", "via <host> and <host>"},
+            {"ShadowlosJournal.cpp 10.0.26200 v1.0.4-dev ThroneCore.exe geoip.dat throne.db QApplication.MainWindow",
+             "ShadowlosJournal.cpp 10.0.26200 v1.0.4-dev ThroneCore.exe geoip.dat throne.db QApplication.MainWindow"},
+            {R"({"password":"x","server": "h"})", R"({"password":<redacted>,"server": <redacted>})"},
+            {"hash_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 end", "hash_<hex> end"},
+            {R"(C:\Users\Ivan\AppData\Local\x)", R"(C:\Users\<user>\AppData\Local\x)"},
+            {R"(C:/Users/ivan.petrov/AppData and C:\Users\John Smith\Desktop)", R"(C:/Users/<user>/AppData and C:\Users\<user>\Desktop)"},
         };
         int failed = 0;
         for (const auto &c : cases) {

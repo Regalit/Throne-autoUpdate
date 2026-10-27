@@ -156,11 +156,11 @@ namespace Shadowlos::Routing {
         void maybeRefresh() {
             const qint64 now = QDateTime::currentSecsSinceEpoch();
             if (now < nextRefresh() || settings()->started_id >= 0) return;
-            QString base, token;
-            // The base URL and Sl-Sub token come from the managed subscription; nothing without it.
-            if (!ApiFromSubscription(&base, &token)) return;
+            QString token;
+            // The Sl-Sub token comes from the managed subscription; nothing without it.
+            if (!ApiToken(&token)) return;
             nextRefresh() = now + kRetryAfterSecs;
-            const QString url = base + QStringLiteral("/api/mobile/routing/regional?format=throne&platform=windows");
+            const QString url = QLatin1String(ApiBase) + QStringLiteral("/api/mobile/routing/regional?format=throne&platform=windows");
             const QString id = InstallId();
             // QPointer: the answer is dropped if the app is going away meanwhile.
             QPointer<QCoreApplication> app(qApp);

@@ -42,10 +42,14 @@ namespace Shadowlos {
     // The name of the managed profile provisioned from shadowlos.json.
     QString ComfyRouteProfileName();
 
-    // Our API's base URL and Sl-Sub token, from the managed subscription
-    // (…/dynamic_config?user_id_hash=<64 hex>…); false without it. The token is a
-    // secret: never log it.
-    bool ApiFromSubscription(QString *base, QString *token);
+    // Our mobile API. Always this host: the subscription's own host (shadowlos.xyz)
+    // answers 404 to /api/mobile/*.
+    inline constexpr auto ApiBase = "https://master.shadowlos.xyz";
+
+    // The Sl-Sub token for ApiBase: the user_id_hash (64 hex) of the managed
+    // subscription's URL (…/dynamic_config?user_id_hash=…); false without it. The
+    // token is a secret: never log it.
+    bool ApiToken(QString *token);
 
     // settings->shadowlos_install_id (UUID v4), made on first use; X-Sl-Install-Id.
     QString InstallId();

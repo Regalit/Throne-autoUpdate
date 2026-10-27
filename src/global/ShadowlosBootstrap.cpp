@@ -254,14 +254,12 @@ namespace Shadowlos {
         return tunOnStart;
     }
 
-    bool ApiFromSubscription(QString *base, QString *token) {
+    bool ApiToken(QString *token) {
         const auto group = findManagedGroup();
         if (group == nullptr) return false;
         const QUrl url(group->url);
         *token = QUrlQuery(url).queryItemValue(QStringLiteral("user_id_hash"));
-        if (!url.isValid() || url.host().isEmpty() || token->size() != 64) return false;
-        *base = url.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment).toString();
-        return true;
+        return url.isValid() && token->size() == 64;
     }
 
     QString InstallId() {

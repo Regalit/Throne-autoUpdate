@@ -31,6 +31,7 @@
 #include <QNetworkProxy>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSaveFile>
@@ -57,10 +58,11 @@ namespace Shadowlos::Journal {
         constexpr int kMinPacketChars = 4000;
         constexpr int kCrashJournalLines = 150;
         constexpr int kCrashSummaryChars = 60000;
+        constexpr int kCrashReportChars = 90000;
+        constexpr int kCrashReportsKept = 3;
         constexpr qint64 kHoldSecs = 30 * 60;
         constexpr qint64 kBackoffMins[] = {6, 12, 24, 30};
         constexpr auto kUploadPath = "/api/mobile/client-logs";
-        constexpr auto kUploadUrl = "https://master.shadowlos.xyz/api/mobile/client-logs";
         constexpr auto kCrashSeparator = "--- journal of the previous run (last 150 lines) ---";
 
         QString translate(const char *text) {
@@ -227,29 +229,38 @@ namespace Shadowlos::Journal {
                 if (line.contains(sidKey)) tail << ScrubJsonLine(line);
             }
             tail = tail.mid(qMax<qsizetype>(0, tail.size() - kCrashJournalLines));
+            summary = Scrub(summary);
+            // One report stays under the packet size: the oldest journal lines go first.
+            qsizetype size = summary.size() + 80;
+            for (const auto &line : tail) size += line.size() + 1;
+            while (size > kCrashReportChars && !tail.isEmpty()) size -= tail.takeFirst().size() + 1;
 
             const QString id = QString::fromLatin1(QByteArray::number(QRandomGenerator::system()->generate64(), 16).rightJustified(16, '0') +
                                                    QByteArray::number(QRandomGenerator::system()->generate64(), 16).rightJustified(16, '0'));
             QSaveFile out(st().dir + QStringLiteral("/crash-") + id + QStringLiteral(".txt"));
             if (out.open(QIODevice::WriteOnly)) {
-                out.write((Scrub(summary) + u'\n' + QLatin1String(kCrashSeparator) + u'\n' + tail.join(u'\n')).toUtf8());
+                out.write((summary +u'\n' + QLatin1String(kCrashSeparator) + u'\n' + tail.join(u'\n')).toUtf8());
                 out.commit();
             }
+            // Only the newest few reports wait for the server.
+            const auto queued = QDir(st().dir).entryInfoList({QStringLiteral("crash-*.txt")}, QDir::Files, QDir::Time);
+            for (qsizetype i = kCrashReportsKept; i < queued.size(); ++i) QFile::remove(queued[i].absoluteFilePath());
             static const QRegularExpression cause(QStringLiteral(R"(exception\s*:\s*(.+))"));
             const auto m = cause.match(summary);
             return m.hasMatch() ? m.captured(1).trimmed() : QStringLiteral("unclean exit, no crash report");
         }
 
+        // Oldest first.
         QStringList crashFiles() {
-            return QDir(st().dir).entryList({QStringLiteral("crash-*.txt")}, QDir::Files, QDir::Name);
+            return QDir(st().dir).entryList({QStringLiteral("crash-*.txt")}, QDir::Files, QDir::Time | QDir::Reversed);
         }
 
         // ── upload ─────────────────────────────────────────────────────────────
 
         // UI thread only.
         struct Upload {
-            QNetworkAccessManager *nam = nullptr;
-            QTimer *timer = nullptr;
+            QPointer<QNetworkAccessManager> nam;
+            QPointer<QTimer> timer;
             bool busy = false;
             qint64 holdUntil = 0; // seconds since epoch
             int fails = 0;
@@ -280,10 +291,13 @@ namespace Shadowlos::Journal {
             f.commit();
         }
 
-        enum class Verdict { Accepted, Dropped, Retry };
+        // Dropped writes an upload-dropped line; a 400 (a bad packet) is dropped quietly.
+        enum class Verdict { Accepted, Dropped, DroppedQuietly, Retry };
 
         // 200 (a "duplicate" too) is taken; 429/503 hold until Retry-After; 413 halves the
-        // packet; any other 4xx but 401 drops it; the rest backs off 6, 12, 24, then 30 min.
+        // packet and drops it once the size is at the minimum (a line that will never fit);
+        // 400 is dropped quietly, any other 4xx but 401 with a line; the rest backs off
+        // 6, 12, 24, then 30 min.
         Verdict judge(int status, qint64 retryAfter) {
             auto &u = up();
             const qint64 now = QDateTime::currentSecsSinceEpoch();
@@ -296,10 +310,12 @@ namespace Shadowlos::Journal {
                 return Verdict::Retry;
             }
             if (status == 413) {
+                if (u.chunk <= kMinPacketChars) return Verdict::Dropped;
                 u.chunk = qMax(u.chunk / 2, kMinPacketChars);
                 scheduleSoon();
                 return Verdict::Retry;
             }
+            if (status == 400) return Verdict::DroppedQuietly;
             if (status >= 400 && status < 500 && status != 401) return Verdict::Dropped;
             u.holdUntil = now + kBackoffMins[qMin(u.fails++, 3)] * 60;
             return Verdict::Retry;
@@ -308,8 +324,8 @@ namespace Shadowlos::Journal {
         // Straight to our server, never through our own inbound or the system proxy.
         void post(const QString &reason, const QString &requestId, const QString &log,
                   const std::function<void(int status, qint64 retryAfter)> &done) {
-            QString base, token;
-            if (!ApiFromSubscription(&base, &token)) return;
+            QString token;
+            if (!up().nam || !ApiToken(&token)) return;
             const QJsonObject body{
                 {"app_id", "shadowlos-throne-dev"},
                 {"platform", "windows"},
@@ -323,7 +339,7 @@ namespace Shadowlos::Journal {
                 {"consent", true},
                 {"log", log},
             };
-            QNetworkRequest request(QUrl(QString::fromLatin1(kUploadUrl)));
+            QNetworkRequest request(QUrl(QLatin1String(ApiBase) + QLatin1String(kUploadPath)));
             request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
             request.setRawHeader("Authorization", "Sl-Sub " + token.toUtf8());
             request.setRawHeader("X-Sl-Install-Id", InstallId().toUtf8());
@@ -411,7 +427,7 @@ namespace Shadowlos::Journal {
                 const Verdict verdict = judge(status, retryAfter);
                 if (verdict == Verdict::Retry) return;
                 saveSent(last);
-                if (verdict == Verdict::Accepted) up().chunk = kPacketChars;
+                up().chunk = kPacketChars; // taken or dropped: the next packet starts full size again
                 if (verdict == Verdict::Dropped) {
                     Event("app", "upload-dropped", "fail", {},
                           QStringLiteral("journal lines %1..%2 refused: HTTP %3").arg(first).arg(last).arg(status));
@@ -430,8 +446,8 @@ namespace Shadowlos::Journal {
                 QMutexLocker lock(&st().mutex);
                 if (st().connecting) return;
             }
-            QString base, token;
-            if (!ApiFromSubscription(&base, &token)) return;
+            QString token;
+            if (!ApiToken(&token)) return;
             if (const QStringList crashes = crashFiles(); !crashes.isEmpty()) {
                 sendCrash(crashes.first());
                 return;
@@ -620,11 +636,14 @@ namespace Shadowlos::Journal {
     }
 
     void CoreLog(const QString &text) {
-        // Level words as sing-box and Throne print them: "ERROR[0012]", "[Warn]", "[Core error]", "panic:".
+        // Failures as sing-box and Throne print them: "ERROR[0012]", "[Fatal]", "[Core error]", "panic:".
         static const QRegularExpression failRe(QStringLiteral(
-            R"(\b(?:WARN|WARNING|ERROR|ERR|FATAL|PANIC)\b|(?i:\[(?:fatal|error|warn|warning|core error)\]|\bpanic\b))"));
+            R"(\b(?:ERROR|ERR|FATAL|PANIC)\b|(?i:\[(?:fatal|error|core error)\]|\bpanic\b))"));
+        // Warnings ("WARN[0003]", "[Warning] core: Xray … started") are kept outside the
+        // connect window too, but as ok: most of them are not failures.
+        static const QRegularExpression warnRe(QStringLiteral(R"(\b(?:WARN|WARNING)\b|(?i:\[(?:warn|warning)\]))"));
         static const QRegularExpression coreRe(QStringLiteral(
-            R"(\b(?:TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|PANIC)\b|^panic:|^goroutine |\[Core error\])"));
+            R"(\b(?:TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL|PANIC)\b|^panic:|^goroutine |\[Core error\]|\bcore: )"));
         auto &s = st();
         QMutexLocker lock(&s.mutex);
         if (!s.on) return;
@@ -633,7 +652,7 @@ namespace Shadowlos::Journal {
             const QString line = raw.trimmed();
             if (line.isEmpty()) continue;
             const bool fail = failRe.match(line).hasMatch();
-            if (!fail && !window) continue;
+            if (!fail && !window && !warnRe.match(line).hasMatch()) continue;
             if (!s.coreMinute.isValid() || s.coreMinute.elapsed() >= 60 * 1000) {
                 if (s.coreSkipped > 0) {
                     writeLocked("core-go", "rate-cap", "fail", {},
@@ -678,6 +697,8 @@ namespace Shadowlos::Journal {
             s.upClock.start();
             writeLocked("app", "connect", "ok", {}, {}, ms);
             writeLocked("app", "state", "ok", QStringLiteral("connected"));
+            // An upload once the VPN is up; this runs on a worker thread.
+            if (qApp) QMetaObject::invokeMethod(qApp, [] { tick(); }, Qt::QueuedConnection);
         } else {
             writeLocked("app", "connect", "fail", {}, s.lastFail.isEmpty() ? QStringLiteral("start failed") : s.lastFail, ms);
             writeLocked("app", "state", "ok", QStringLiteral("idle"));

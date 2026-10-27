@@ -516,7 +516,10 @@ namespace Shadowlos::Journal {
                 connect(dialog, &QObject::destroyed, this, [this, dialog] { open.remove(dialog); });
                 Event("ui", "screen-open", "ok", QString::fromLatin1(dialog->metaObject()->className()));
                 if (auto *box = qobject_cast<QMessageBox *>(dialog)) {
-                    if (box->icon() == QMessageBox::Warning || box->icon() == QMessageBox::Critical)
+                    // TUN needs admin: the "run as admin" question is a normal step, not a failure.
+                    if (box->text() == QCoreApplication::translate("MainWindow", "Please run Throne as admin"))
+                        Event("app", "elevate", "ok", QStringLiteral("asked to restart as admin"));
+                    else if (box->icon() == QMessageBox::Warning || box->icon() == QMessageBox::Critical)
                         Event("app", "error", "fail", box->windowTitle(), box->text());
                 }
             }

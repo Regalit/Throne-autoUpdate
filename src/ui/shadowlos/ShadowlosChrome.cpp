@@ -924,7 +924,15 @@ namespace Shadowlos::Chrome {
         actionsRow->addWidget(modesCard);
         ui->horizontalLayout_2->removeWidget(ui->data_view);
         ui->data_view->setParent(central);
-        actionsRow->addWidget(ui->data_view, 1);
+        // Dev builds: the blocking badge on top of the status panel, right under the routing
+        // switch (the menu card has no room left at the default width). None in prod.
+        auto *statusColumn = new QVBoxLayout();
+        statusColumn->setSpacing(8);
+        if (QWidget *badge = Shadowlos::Journal::MakeBlockingBadge(central)) {
+            statusColumn->addWidget(badge, 0, Qt::AlignRight | Qt::AlignTop);
+        }
+        statusColumn->addWidget(ui->data_view, 1);
+        actionsRow->addLayout(statusColumn, 1);
 
         root->addLayout(actionsRow);
 

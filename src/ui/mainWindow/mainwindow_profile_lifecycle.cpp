@@ -405,7 +405,7 @@ void MainWindow::profile_start(int _id) {
             clearRestartNeeded();
             start_vpn_challenge_poll();
             refresh_status();
-            Shadowlos::Chrome::ConnectStopwatch(true); // Shadowlos: corner stopwatch
+            Shadowlos::Chrome::ConnectStopwatch(running != nullptr); // Shadowlos: corner stopwatch; a crash may have stopped it already
             refresh_proxy_list({ent->id});
             refresh_auto_selector_view();
 

@@ -681,6 +681,8 @@ namespace Shadowlos::Chrome {
         for (const auto &c : cases) expect(QStringLiteral("text %1").arg(c.secs), StopwatchText(c.secs), QString::fromLatin1(c.want));
 
         // The timer on a throwaway card: hidden until connected, counts each second, resets on stop.
+        // The real window's corners are put back afterwards, should it already exist.
+        const Corner saved = corner();
         QWidget card;
         Corner &c = makeCorners(&card);
         expect(QStringLiteral("version"), c.version->text(), QStringLiteral(NKR_VERSION));
@@ -700,6 +702,7 @@ namespace Shadowlos::Chrome {
         ConnectStopwatch(true);
         expect(QStringLiteral("reconnect"), state(), QStringLiteral("shown/ticking/00:00"));
         ConnectStopwatch(false);
+        corner() = saved;
         return problems.join(QStringLiteral("; "));
     }
 

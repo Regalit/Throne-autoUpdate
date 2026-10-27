@@ -74,11 +74,19 @@ namespace Shadowlos::Journal {
     QJsonObject LatestGeo();
     void SetLatestGeoForTest(const QJsonObject &geo);
 
+    // The network-key rules (gateway MAC missing, appearing, changing); "" when all hold.
+    QString NetworkKeySelfTest();
+
     // The 15 s network check, whereami and the start net line. Called from Install.
     void InstallGeo(QObject *owner);
 
     // A net line for a connect start. UI thread (ConnectStart queues it).
     void GeoConnectStart();
+
+    // How many connects have started this run, and whether one is being brought up or is up
+    // (false again after a stop or a core crash). Thread-safe.
+    int ConnectCount();
+    bool TunnelActive();
 
     // An app/net line (outcome ok) carrying the nested geo object. Thread-safe.
     void NetEvent(const QString &d, const QJsonObject &geo);

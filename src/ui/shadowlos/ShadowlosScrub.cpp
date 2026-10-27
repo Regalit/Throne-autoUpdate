@@ -301,6 +301,8 @@ namespace Shadowlos::Journal {
                   envGeo == QStringLiteral(R"({"asn":45758,"country":"TH","net_type":"wifi","org":"AS45758"})"),
               QStringLiteral("keys ") + QStringList(env.keys()).join(u',') + QStringLiteral(" geo ") + envGeo);
         SetLatestGeoForTest({});
+        const QString keyProblems = NetworkKeySelfTest();
+        check(QStringLiteral("network key"), keyProblems.isEmpty(), keyProblems.isEmpty() ? QStringLiteral("ok") : keyProblems);
         check(QStringLiteral("envelope without geo"), !UploadEnvelope(QStringLiteral("journal"), QStringLiteral("j1"), QStringLiteral("x")).contains(QStringLiteral("geo")), {});
 
         print(failed == 0 ? QStringLiteral("journal selftest: all %1 passed").arg(std::size(cases) + extra)

@@ -88,6 +88,7 @@ namespace Shadowlos::Journal {
             qint64 seq = 0;
             QElapsedTimer connectClock; // since the last connect start
             bool connecting = false;
+            int connects = 0; // ConnectStart calls this run (geo drops a whereami answer that spans one)
             QString lastFail; // the last error line since the connect started
             QElapsedTimer upClock;
             QElapsedTimer coreMinute;
@@ -631,6 +632,18 @@ namespace Shadowlos::Journal {
         writeLocked(layer, step, outcome, d, err, ms);
     }
 
+    int ConnectCount() {
+        QMutexLocker lock(&st().mutex);
+        return st().connects;
+    }
+
+    // From the profile_start/profile_stop hooks: a core crash goes through profile_stop too,
+    // which settings->started_id does not follow.
+    bool TunnelActive() {
+        QMutexLocker lock(&st().mutex);
+        return st().connecting || st().upClock.isValid();
+    }
+
     void NetEvent(const QString &d, const QJsonObject &geo) {
         QMutexLocker lock(&st().mutex);
         writeLocked("app", "net", "ok", d, {}, -1, &geo);
@@ -702,6 +715,7 @@ namespace Shadowlos::Journal {
         auto &s = st();
         QMutexLocker lock(&s.mutex);
         s.connecting = true;
+        ++s.connects;
         s.connectClock.start();
         s.lastFail.clear();
         writeLocked("app", "server-pick", "ok", automatic ? QStringLiteral("auto") : server);

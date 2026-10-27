@@ -93,12 +93,13 @@ namespace Shadowlos::Journal {
         struct Geo {
             QPointer<QNetworkAccessManager> nam;
             QHash<QByteArray, Entry> cache; // by network key; memory only
-            QHash<QByteArray, QByteArray> gatewayMac; // last MAC seen per adapter+gateway, memory only
+            QByteArray lastBase; // hash of the last adapter+gateway seen, memory only
+            QByteArray lastMac;  // its gateway MAC once seen ("" not yet)
+            QByteArray lastKey;  // the key given to it
             Net net;
             bool checked = false;
             bool busy = false;
             QString pendingLine; // a net line waiting for the answer in flight ("" none)
-            int connectEpoch = 0;
         };
 
         Geo &g() {
@@ -121,6 +122,27 @@ namespace Shadowlos::Journal {
         }
 
         // ── the active network ────────────────────────────────────────────────
+
+        // The cache key of a network from the hash of its adapter+gateway (base) and the
+        // gateway's MAC, which the neighbour cache may not have yet:
+        // - another base is another network (with no cached geo while its MAC is missing);
+        // - on the same base, a missing MAC keeps the key, and the first MAC seen for it is
+        //   not a change either;
+        // - on the same base, a different MAC is a different network (two Wi-Fi networks
+        //   both on 192.168.1.1).
+        // A MAC is only ever compared within its own base, never carried to another network.
+        QByteArray networkKey(const QByteArray &base, const QByteArray &mac) {
+            auto &s = g();
+            const bool sameBase = !s.lastKey.isEmpty() && base == s.lastBase;
+            if (sameBase && (mac.isEmpty() || s.lastMac.isEmpty() || mac == s.lastMac)) {
+                if (s.lastMac.isEmpty()) s.lastMac = mac;
+                return s.lastKey;
+            }
+            s.lastBase = base;
+            s.lastMac = mac;
+            s.lastKey = QCryptographicHash::hash(base + '|' + mac, QCryptographicHash::Sha256).toHex();
+            return s.lastKey;
+        }
 
 #ifdef Q_OS_WIN
         // The address bytes (hashed later, never shown).
@@ -186,11 +208,7 @@ namespace Shadowlos::Journal {
                 base += '|' + sockaddrBytes(gw->Address);
                 if (mac.isEmpty()) mac = neighbourMac(gw->Address, best->IfIndex);
             }
-            const QByteArray baseHash = QCryptographicHash::hash(base, QCryptographicHash::Sha256);
-            // A neighbour entry that is briefly missing must not look like a new network.
-            if (mac.isEmpty()) mac = g().gatewayMac.value(baseHash);
-            else g().gatewayMac[baseHash] = mac;
-            net.key = QCryptographicHash::hash(base + '|' + mac, QCryptographicHash::Sha256).toHex();
+            net.key = networkKey(QCryptographicHash::hash(base, QCryptographicHash::Sha256), mac);
             return net;
         }
 #else
@@ -238,7 +256,7 @@ namespace Shadowlos::Journal {
         bool mayFetch() {
             if (!g().nam || g().busy || g().net.key.isEmpty()) return false;
             if (settings()->shadowlos_send_journal == 0) return false;
-            if (settings()->spmode_vpn && settings()->started_id >= 0) return false;
+            if (settings()->spmode_vpn && TunnelActive()) return false;
             QString token;
             return ApiToken(&token);
         }
@@ -255,20 +273,20 @@ namespace Shadowlos::Journal {
             request.setTransferTimeout(15 * 1000);
             s.busy = true;
             const QByteArray key = s.net.key;
-            const int epoch = s.connectEpoch;
-            const bool tun = settings()->spmode_vpn;
+            const int epoch = ConnectCount();
             QElapsedTimer clock;
             clock.start();
             auto *reply = s.nam->get(request);
-            QObject::connect(reply, &QNetworkReply::finished, s.nam, [reply, key, epoch, tun, clock] {
+            QObject::connect(reply, &QNetworkReply::finished, s.nam, [reply, key, epoch, clock] {
                 reply->deleteLater();
                 auto &s = g();
                 s.busy = false;
                 const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                 const qint64 now = QDateTime::currentSecsSinceEpoch();
                 Entry &entry = s.cache[key];
-                // A TUN connect that began meanwhile may have carried the request: not our network.
-                const bool tainted = tun && s.connectEpoch != epoch;
+                // Any connect that began meanwhile (TUN may have been turned on with it), or TUN up
+                // now, may have carried the request: not the user's own network.
+                const bool tainted = ConnectCount() != epoch || (settings()->spmode_vpn && TunnelActive());
                 if (status == 200 && !tainted) {
                     const QJsonObject answer = QJsonDocument::fromJson(reply->readAll()).object();
                     QJsonObject geo;
@@ -284,9 +302,9 @@ namespace Shadowlos::Journal {
                     // 404 (an old server), 503 (no databases), 429, a network error: ask again soon.
                     entry.nextAt = now + kRetrySecs;
                 }
-                Event("api", "call", status == 200 ? "ok" : "fail",
+                Event("api", "call", status == 200 && !tainted ? "ok" : "fail",
                       QStringLiteral("GET %1 %2").arg(QLatin1String(kWhereamiPath), status ? QString::number(status) : QStringLiteral("error")),
-                      status == 200 ? (tainted ? QStringLiteral("dropped: a TUN connect started meanwhile") : QString())
+                      status == 200 ? (tainted ? QStringLiteral("dropped: a connect started meanwhile") : QString())
                                     : status ? QStringLiteral("HTTP %1").arg(status) : reply->errorString(),
                       clock.elapsed());
                 if (key == s.net.key) setLatest(withNet(entry.geo, s.net));
@@ -362,6 +380,32 @@ namespace Shadowlos::Journal {
         return out;
     }
 
+    QString NetworkKeySelfTest() {
+        auto &s = g();
+        const QByteArray savedBase = s.lastBase, savedMac = s.lastMac, savedKey = s.lastKey;
+        s.lastBase.clear();
+        s.lastMac.clear();
+        s.lastKey.clear();
+        const QByteArray a = "base-a", b = "base-b", x = "mac-x", y = "mac-y", z = "mac-z";
+        QStringList bad;
+        const QByteArray k1 = networkKey(a, {});
+        if (networkKey(a, {}) != k1) bad << QStringLiteral("same base, no MAC changed the key");
+        if (networkKey(a, x) != k1) bad << QStringLiteral("the first MAC seen was a change");
+        if (networkKey(a, {}) != k1 || networkKey(a, x) != k1) bad << QStringLiteral("a MAC gone missing was a change");
+        const QByteArray k2 = networkKey(a, y);
+        if (k2 == k1) bad << QStringLiteral("another MAC on the same base was not a change");
+        if (networkKey(a, {}) != k2) bad << QStringLiteral("a missing MAC after a new one changed the key");
+        const QByteArray k3 = networkKey(b, {});
+        if (k3 == k1 || k3 == k2) bad << QStringLiteral("another base without a MAC reused a key");
+        if (networkKey(b, z) != k3) bad << QStringLiteral("the first MAC on base b was a change");
+        const QByteArray k4 = networkKey(a, {});
+        if (k4 == k3 || k4 == k2) bad << QStringLiteral("back on base a reused another network's key");
+        s.lastBase = savedBase;
+        s.lastMac = savedMac;
+        s.lastKey = savedKey;
+        return bad.join(QStringLiteral("; "));
+    }
+
     QJsonObject LatestGeo() {
         QMutexLocker lock(&latestMutex());
         return latest();
@@ -390,7 +434,6 @@ namespace Shadowlos::Journal {
     // UI thread. Written at once with what is known: the tunnel may come up any moment.
     void GeoConnectStart() {
         auto &s = g();
-        ++s.connectEpoch;
         const Net net = currentNet();
         s.net = net;
         s.checked = true;

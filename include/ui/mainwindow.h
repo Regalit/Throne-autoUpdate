@@ -128,6 +128,9 @@ public:
 
     void profile_start(int _id = -1);
 
+    // Shadowlos: «Обновить» pressed; exits and lets `ThroneCore selfupdate` apply the ready update.
+    void RequestSelfUpdate();
+
     void profile_stop(bool crash = false, bool block = false, bool manual = false);
 
     int get_profile_to_start();
@@ -276,7 +279,6 @@ private:
     QMutex mu_stopping;
     QMutex mu_exit;
     ExitReason exit_reason = ExitReason::None;
-    QMutex mu_download_update;
     QMutex mu_download_dashboard;
     class ConnectionsTreeModel *connectionsModel = nullptr;
     class ConnectionsTreeFilterProxyModel *connectionsFilterModel = nullptr;
@@ -496,8 +498,6 @@ private:
     bool set_system_dns(bool set, bool save_set = true);
 
     void showHijackDeprecationNotice();
-
-    void CheckUpdate();
 
     void OpenDashboard();
 

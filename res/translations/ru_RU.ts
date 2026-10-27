@@ -9713,8 +9713,23 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Замерить время отклика</translation>
     </message>
     <message>
+        <source>Update app</source>
+        <translation>Обновить</translation>
+    </message>
+    <message>
         <source>Simple view</source>
         <translation>Упрощённый вид</translation>
+    </message>
+</context>
+<context>
+    <name>ShadowlosUpdater</name>
+    <message>
+        <source>Version %1 is ready. Press to update.</source>
+        <translation>Готова версия %1. Нажмите, чтобы обновить.</translation>
+    </message>
+    <message>
+        <source>No updates</source>
+        <translation>Обновлений нет</translation>
     </message>
 </context>
 </TS>

@@ -101,6 +101,8 @@ set(PROJECT_SOURCES
         src/global/ShadowlosBootstrap.cpp
         include/ui/shadowlos/ShadowlosChrome.hpp
         src/ui/shadowlos/ShadowlosChrome.cpp
+        include/ui/shadowlos/ShadowlosUpdater.hpp
+        src/ui/shadowlos/ShadowlosUpdater.cpp
         src/global/Utils.cpp
         include/global/Logger.hpp
         src/global/Logger.cpp
@@ -633,6 +635,7 @@ endif ()
 set_property(SOURCE "3rdparty/SQLiteCpp/src/sqlite3.c" PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 # Shadowlos: needs the full Ui::MainWindow, which a batch-mate defining MW_INTERFACE would hide.
 set_property(SOURCE src/ui/shadowlos/ShadowlosChrome.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
+set_property(SOURCE src/ui/shadowlos/ShadowlosUpdater.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Verified to link. OMIT_VIRTUALTABLE/VIEW/ANALYZE/CTE/WINDOWFUNC/DECLTYPE all break this build.
 target_compile_definitions(Throne PRIVATE

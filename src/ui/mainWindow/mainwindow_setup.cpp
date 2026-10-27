@@ -13,6 +13,7 @@
 #include "include/global/Logger.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
+#include "include/ui/shadowlos/ShadowlosUpdater.hpp"
 #include "include/stats/autoselector/AutoSelectorMonitor.hpp"
 #include "include/ui/stats/dialog_auto_selector.h"
 #include "include/sys/Process.hpp"
@@ -247,6 +248,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 Configs::dataManager->settingsRepo->remember_id >= 0) {
                 core_process->start_profile_when_core_is_up =
                     Configs::dataManager->settingsRepo->remember_id;
+            }
+            // Shadowlos: after «Обновить», the profile that was running comes back on.
+            if (const int resume = Shadowlos::Updater::TakeResumeProfile(); resume >= 0) {
+                core_process->start_profile_when_core_is_up = resume;
             }
             core_process->Start();
         },

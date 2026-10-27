@@ -132,6 +132,17 @@ QToolButton[slRole="pill"]:disabled {
     color: #5E676E;
 }
 
+/* «Обновить» in the menu card: dim until an update is ready, then the power button's green. */
+QToolButton#slAppUpdate[slUpdateReady="true"] {
+    background-color: #5DB83A;
+    color: #0B0D0F;
+    font-weight: 600;
+}
+
+QToolButton#slAppUpdate[slUpdateReady="true"]:hover {
+    background-color: #86D75E;
+}
+
 QToolButton[slRole="pill"]::menu-indicator {
     image: none;
     width: 0px;

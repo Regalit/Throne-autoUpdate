@@ -4,6 +4,37 @@ if (NOT DEFINED INPUT_VERSION)
 endif ()
 set(NKR_VERSION "${INPUT_VERSION}")
 
+# Shadowlos: one flag switches every dev-only feature, and the version is always given
+# explicitly: X.Y.Z for prod, X.Y.Z-dev for dev. The updater compares versions and picks
+# its channel from these, so a Windows build never guesses either.
+option(SHADOWLOS_DEV "Shadowlos dev build: dev-only features and the dev update channel" OFF)
+if (WIN32)
+    if (NOT NKR_VERSION MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)(-dev)?$")
+        message(FATAL_ERROR "Version '${NKR_VERSION}' must be X.Y.Z or X.Y.Z-dev (pass -DINPUT_VERSION=... or env INPUT_VERSION)")
+    endif ()
+    if (CMAKE_MATCH_1 GREATER 99 OR CMAKE_MATCH_2 GREATER 99 OR CMAKE_MATCH_3 GREATER 99)
+        message(FATAL_ERROR "Version '${NKR_VERSION}': each part must be 0..99")
+    endif ()
+    math(EXPR SHADOWLOS_VERSION_CODE "${CMAKE_MATCH_1} * 10000 + ${CMAKE_MATCH_2} * 100 + ${CMAKE_MATCH_3}")
+    if (SHADOWLOS_DEV AND NOT CMAKE_MATCH_4)
+        message(FATAL_ERROR "SHADOWLOS_DEV=ON needs a -dev version, got '${NKR_VERSION}'")
+    elseif (NOT SHADOWLOS_DEV AND CMAKE_MATCH_4)
+        message(FATAL_ERROR "Version '${NKR_VERSION}' is a dev version; build it with -DSHADOWLOS_DEV=ON")
+    endif ()
+else ()
+    set(SHADOWLOS_VERSION_CODE 0)
+endif ()
+if (SHADOWLOS_DEV)
+    set(SHADOWLOS_DEV_INT 1)
+    set(SHADOWLOS_CHANNEL "dev")
+    set(SHADOWLOS_EXE_NAME "ShadowLosThroneDev")
+else ()
+    set(SHADOWLOS_DEV_INT 0)
+    set(SHADOWLOS_CHANNEL "prod")
+    set(SHADOWLOS_EXE_NAME "ShadowLosThrone")
+endif ()
+message(STATUS "Shadowlos: channel=${SHADOWLOS_CHANNEL} version_code=${SHADOWLOS_VERSION_CODE}")
+
 # Derive numeric parts for Windows PE VERSIONINFO (X.Y.Z.W) from NKR_VERSION.
 # Examples:
 #   1.2.3       -> 1.2.3.0

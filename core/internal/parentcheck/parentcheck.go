@@ -31,7 +31,8 @@ func CheckParentProcess() {
 // parentIsAcceptedLauncher reports whether parentPath is a launcher the core is
 // willing to run under: it must sit in the same directory as the core and be one
 // of the accepted GUI names. Shadowlos ships the GUI renamed (Throne.exe ->
-// Shadowlos.exe on Windows), so both names are allowed.
+// Shadowlos.exe up to 1.3.2-ui, ShadowLosThrone.exe / ShadowLosThroneDev.exe
+// from 1.0.0 on Windows), so all of them are allowed.
 func parentIsAcceptedLauncher(parentPath, selfPath, goos string) bool {
 	selfDir := filepath.Dir(selfPath)
 	parentDir := filepath.Dir(parentPath)
@@ -41,7 +42,12 @@ func parentIsAcceptedLauncher(parentPath, selfPath, goos string) bool {
 		if !strings.EqualFold(parentDir, selfDir) {
 			return false
 		}
-		return strings.EqualFold(parentBase, "Throne.exe") || strings.EqualFold(parentBase, "Shadowlos.exe")
+		for _, name := range []string{"Throne.exe", "Shadowlos.exe", "ShadowLosThrone.exe", "ShadowLosThroneDev.exe"} {
+			if strings.EqualFold(parentBase, name) {
+				return true
+			}
+		}
+		return false
 	}
 
 	if parentDir != selfDir {

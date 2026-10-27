@@ -31,6 +31,22 @@ func TestParentIsAcceptedLauncher(t *testing.T) {
 			want:       true,
 		},
 		{
+			name:       "windows ShadowLos Throne launcher",
+			parentPath: `C:\Users\user\Desktop\ShadowLosThrone\ShadowLosThrone.exe`,
+			selfPath:   `C:\Users\user\Desktop\ShadowLosThrone\ThroneCore.exe`,
+			goos:       "windows",
+			pathStyle:  "windows",
+			want:       true,
+		},
+		{
+			name:       "windows ShadowLos Throne Dev launcher",
+			parentPath: `C:\Users\user\Desktop\ShadowLosThroneDev\ShadowLosThroneDev.exe`,
+			selfPath:   `C:\Users\user\Desktop\ShadowLosThroneDev\ThroneCore.exe`,
+			goos:       "windows",
+			pathStyle:  "windows",
+			want:       true,
+		},
+		{
 			name:       "windows stock throne launcher still accepted",
 			parentPath: `C:\Apps\Throne\Throne.exe`,
 			selfPath:   `C:\Apps\Throne\ThroneCore.exe`,

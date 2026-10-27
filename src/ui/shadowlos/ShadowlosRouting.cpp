@@ -10,10 +10,12 @@
 #include "include/global/HTTPRequestHelper.hpp"
 #include "include/global/Logger.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
 #include <QButtonGroup>
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QElapsedTimer>
 #include <QHBoxLayout>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -22,9 +24,6 @@
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
-#include <QUrl>
-#include <QUrlQuery>
-#include <QUuid>
 
 #include <climits>
 #include <thread>
@@ -119,26 +118,7 @@ namespace Shadowlos::Routing {
             if (settings()->started_id >= 0) {
                 if (auto *mw = GetMainWindow()) mw->profile_start(settings()->started_id);
             }
-        }
-
-        QString installId() {
-            if (QUuid(settings()->shadowlos_install_id).isNull()) {
-                settings()->shadowlos_install_id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-                settings()->Save();
-            }
-            return settings()->shadowlos_install_id;
-        }
-
-        // The base URL and Sl-Sub token come from the managed subscription
-        // (…/dynamic_config?user_id_hash=<64 hex>…); nothing without it.
-        bool apiFromSubscription(QString *base, QString *token) {
-            const auto group = Configs::dataManager->groupsRepo->GetGroup(settings()->shadowlos_managed_group);
-            if (group == nullptr) return false;
-            const QUrl url(group->url);
-            *token = QUrlQuery(url).queryItemValue(QStringLiteral("user_id_hash"));
-            if (!url.isValid() || url.host().isEmpty() || token->size() != 64) return false;
-            *base = url.adjusted(QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment).toString();
-            return true;
+            Journal::Event("app", "settings", "ok", QStringLiteral("route ") + profile->name);
         }
 
         // Applies a regional answer on the UI thread. A throne-route-profile document
@@ -176,11 +156,12 @@ namespace Shadowlos::Routing {
         void maybeRefresh() {
             const qint64 now = QDateTime::currentSecsSinceEpoch();
             if (now < nextRefresh() || settings()->started_id >= 0) return;
-            QString base, token;
-            if (!apiFromSubscription(&base, &token)) return;
+            QString token;
+            // The Sl-Sub token comes from the managed subscription; nothing without it.
+            if (!ApiToken(&token)) return;
             nextRefresh() = now + kRetryAfterSecs;
-            const QString url = base + QStringLiteral("/api/mobile/routing/regional?format=throne&platform=windows");
-            const QString id = installId();
+            const QString url = QLatin1String(ApiBase) + QStringLiteral("/api/mobile/routing/regional?format=throne&platform=windows");
+            const QString id = InstallId();
             // QPointer: the answer is dropped if the app is going away meanwhile.
             QPointer<QCoreApplication> app(qApp);
             std::thread([url, token, id, app] {
@@ -190,7 +171,12 @@ namespace Shadowlos::Routing {
                 options.headers = {{"Authorization", "Sl-Sub " + token.toUtf8()},
                                    {"X-Sl-Install-Id", id.toUtf8()},
                                    {"X-Sl-Platform", "windows"}};
+                QElapsedTimer clock;
+                clock.start();
                 const auto resp = Configs_network::NetworkRequestHelper::HttpGet(url, options);
+                Journal::Event("api", "call", resp.error.isEmpty() ? "ok" : "fail",
+                               QStringLiteral("GET /api/mobile/routing/regional ") + (resp.error.isEmpty() ? "200" : "error"),
+                               resp.error, clock.elapsed());
                 if (app.isNull() || QCoreApplication::closingDown()) return;
                 QMetaObject::invokeMethod(app.data(), [resp] {
                     if (settings()->started_id >= 0) return; // connected meanwhile: next time, off the VPN

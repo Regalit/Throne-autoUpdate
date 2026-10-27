@@ -14,6 +14,7 @@
 #include "include/global/ShadowlosBootstrap.hpp"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "include/stats/autoselector/AutoSelectorMonitor.hpp"
 #include "include/ui/stats/dialog_auto_selector.h"
 #include "include/sys/Process.hpp"
@@ -194,6 +195,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     MW_show_log = [=,this](const QString &log) {
         append_log(log);
         Logging::WriteUserLog(log);
+        Shadowlos::Journal::CoreLog(log); // Shadowlos: dev-build error journal
     };
 
     if (Configs::dataManager->settingsRepo->random_inbound_port)

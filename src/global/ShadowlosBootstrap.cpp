@@ -17,6 +17,8 @@
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QUrl>
+#include <QUrlQuery>
+#include <QUuid>
 
 namespace Shadowlos {
     namespace {
@@ -250,6 +252,23 @@ namespace Shadowlos {
 
     bool WantsTunOnStart() {
         return tunOnStart;
+    }
+
+    bool ApiToken(QString *token) {
+        const auto group = findManagedGroup();
+        if (group == nullptr) return false;
+        const QUrl url(group->url);
+        *token = QUrlQuery(url).queryItemValue(QStringLiteral("user_id_hash"));
+        return url.isValid() && token->size() == 64;
+    }
+
+    QString InstallId() {
+        auto *settings = Configs::dataManager->settingsRepo.get();
+        if (QUuid(settings->shadowlos_install_id).isNull()) {
+            settings->shadowlos_install_id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            settings->Save();
+        }
+        return settings->shadowlos_install_id;
     }
 
     void ApplyBootstrap() {

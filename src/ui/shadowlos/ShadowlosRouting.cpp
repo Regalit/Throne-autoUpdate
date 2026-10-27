@@ -26,6 +26,7 @@
 #include <QUrlQuery>
 #include <QUuid>
 
+#include <climits>
 #include <thread>
 
 namespace Shadowlos::Routing {
@@ -54,9 +55,16 @@ namespace Shadowlos::Routing {
             return route(settings()->shadowlos_managed_route);
         }
 
+        // «Все через VPN», found by name once; looked up again only when that id is gone.
         std::shared_ptr<Configs::RouteProfile> allVpn() {
+            static int cachedId = -1;
+            if (auto p = route(cachedId); p && p->name == Configs::RouteProfile::DefaultChainName()) return p;
+            cachedId = -1;
             for (const auto &p : Configs::dataManager->routesRepo->GetAllRouteProfiles()) {
-                if (p != nullptr && p->name == Configs::RouteProfile::DefaultChainName()) return p;
+                if (p != nullptr && p->name == Configs::RouteProfile::DefaultChainName()) {
+                    cachedId = p->id;
+                    return p;
+                }
             }
             return nullptr;
         }
@@ -173,16 +181,26 @@ namespace Shadowlos::Routing {
             nextRefresh() = now + kRetryAfterSecs;
             const QString url = base + QStringLiteral("/api/mobile/routing/regional?format=throne&platform=windows");
             const QString id = installId();
-            std::thread([url, token, id] {
+            // QPointer: the answer is dropped if the app is going away meanwhile.
+            QPointer<QCoreApplication> app(qApp);
+            std::thread([url, token, id, app] {
                 Configs_network::HttpGetOptions options;
                 options.maxBytes = 1 << 20;
+                options.direct = true;
                 options.headers = {{"Authorization", "Sl-Sub " + token.toUtf8()},
                                    {"X-Sl-Install-Id", id.toUtf8()},
                                    {"X-Sl-Platform", "windows"}};
                 const auto resp = Configs_network::NetworkRequestHelper::HttpGet(url, options);
-                QMetaObject::invokeMethod(qApp, [resp] {
+                if (app.isNull() || QCoreApplication::closingDown()) return;
+                QMetaObject::invokeMethod(app.data(), [resp] {
+                    if (settings()->started_id >= 0) return; // connected meanwhile: next time, off the VPN
                     if (!resp.error.isEmpty()) {
                         LOG_INFO(QStringLiteral("[routing] regional request failed: %1").arg(resp.error));
+                        // The fallback copy follows «Удобный» while the server cannot be reached.
+                        if (const auto profile = route(settings()->shadowlos_regional_route)) {
+                            copyComfyInto(profile);
+                            Configs::dataManager->routesRepo->Save(profile);
+                        }
                         return;
                     }
                     const auto answer = QJsonDocument::fromJson(resp.data).object();
@@ -237,11 +255,17 @@ namespace Shadowlos::Routing {
             select(mode);
             sync();
         });
-        // The Routing menu, the tray and the routes dialog change the profile too.
+        // The Routing menu, the tray and the routes dialog change the profile too; only a
+        // change of the selected id is worth reloading profiles for, plus a slow resync.
         auto *poll = new QTimer(box);
         poll->setInterval(1000);
         QObject::connect(poll, &QTimer::timeout, box, [sync] {
-            sync();
+            static int lastRoute = INT_MIN;
+            static int ticks = 0;
+            if (settings()->current_route_id != lastRoute || ++ticks % 30 == 0) {
+                lastRoute = settings()->current_route_id;
+                sync();
+            }
             maybeRefresh();
         });
         poll->start();

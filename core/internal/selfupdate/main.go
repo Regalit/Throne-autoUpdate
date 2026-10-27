@@ -6,12 +6,16 @@
 //	    Fetches BASE/latest?platform=windows, and when it names a newer build,
 //	    downloads BASE/download?platform=windows into WORK and verifies its size,
 //	    sha256 and ed25519 signature. Prints one JSON line: {"state":"none"|"ready"|"error",...}.
-//	ThroneCore selfupdate apply -dir APPDIR -work DIR -exe NAME -pid PID
-//	    Waits for PID to exit, re-verifies the package, moves the files it replaces
-//	    into WORK/previous, puts the new ones in place and starts NAME --after-update.
-//	    When the new build does not write WORK/ok within the timeout, it restores
-//	    the old files, marks that version bad and starts the old build again.
-//	    Run it from a copy outside the app dir's files: it replaces ThroneCore.exe too.
+//	ThroneCore selfupdate apply -dir APPDIR -src DIR -exe NAME -appid ID -pid PID [-deelevate]
+//	    Waits for PID to exit and stops anything else running from APPDIR, copies the
+//	    package from SRC into APPDIR/update and verifies that copy, moves the files it
+//	    replaces into APPDIR/update/previous (journal: apply.json), puts the new ones in
+//	    place, leaves SRC/pending and starts NAME. When the new build does not write
+//	    SRC/ok once its core is up, the old files come back and the old build starts;
+//	    after two such failures that version is skipped. An apply that died half-way is
+//	    undone by the next one. Runs from APPDIR's own ThroneCore.exe (Windows lets a
+//	    running image be renamed); -deelevate starts the app as the user after an
+//	    elevated apply.
 //
 // It never touches config/ (servers, routing, settings): a package that carries
 // anything under config/ or update/ is refused.

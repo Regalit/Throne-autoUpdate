@@ -57,10 +57,17 @@ func (r *Release) validate(appID string, key ed25519.PublicKey) error {
 		return fmt.Errorf("bad size %d", r.Size)
 	}
 	sig, err := base64.StdEncoding.DecodeString(r.Sig)
-	if err != nil || !ed25519.Verify(key, []byte(r.SHA256), sig) {
+	if err != nil || !ed25519.Verify(key, []byte(r.signedMessage()), sig) {
 		return errors.New("bad signature")
 	}
 	return nil
+}
+
+// signedMessage is what the release key signs: everything the client acts on,
+// so a server cannot replay an old signed package as a newer version, or a
+// package of the other channel.
+func (r *Release) signedMessage() string {
+	return fmt.Sprintf("%s|%s|%d|%d|%s", r.AppID, r.Platform, r.VersionCode, r.Size, r.SHA256)
 }
 
 // fileMatches reports whether path has exactly the given size and sha256.

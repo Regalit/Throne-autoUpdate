@@ -21,9 +21,6 @@
 #include "include/ui/mainWindow/MainWindowInternal.h"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
 
-// The profile running when «Обновить» was pressed, started again after the update.
-static int selfUpdateResumeProfile = -1;
-
 #include "include/ui/group/dialog_manage_groups.h"
 #include "include/ui/setting/dialog_basic_settings.h"
 #include "include/ui/setting/dialog_hotkey.h"
@@ -175,8 +172,7 @@ void MainWindow::prepare_exit()
 void MainWindow::on_menu_exit_triggered() {
     prepare_exit();
     if (exit_reason == ExitReason::RunUpdater) {
-        QDir::setCurrent(QApplication::applicationDirPath());
-        Shadowlos::Updater::LaunchApply(selfUpdateResumeProfile);
+        // Shadowlos: `ThroneCore selfupdate apply` is already waiting for this process to end.
     } else if (exit_reason == ExitReason::Restart || exit_reason == ExitReason::RestartWithTun || exit_reason == ExitReason::RestartWithDns) {
         QDir::setCurrent(QApplication::applicationDirPath());
 
@@ -462,7 +458,8 @@ void MainWindow::OpenDashboard() {
 // Shadowlos: upstream's CheckUpdate (throneproj GitHub releases, no signature) is gone. Updates
 // come from our channel through `ThroneCore selfupdate`; the «Обновить» button (ShadowlosUpdater) calls this.
 void MainWindow::RequestSelfUpdate() {
-    selfUpdateResumeProfile = Configs::dataManager->settingsRepo->started_id;
+    // The apply starts first and waits for this process to end; if it cannot start, the app stays.
+    if (!Shadowlos::Updater::LaunchApply(Configs::dataManager->settingsRepo->started_id)) return;
     exit_reason = ExitReason::RunUpdater;
     on_menu_exit_triggered();
 }

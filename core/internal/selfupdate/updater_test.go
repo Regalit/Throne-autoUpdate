@@ -57,11 +57,12 @@ func makeZip(t *testing.T, files map[string][]byte) []byte {
 
 func release(pkg []byte, code int, priv ed25519.PrivateKey) Release {
 	sum := sha256.Sum256(pkg)
-	hexSum := hex.EncodeToString(sum[:])
-	return Release{
+	r := Release{
 		AppID: "shadowlos-throne-dev", Platform: "windows", Version: "1.0.1-dev", VersionCode: code,
-		SHA256: hexSum, Size: int64(len(pkg)), Sig: base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(hexSum))),
+		SHA256: hex.EncodeToString(sum[:]), Size: int64(len(pkg)),
 	}
+	r.Sig = base64.StdEncoding.EncodeToString(ed25519.Sign(priv, []byte(r.signedMessage())))
+	return r
 }
 
 type fakeServer struct {
@@ -129,6 +130,12 @@ func TestCheckRefuses(t *testing.T) {
 	cases := map[string]func(r *Release){
 		"signature by another key": func(r *Release) { *r = release(pkg, 10001, otherPriv) },
 		"sha256 of another file":   func(r *Release) { r.SHA256 = strings.Repeat("0", 64) },
+		// An old signed package announced as newer: the signature binds the version.
+		"version raised by the server": func(r *Release) { r.VersionCode = 10099 },
+		// The signature binds the size too; only the hex used to be signed.
+		"signed over the bare sha256": func(r *Release) {
+			r.Sig = base64.StdEncoding.EncodeToString(ed25519.Sign(testPriv, []byte(r.SHA256)))
+		},
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -207,11 +214,15 @@ func prepare(t *testing.T, extra map[string][]byte) (dir, work string) {
 	return dir, work
 }
 
+func opts(dir, work string, timeout time.Duration) applyOpts {
+	return applyOpts{dir: dir, src: work, exe: "App.exe", appID: "shadowlos-throne-dev", timeout: timeout}
+}
+
 func TestApplyKeepsNewBuildThatStarts(t *testing.T) {
 	dir, work := prepare(t, nil)
 	t.Setenv("UPDATER_TEST_APP", "ok")
 	t.Setenv("UPDATER_TEST_WORK", work)
-	if err := apply(dir, work, "App.exe", 30*time.Second); err != nil {
+	if err := apply(opts(dir, work, 30*time.Second), work); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "App.exe")); string(b) == "old exe" {
@@ -223,15 +234,17 @@ func TestApplyKeepsNewBuildThatStarts(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(dir, "config", "throne.db")); string(b) != "user data" {
 		t.Fatal("config touched")
 	}
-	if _, err := os.Stat(filepath.Join(work, previousDir)); !os.IsNotExist(err) {
-		t.Fatal("previous kept after a good start")
+	for _, p := range []string{previousDir, stagingDir, incomingDir, applyFile, pendingFile, readyFile, packageFile} {
+		if exists(filepath.Join(work, p)) {
+			t.Fatalf("%s kept after a good start", p)
+		}
 	}
 }
 
 func TestApplyRollsBackBuildThatDoesNotStart(t *testing.T) {
 	dir, work := prepare(t, nil)
 	t.Setenv("UPDATER_TEST_APP", "crash")
-	if err := apply(dir, work, "App.exe", 30*time.Second); err == nil {
+	if err := apply(opts(dir, work, 30*time.Second), work); err == nil {
 		t.Fatal("apply of a crashing build succeeded")
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "App.exe")); string(b) != "old exe" {
@@ -240,10 +253,14 @@ func TestApplyRollsBackBuildThatDoesNotStart(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "lib", "new.dll")); !os.IsNotExist(err) {
 		t.Fatal("added file left behind")
 	}
-	if !isBad(work, 10001) {
-		t.Fatal("version not marked bad")
+	if n := readBad(work)["10001"]; n != 1 || isBad(work, 10001) {
+		t.Fatalf("one failure: count %d, skipped %v", n, isBad(work, 10001))
 	}
-	for _, d := range []string{stagingDir, previousDir} {
+	markFailure(work, 10001)
+	if !isBad(work, 10001) {
+		t.Fatal("not skipped after the second failure")
+	}
+	for _, d := range []string{stagingDir, previousDir, applyFile} {
 		if _, err := os.Stat(filepath.Join(work, d)); !os.IsNotExist(err) {
 			t.Fatalf("%s left after a rollback", d)
 		}
@@ -252,7 +269,7 @@ func TestApplyRollsBackBuildThatDoesNotStart(t *testing.T) {
 
 func TestApplyRefusesConfigInPackage(t *testing.T) {
 	dir, work := prepare(t, map[string][]byte{"config/throne.db": []byte("overwrite")})
-	if err := apply(dir, work, "App.exe", time.Second); err == nil {
+	if err := apply(opts(dir, work, time.Second), work); err == nil {
 		t.Fatal("package with config/ applied")
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "config", "throne.db")); string(b) != "user data" {
@@ -260,5 +277,66 @@ func TestApplyRefusesConfigInPackage(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dir, "App.exe")); string(b) != "old exe" {
 		t.Fatal("app changed")
+	}
+}
+
+func TestApplyRefusesOtherAppID(t *testing.T) {
+	dir, work := prepare(t, nil)
+	o := opts(dir, work, time.Second)
+	o.appID = "shadowlos-throne" // a prod build must not take a dev package
+	if err := apply(o, work); err == nil {
+		t.Fatal("dev package applied to prod")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "App.exe")); string(b) != "old exe" {
+		t.Fatal("app changed")
+	}
+}
+
+func TestApplyUndoesUnfinishedApply(t *testing.T) {
+	dir, work := prepare(t, nil)
+	// A crash after App.exe was moved out and the new one put in, with lib/new.dll still to come.
+	os.MkdirAll(filepath.Join(work, previousDir), 0o755)
+	os.Rename(filepath.Join(dir, "App.exe"), filepath.Join(work, previousDir, "App.exe"))
+	os.WriteFile(filepath.Join(dir, "App.exe"), []byte("half-new"), 0o755)
+	writeJSON(filepath.Join(work, applyFile), &applyState{Code: 10001, Replaced: []string{"App.exe"}, Added: []string{"lib/new.dll"}})
+	os.Remove(filepath.Join(work, readyFile)) // nothing new to apply this time
+	if err := apply(opts(dir, work, time.Second), work); err == nil {
+		t.Fatal("apply without a package succeeded")
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "App.exe")); string(b) != "old exe" {
+		t.Fatalf("old exe not restored, got %q", b)
+	}
+	if exists(filepath.Join(work, applyFile)) {
+		t.Fatal("journal kept after the undo")
+	}
+}
+
+func TestSafeName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"App.exe": true, "lib/new.dll": true, "translations/ru.qm": true,
+		"": false, "/abs.exe": false, "../x": false, "a/../b": false, "./a": false, "a//b": false,
+		"C:/x": false, "a:stream": false, `a`: false,
+		"config./x": false, "config /x": false, "x.exe.": false, "x ": false,
+		"CON": false, "nul.txt": false, "lib/com1.dll": false, "LPT9": false,
+	} {
+		if got := safeName(name); got != want {
+			t.Errorf("safeName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestCheckSweepsLeftoversOfAFinishedApply(t *testing.T) {
+	work := t.TempDir()
+	os.MkdirAll(filepath.Join(work, previousDir), 0o755)
+	os.WriteFile(filepath.Join(work, previousDir, "ThroneCore.exe"), []byte("old"), 0o644)
+	sweep(work)
+	if exists(filepath.Join(work, previousDir)) {
+		t.Fatal("previous kept")
+	}
+	os.MkdirAll(filepath.Join(work, previousDir), 0o755)
+	writeJSON(filepath.Join(work, applyFile), &applyState{Code: 1})
+	sweep(work)
+	if !exists(filepath.Join(work, previousDir)) {
+		t.Fatal("previous swept while an apply still has to be undone")
 	}
 }

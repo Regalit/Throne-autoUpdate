@@ -50,18 +50,41 @@ namespace Shadowlos::Updater {
             return true;
         }
 
-        // update\ next to the exe; %LOCALAPPDATA%\<exe name>\update when the install folder
-        // is read-only (Program Files), where applying then asks for UAC once.
+        QString localWorkDir() {
+            return appDir() + QStringLiteral("/update");
+        }
+
+        QString userWorkDir() {
+            return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) +
+                   QStringLiteral("/" SHADOWLOS_EXE_NAME "/update");
+        }
+
+        // Where this app downloads: update\ next to the exe, or %LOCALAPPDATA%\<exe name>\update
+        // when the install folder is read-only (Program Files), where applying asks for UAC once.
         QString workDir() {
             static const QString dir = [] {
-                const QString local = appDir() + QStringLiteral("/update");
+                const QString local = localWorkDir();
                 if (QDir().mkpath(local) && dirWritable(local)) return local;
-                const QString user = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) +
-                                     QStringLiteral("/" SHADOWLOS_EXE_NAME "/update");
-                QDir().mkpath(user);
-                return user;
+                QDir().mkpath(userWorkDir());
+                return userWorkDir();
             }();
             return dir;
+        }
+
+        // The dir `selfupdate apply` left its pending marker in, if this start follows an
+        // update. Both places are looked at: an elevated relaunch resolves workDir()
+        // differently from the unelevated app that downloaded the update.
+        QString pendingDir() {
+            for (const QString &dir : {localWorkDir(), userWorkDir()}) {
+                if (QFileInfo::exists(dir + QStringLiteral("/pending"))) return dir;
+            }
+            return {};
+        }
+
+        // The check running now, stopped before an apply moves its files.
+        QPointer<QProcess> &currentCheck() {
+            static QPointer<QProcess> proc;
+            return proc;
         }
 
         // The channel is fixed by the build: dev only ever reads the dev channel.
@@ -83,10 +106,6 @@ namespace Shadowlos::Updater {
             return appDir() + QStringLiteral("/ThroneCore.exe");
         }
 
-        bool afterUpdate() {
-            return QCoreApplication::arguments().contains(QStringLiteral("--after-update"));
-        }
-
         void setReady(QToolButton *button, const QString &version) {
             const bool ready = !version.isEmpty();
             button->setEnabled(ready);
@@ -98,8 +117,9 @@ namespace Shadowlos::Updater {
         }
 
         void runCheck(QPointer<QToolButton> button) {
-            if (!QFileInfo::exists(coreExe())) return;
+            if (!QFileInfo::exists(coreExe()) || currentCheck()) return;
             auto *proc = new QProcess(button);
+            currentCheck() = proc;
             QObject::connect(proc, &QProcess::finished, proc, [proc, button](int code, QProcess::ExitStatus) {
                 proc->deleteLater();
                 const auto res = QJsonDocument::fromJson(proc->readAllStandardOutput().trimmed()).object();
@@ -126,14 +146,14 @@ namespace Shadowlos::Updater {
         }
 
         // Tells the waiting `selfupdate apply` that this build came up: the core is running.
-        void confirmWhenUp(QWidget *window) {
+        void confirmWhenUp(QWidget *window, const QString &dir) {
             auto *timer = new QTimer(window);
             timer->setInterval(500);
-            QObject::connect(timer, &QTimer::timeout, window, [timer] {
+            QObject::connect(timer, &QTimer::timeout, window, [timer, dir] {
                 if (!Configs::dataManager->settingsRepo->core_running) return;
                 timer->stop();
                 timer->deleteLater();
-                QFile ok(workDir() + QStringLiteral("/ok"));
+                QFile ok(dir + QStringLiteral("/ok"));
                 if (ok.open(QIODevice::WriteOnly)) ok.close();
                 LOG_INFO(QStringLiteral("[update] started as " NKR_VERSION " after an update"));
             });
@@ -148,7 +168,7 @@ namespace Shadowlos::Updater {
         QObject::connect(button, &QToolButton::clicked, window, [] {
             if (auto *mw = GetMainWindow()) mw->RequestSelfUpdate();
         });
-        if (afterUpdate()) confirmWhenUp(window);
+        if (const QString dir = pendingDir(); !dir.isEmpty()) confirmWhenUp(window, dir);
 
         QPointer<QToolButton> guarded(button);
         QTimer::singleShot(kFirstCheckMs, button, [guarded] { runCheck(guarded); });
@@ -172,32 +192,37 @@ namespace Shadowlos::Updater {
         } else {
             resume.remove();
         }
-        // Run a copy of the core, so ThroneCore.exe itself can be replaced.
-        const QString runner = work + QStringLiteral("/selfupdate-run.exe");
-        QFile::remove(runner);
-        if (!QFile::copy(coreExe(), runner)) {
-            LOG_INFO(QStringLiteral("[update] cannot copy ThroneCore.exe"));
-            return false;
+        if (auto proc = currentCheck()) {
+            proc->kill();
+            proc->waitForFinished(3000);
         }
-        const QStringList args{QStringLiteral("selfupdate"), QStringLiteral("apply"),
-                               QStringLiteral("-dir"), QDir::toNativeSeparators(appDir()),
-                               QStringLiteral("-work"), QDir::toNativeSeparators(work),
-                               QStringLiteral("-exe"), QStringLiteral(SHADOWLOS_EXE_NAME ".exe"),
-                               QStringLiteral("-pid"), QString::number(QCoreApplication::applicationPid())};
+        // apply runs from the app dir's own ThroneCore.exe (Windows lets a running image be
+        // renamed), so nothing it runs from sits where an unelevated process could swap it.
+        QStringList args{QStringLiteral("selfupdate"), QStringLiteral("apply"),
+                         QStringLiteral("-dir"), QDir::toNativeSeparators(appDir()),
+                         QStringLiteral("-src"), QDir::toNativeSeparators(work),
+                         QStringLiteral("-exe"), QStringLiteral(SHADOWLOS_EXE_NAME ".exe"),
+                         QStringLiteral("-appid"), appId(),
+                         QStringLiteral("-pid"), QString::number(QCoreApplication::applicationPid())};
         LOG_INFO(QStringLiteral("[update] applying, then restarting"));
         if (dirWritable(appDir())) {
             QProcess proc;
-            proc.setProgram(runner);
+            proc.setProgram(coreExe());
             proc.setArguments(args);
             proc.setWorkingDirectory(appDir());
             // The core is a console program; no console window should flash up.
             proc.setCreateProcessArgumentsModifier([](QProcess::CreateProcessArguments *a) {
                 a->flags |= CREATE_NO_WINDOW;
             });
-            return proc.startDetached();
+            if (proc.startDetached()) return true;
+        } else {
+            args << QStringLiteral("-deelevate");
+            // (uint)-1: UAC declined or the start failed.
+            if (WinCommander::runProcessElevated(coreExe(), args, appDir(), WinCommander::ShowHide, false) != uint(-1))
+                return true;
         }
-        WinCommander::runProcessElevated(runner, args, appDir(), WinCommander::ShowHide, false);
-        return true;
+        LOG_INFO(QStringLiteral("[update] could not start the update; staying on " NKR_VERSION));
+        return false;
 #else
         Q_UNUSED(resumeProfileId)
         return false;
@@ -206,8 +231,9 @@ namespace Shadowlos::Updater {
 
     int TakeResumeProfile() {
 #ifdef Q_OS_WIN
-        if (!afterUpdate()) return -1;
-        QFile resume(workDir() + QStringLiteral("/resume"));
+        const QString dir = pendingDir();
+        if (dir.isEmpty()) return -1;
+        QFile resume(dir + QStringLiteral("/resume"));
         if (!resume.open(QIODevice::ReadOnly)) return -1;
         bool ok = false;
         const int id = resume.readAll().trimmed().toInt(&ok);

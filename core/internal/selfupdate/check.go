@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -19,8 +20,8 @@ const (
 	packageFile = "pkg.zip"
 	partFile    = "pkg.part"
 	partMeta    = "pkg.part.json" // the release pkg.part belongs to, for resuming
-	badFile     = "bad.json"      // version codes that failed to start
-	okFile      = "ok"            // written by the new build once its core is up
+	badFile     = "bad.json"      // version_code -> starts that did not come up
+	okFile      = "ok"            // written by the new build once its core is up (next to pending)
 	logFile     = "updater.log"
 )
 
@@ -53,6 +54,7 @@ func runCheck(args []string) error {
 }
 
 func check(client *http.Client, base, appID string, code int, work string) checkResult {
+	sweep(work)
 	rel, err := fetchLatest(client, base)
 	if err != nil {
 		return checkResult{State: "error", Error: err.Error()}
@@ -169,6 +171,19 @@ func download(client *http.Client, base string, rel *Release, work string) error
 	return writeJSON(filepath.Join(work, readyFile), rel)
 }
 
+// sweep removes what a finished apply could not: the old files it moved aside,
+// one of them the image of the apply process itself, which Windows only lets go
+// of once that process has ended. Nothing is swept while an apply is under way
+// or has to be undone (its journal is still there).
+func sweep(work string) {
+	if exists(filepath.Join(work, applyFile)) || exists(filepath.Join(work, lockFile)) {
+		return
+	}
+	for _, d := range []string{previousDir, stagingDir, incomingDir, trashDir} {
+		_ = os.RemoveAll(filepath.Join(work, d))
+	}
+}
+
 func clearPackage(work string) {
 	for _, name := range []string{readyFile, packageFile, partFile, partMeta} {
 		_ = os.Remove(filepath.Join(work, name))
@@ -200,20 +215,16 @@ func writeJSON(path string, v any) error {
 }
 
 func isBad(work string, code int) bool {
-	for _, c := range readBad(work) {
-		if c == code {
-			return true
-		}
-	}
-	return false
+	return readBad(work)[strconv.Itoa(code)] >= maxFailures
 }
 
-func readBad(work string) []int {
-	var codes []int
+// readBad returns how often each version_code failed to come up after an apply.
+func readBad(work string) map[string]int {
+	failures := map[string]int{}
 	if b, err := os.ReadFile(filepath.Join(work, badFile)); err == nil {
-		_ = json.Unmarshal(b, &codes)
+		_ = json.Unmarshal(b, &failures)
 	}
-	return codes
+	return failures
 }
 
 func logf(work, format string, args ...any) {

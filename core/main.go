@@ -18,6 +18,7 @@ import (
 	"ThroneCore/internal/ipc"
 	"ThroneCore/internal/parentcheck"
 	"ThroneCore/internal/rpc"
+	"ThroneCore/internal/selfupdate"
 
 	C "github.com/sagernet/sing-box/constant"
 
@@ -130,6 +131,10 @@ func RunCore() {
 }
 
 func main() {
+	// Shadowlos: the self-updater rides in the core binary (internal/selfupdate).
+	if len(os.Args) > 1 && os.Args[1] == "selfupdate" {
+		selfupdate.Main(os.Args[2:])
+	}
 	defer func() {
 		if err := recover(); err != nil {
 			// The exit code is all the GUI has to tell a panic from a clean stop.

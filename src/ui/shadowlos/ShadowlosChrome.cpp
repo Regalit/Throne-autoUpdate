@@ -1,4 +1,5 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
+#include "include/ui/shadowlos/ShadowlosUpdater.hpp"
 
 // Brings in ui_mainwindow.h, i.e. the full Ui::MainWindow. Only when MW_INTERFACE is unset,
 // which is why CMake keeps this file out of unity batches.
@@ -816,6 +817,12 @@ namespace Shadowlos::Chrome {
             repolish(button);
             menuRow->addWidget(button);
         }
+        // «Обновить»: dim until a verified update is ready, then lit (ShadowlosUpdater). Right
+        // after the menus, not at the far end, which a narrow window pushes out of sight.
+        auto *appUpdate = makePill(menuCard, "slAppUpdate", translate("Update app"), "refresh");
+        appUpdate->setCursor(Qt::PointingHandCursor);
+        menuRow->addWidget(appUpdate);
+        Shadowlos::Updater::Install(window, appUpdate);
         menuRow->addStretch(1);
         root->addWidget(menuCard);
         // Read by MainWindow::applyTopBarMetrics: the design sizes these to their labels.

@@ -2,6 +2,7 @@
 
 #include "NkrVersion.h"
 
+#include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
@@ -57,6 +58,38 @@ namespace Shadowlos::Journal {
     // A journal line with every string value scrubbed, still valid JSON; a line that is
     // not a JSON object is scrubbed as text.
     QString ScrubJsonLine(const QString &line);
+
+    // The upload body (client-logs, Windows shape: platform/os, no android/sdk), with the
+    // latest geo object when there is one.
+    QJsonObject UploadEnvelope(const QString &reason, const QString &requestId, const QString &log);
+
+    // ── geo (ShadowlosGeo.cpp; journal-format.md "Addendum: net step and geo") ──
+
+    // The geo object as the server accepts it: only its keys (net_type carrier mcc_mnc country
+    // region asn org; never city), shaped fields checked, free text plain (no IP, host, link, control
+    // character), an unsendable org replaced by "AS<asn>". Anything else is left out.
+    QJsonObject SanitizeGeo(const QJsonObject &geo);
+
+    // The latest known geo object (net_type at least once checked); empty before. Thread-safe.
+    QJsonObject LatestGeo();
+    void SetLatestGeoForTest(const QJsonObject &geo);
+
+    // The network-key rules (gateway MAC missing, appearing, changing); "" when all hold.
+    QString NetworkKeySelfTest();
+
+    // The 15 s network check, whereami and the start net line. Called from Install.
+    void InstallGeo(QObject *owner);
+
+    // A net line for a connect start. UI thread (ConnectStart queues it).
+    void GeoConnectStart();
+
+    // How many connects have started this run, and whether one is being brought up or is up
+    // (false again after a stop or a core crash). Thread-safe.
+    int ConnectCount();
+    bool TunnelActive();
+
+    // An app/net line (outcome ok) carrying the nested geo object. Thread-safe.
+    void NetEvent(const QString &d, const QJsonObject &geo);
 
 #else
 

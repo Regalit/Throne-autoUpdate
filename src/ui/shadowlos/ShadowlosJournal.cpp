@@ -88,6 +88,7 @@ namespace Shadowlos::Journal {
             qint64 seq = 0;
             QElapsedTimer connectClock; // since the last connect start
             bool connecting = false;
+            int connects = 0; // ConnectStart calls this run (geo drops a whereami answer that spans one)
             QString lastFail; // the last error line since the connect started
             QElapsedTimer upClock;
             QElapsedTimer coreMinute;
@@ -177,8 +178,10 @@ namespace Shadowlos::Journal {
         }
 
         // layer, step and outcome are our own fixed words; d and err are cut and scrubbed.
+        // geo (the net line's nested object) goes in sanitized, after d.
         void writeLocked(const char *layer, const char *step, const char *outcome,
-                         const QString &d = {}, const QString &err = {}, qint64 ms = -1) {
+                         const QString &d = {}, const QString &err = {}, qint64 ms = -1,
+                         const QJsonObject *geo = nullptr) {
             auto &s = st();
             if (!s.on) return;
             QString line = QStringLiteral("{\"ts\":") + quoted(nowTs()) +
@@ -187,6 +190,10 @@ namespace Shadowlos::Journal {
             if (ms >= 0) line += QStringLiteral(",\"ms\":%1").arg(ms);
             if (!err.isEmpty()) line += QStringLiteral(",\"err\":") + quoted(Scrub(err.left(kMaxFieldChars)));
             if (!d.isEmpty()) line += QStringLiteral(",\"d\":") + quoted(Scrub(d.left(kMaxFieldChars)));
+            if (geo != nullptr) {
+                line += QStringLiteral(",\"geo\":") +
+                        QString::fromUtf8(QJsonDocument(SanitizeGeo(*geo)).toJson(QJsonDocument::Compact));
+            }
             line += QStringLiteral("}\n");
             s.file.write(line.toUtf8());
             s.file.flush();
@@ -326,19 +333,7 @@ namespace Shadowlos::Journal {
                   const std::function<void(int status, qint64 retryAfter)> &done) {
             QString token;
             if (!up().nam || !ApiToken(&token)) return;
-            const QJsonObject body{
-                {"app_id", "shadowlos-throne-dev"},
-                {"platform", "windows"},
-                {"os", osName()},
-                {"model", pcModel()},
-                {"app_version", NKR_VERSION},
-                {"app_build", SHADOWLOS_VERSION_CODE},
-                {"reason", reason},
-                {"request_id", requestId},
-                {"event_time", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
-                {"consent", true},
-                {"log", log},
-            };
+            const QJsonObject body = UploadEnvelope(reason, requestId, log);
             QNetworkRequest request(QUrl(QLatin1String(ApiBase) + QLatin1String(kUploadPath)));
             request.setHeader(QNetworkRequest::ContentTypeHeader, QStringLiteral("application/json"));
             request.setRawHeader("Authorization", "Sl-Sub " + token.toUtf8());
@@ -628,11 +623,50 @@ namespace Shadowlos::Journal {
         QObject::connect(u.timer, &QTimer::timeout, window, [] { tick(); });
         u.timer->start();
         QTimer::singleShot(kFirstUploadMs, u.timer, [] { tick(); });
+
+        InstallGeo(window);
     }
 
     void Event(const char *layer, const char *step, const char *outcome, const QString &d, const QString &err, qint64 ms) {
         QMutexLocker lock(&st().mutex);
         writeLocked(layer, step, outcome, d, err, ms);
+    }
+
+    int ConnectCount() {
+        QMutexLocker lock(&st().mutex);
+        return st().connects;
+    }
+
+    // From the profile_start/profile_stop hooks: a core crash goes through profile_stop too,
+    // which settings->started_id does not follow.
+    bool TunnelActive() {
+        QMutexLocker lock(&st().mutex);
+        return st().connecting || st().upClock.isValid();
+    }
+
+    void NetEvent(const QString &d, const QJsonObject &geo) {
+        QMutexLocker lock(&st().mutex);
+        writeLocked("app", "net", "ok", d, {}, -1, &geo);
+    }
+
+    // The Windows shape: platform and os in place of the Android android/sdk keys, which the
+    // server refuses from a Windows install.
+    QJsonObject UploadEnvelope(const QString &reason, const QString &requestId, const QString &log) {
+        QJsonObject body{
+            {"app_id", "shadowlos-throne-dev"},
+            {"platform", "windows"},
+            {"os", osName()},
+            {"model", pcModel()},
+            {"app_version", NKR_VERSION},
+            {"app_build", SHADOWLOS_VERSION_CODE},
+            {"reason", reason},
+            {"request_id", requestId},
+            {"event_time", QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+            {"consent", true},
+            {"log", log},
+        };
+        if (const QJsonObject geo = SanitizeGeo(LatestGeo()); !geo.isEmpty()) body.insert(QStringLiteral("geo"), geo);
+        return body;
     }
 
     void CoreLog(const QString &text) {
@@ -681,11 +715,14 @@ namespace Shadowlos::Journal {
         auto &s = st();
         QMutexLocker lock(&s.mutex);
         s.connecting = true;
+        ++s.connects;
         s.connectClock.start();
         s.lastFail.clear();
         writeLocked("app", "server-pick", "ok", automatic ? QStringLiteral("auto") : server);
         writeLocked("app", "state", "ok", QStringLiteral("connecting"));
         writeLocked("app", "connect", "start", server);
+        // The net line comes from the UI thread; this runs on a worker.
+        if (qApp) QMetaObject::invokeMethod(qApp, [] { GeoConnectStart(); }, Qt::QueuedConnection);
     }
 
     void ConnectEnd(bool ok) {

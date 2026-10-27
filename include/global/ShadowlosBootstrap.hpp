@@ -34,6 +34,11 @@ namespace Shadowlos {
     // regional routing endpoint), with the outbound and type tokens our server uses.
     std::shared_ptr<Configs::RouteRule> RuleFromRoutingJson(const QJsonObject& obj);
 
+    // A fresh install whose managed group is still empty gets the servers that came in
+    // the archive ("static_profiles"), so it works even when the first subscription
+    // refresh fails. Call once the subscription updater exists, before its first refresh.
+    void ImportStaticProfilesIfEmpty();
+
     // The name of the managed profile provisioned from shadowlos.json.
     QString ComfyRouteProfileName();
 

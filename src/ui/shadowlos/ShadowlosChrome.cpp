@@ -1,6 +1,7 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
 #include "include/ui/shadowlos/ShadowlosRouting.hpp"
+#include "include/global/ShadowlosBootstrap.hpp"
 
 // Brings in ui_mainwindow.h, i.e. the full Ui::MainWindow. Only when MW_INTERFACE is unset,
 // which is why CMake keeps this file out of unity batches.
@@ -989,6 +990,7 @@ namespace Shadowlos::Chrome {
                 repolish(filter);
             }
 
+            Shadowlos::ImportStaticProfilesIfEmpty();
             installSimpleView(ui, simpleBox);
             installStartupLatencyTest(window, ui);
             installLogPause(ui);

@@ -13,7 +13,9 @@
 #include <QMenu>
 #include <QPointer>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QStyle>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -57,10 +59,45 @@ namespace Shadowlos::Journal {
                 case ManualResult::Off: return QStringLiteral("Отправка выключена: включите переключатель выше.");
                 case ManualResult::NoToken: return QStringLiteral("Не удалось отправить: нет подписки Shadowlos.");
                 case ManualResult::NoConnection: return QStringLiteral("Нет связи с сервером. Попробуйте позже.");
-                case ManualResult::TooOften: return QStringLiteral("Слишком часто. Попробуйте через минуту.");
+                // The note of the wait the 429 started (its Retry-After) is the text.
+                case ManualResult::TooOften:
+                case ManualResult::Cooldown: {
+                    QString note;
+                    ManualReportWait(&note);
+                    return note.isEmpty() ? QStringLiteral("Попробуйте позже.") : note;
+                }
                 default: return QStringLiteral("Сервер не принял логи (код %1).").arg(status);
             }
         }
+
+        // The page's link: a short label that elides in a narrow window (the full title is its
+        // tooltip and accessible name), as wide as the short label when there is room.
+        class ElidingLink : public QToolButton {
+        public:
+            ElidingLink(const QString &text, QWidget *parent) : QToolButton(parent), m_full(text) {
+                setText(text);
+                setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+            }
+
+            QSize sizeHint() const override {
+                ensurePolished();
+                return {fontMetrics().horizontalAdvance(m_full) + 8, QToolButton::sizeHint().height()};
+            }
+
+            QSize minimumSizeHint() const override {
+                return {0, sizeHint().height()};
+            }
+
+        protected:
+            void resizeEvent(QResizeEvent *event) override {
+                QToolButton::resizeEvent(event);
+                const QString shown = fontMetrics().elidedText(m_full, Qt::ElideRight, qMax(0, width() - 8));
+                if (shown != text()) setText(shown);
+            }
+
+        private:
+            QString m_full;
+        };
 
         class ImproveDialog : public QDialog {
         public:
@@ -167,21 +204,57 @@ namespace Shadowlos::Journal {
 
                 CensusNow last;
                 if (CensusLast(&last)) showResult(last);
+
+                // The cooldown of «Отправить логи»: disabled with its note while it lasts.
+                m_cooldown = new QTimer(this);
+                m_cooldown->setSingleShot(true);
+                connect(m_cooldown, &QTimer::timeout, this, [this] { refreshCooldown(); });
+                refreshCooldown();
             }
 
         private:
+            // Keeps the button off while a cooldown lasts, its note under it; [shown] is a
+            // result just shown, which stays when there is no cooldown to show.
+            void refreshCooldown(const QString &shown = {}) {
+                if (m_sending) return;
+                QString note;
+                const qint64 wait = ManualReportWait(&note);
+                m_send->setEnabled(wait == 0);
+                if (wait > 0) {
+                    // A fresh result («Логи отправлены») first, the wait after it.
+                    m_sendStatus->setText(shown.isEmpty() ? note : shown + u' ' + note);
+                    setError(m_sendStatus, false);
+                    m_sendStatus->show();
+                    // Minutes are shown, so a look each half minute keeps them right.
+                    m_cooldown->start(int(qMin<qint64>(wait, 30) * 1000));
+                } else if (shown.isEmpty() && m_sendStatus->property("slCooldown").toBool()) {
+                    m_sendStatus->hide();
+                }
+                m_sendStatus->setProperty("slCooldown", wait > 0);
+            }
+
             void send() {
+                m_sending = true;
                 m_send->setEnabled(false);
                 m_send->setText(QStringLiteral("Отправляем…"));
                 m_sendStatus->hide();
                 QPointer<ImproveDialog> self(this);
-                SendManualReport([self](ManualResult result, int status) {
+                SendManualReport([self](ManualResult result, int status, qint64) {
                     if (!self) return;
+                    self->m_sending = false;
                     self->m_send->setEnabled(true);
                     self->m_send->setText(QStringLiteral("Отправить логи"));
-                    self->m_sendStatus->setText(sendText(result, status));
+                    const bool waitNote = result == ManualResult::TooOften || result == ManualResult::Cooldown;
+                    if (waitNote) {
+                        self->refreshCooldown();
+                        setError(self->m_sendStatus, true);
+                        return;
+                    }
+                    const QString text = sendText(result, status);
+                    self->m_sendStatus->setText(text);
                     setError(self->m_sendStatus, result != ManualResult::Sent);
                     self->m_sendStatus->show();
+                    self->refreshCooldown(result == ManualResult::Sent ? text : QString());
                 });
             }
 
@@ -189,12 +262,14 @@ namespace Shadowlos::Journal {
                 m_check->setEnabled(false);
                 m_check->setText(QStringLiteral("Проверяем…"));
                 QPointer<ImproveDialog> self(this);
-                CensusMeasureNow([self](const CensusNow &r) {
+                const bool waits = CensusMeasureNow([self](const CensusNow &r) {
                     if (!self) return;
                     self->m_check->setEnabled(true);
                     self->m_check->setText(QStringLiteral("Проверить доступность"));
                     self->showResult(r);
                 });
+                // A tunnel just torn down goes first; the census tick runs the check after it.
+                if (waits && !m_check->isEnabled()) m_check->setText(QStringLiteral("Подождите несколько секунд…"));
             }
 
             void showResult(const CensusNow &r) {
@@ -219,6 +294,8 @@ namespace Shadowlos::Journal {
                 }
             }
 
+            QTimer *m_cooldown = nullptr;
+            bool m_sending = false;
             QCheckBox *m_consent = nullptr;
             QLabel *m_hint = nullptr;
             QPushButton *m_send = nullptr;
@@ -265,10 +342,10 @@ namespace Shadowlos::Journal {
     }
 
     QWidget *MakeImproveLink(QWidget *parent) {
-        auto *link = new QToolButton(parent);
+        auto *link = new ElidingLink(QStringLiteral("Улучшить обход"), parent);
         link->setObjectName(QStringLiteral("slImproveLink"));
-        link->setText(QStringLiteral("Улучшение обхода блокировок"));
-        link->setToolTip(QStringLiteral("Проверить доступность сайтов и отправить логи разработчикам"));
+        link->setAccessibleName(QStringLiteral("Улучшение обхода блокировок"));
+        link->setToolTip(QStringLiteral("Улучшение обхода блокировок: проверить доступность сайтов и отправить логи разработчикам"));
         link->setProperty("slRole", "link");
         link->setCursor(Qt::PointingHandCursor);
         link->setAutoRaise(true);

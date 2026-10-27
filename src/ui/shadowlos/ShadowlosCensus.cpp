@@ -592,6 +592,27 @@ namespace Shadowlos::Journal {
             });
         }
 
+        // A TUN session that came and went between two looks still left a tunnel to wait for.
+        void noteConnects() {
+            auto &s = st();
+            if (const int connects = ConnectCount(); connects != s.seenConnects) {
+                if (s.seenConnects >= 0 && Configs::dataManager->settingsRepo->spmode_vpn) s.tunnelWas = true;
+                s.seenConnects = connects;
+            }
+        }
+
+        // Whether a torn-down tunnel is still to be waited for before asking the network
+        // anything (it arms the wait when a tunnel went down since the last look). Not in TUN mode.
+        bool teardownWaiting(qint64 now) {
+            auto &s = st();
+            if (s.tunnelWas) {
+                s.tunnelWas = false;
+                s.settleUntil = now + kSettleMs;
+                s.teardownUntil = now + kTeardownMaxMs;
+            }
+            return now < s.settleUntil || (now < s.teardownUntil && TunAdapterUp());
+        }
+
         void tick() {
             auto &s = st();
             QString type;
@@ -612,29 +633,23 @@ namespace Shadowlos::Journal {
             s.geoKey = key;
             s.netKnown = true;
             const qint64 now = nowMs();
-            // A TUN session that came and went between two ticks still left a tunnel to wait for.
-            if (const int connects = ConnectCount(); connects != s.seenConnects) {
-                if (s.seenConnects >= 0 && Configs::dataManager->settingsRepo->spmode_vpn) s.tunnelWas = true;
-                s.seenConnects = connects;
-            }
+            noteConnects();
             if (tunMode()) {
                 // Our tunnel takes every socket: no probe, the last verdict stays.
                 s.tunnelWas = true;
                 render();
+                if (!s.waiters.empty()) {
+                    CensusNow r;
+                    r.note = tunText();
+                    answerWaiters(r);
+                }
                 return;
-            }
-            if (s.tunnelWas) {
-                // Wait for the torn-down tunnel to go before asking the network anything.
-                s.tunnelWas = false;
-                s.settleUntil = now + kSettleMs;
-                s.teardownUntil = now + kTeardownMaxMs;
             }
             if (!s.due && !s.measuring && now >= s.nextAt) {
                 s.due = true;
                 s.trigger = QStringLiteral("refresh");
             }
-            const bool waiting = now < s.settleUntil || (now < s.teardownUntil && TunAdapterUp());
-            if (s.due && !s.measuring && !waiting) measure();
+            if (s.due && !s.measuring && !teardownWaiting(now)) measure();
             render();
         }
 
@@ -670,18 +685,27 @@ namespace Shadowlos::Journal {
         return row;
     }
 
-    void CensusMeasureNow(std::function<void(const CensusNow &)> done) {
+    bool CensusMeasureNow(std::function<void(const CensusNow &)> done) {
         auto &s = st();
+        noteConnects();
         if (tunMode()) {
             CensusNow r;
             r.note = tunText();
             done(r);
-            return;
+            return false;
         }
         s.waiters.push_back(std::move(done));
-        if (s.measuring) return;
+        if (s.measuring) return false;
         s.trigger = QStringLiteral("manual");
+        // The tick's own test: a tunnel just torn down may still carry the probes. The tick
+        // measures once it is gone (at most kTeardownMaxMs).
+        if (teardownWaiting(nowMs())) {
+            s.due = true;
+            render();
+            return true;
+        }
         measure();
+        return false;
     }
 
     bool CensusLast(CensusNow *out) {

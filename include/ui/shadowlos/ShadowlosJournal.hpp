@@ -132,7 +132,8 @@ namespace Shadowlos::Journal {
     };
 
     // Measures now (a pass is joined when one is under way); done runs on the UI thread once.
-    void CensusMeasureNow(std::function<void(const CensusNow &)> done);
+    // True when it first waits for a torn-down tunnel to go (the census tick then runs it).
+    bool CensusMeasureNow(std::function<void(const CensusNow &)> done);
 
     // The last result on the current network; false before anything was measured on it.
     bool CensusLast(CensusNow *out);
@@ -142,9 +143,18 @@ namespace Shadowlos::Journal {
     // The Tools menu's consent action (shadowlos_send_journal); nullptr before Install.
     QAction *ConsentAction();
 
-    // «Отправить логи»: a reason "manual" upload of the latest journal lines, now.
-    enum class ManualResult { Sent, Off, NoToken, NoConnection, TooOften, Refused };
-    void SendManualReport(std::function<void(ManualResult result, int status)> done);
+    // «Отправить логи»: a reason "manual" upload of the latest journal lines, now. Manual
+    // reports share the server's 20 a day per user with crash reports, so the client allows one
+    // per 10 min and 5 a UTC day, and waits out a 429's Retry-After (kept across restarts).
+    // retryAfter is the 429's Retry-After in seconds (0 when absent).
+    enum class ManualResult { Sent, Off, NoToken, NoConnection, TooOften, Refused, Cooldown };
+    void SendManualReport(std::function<void(ManualResult result, int status, qint64 retryAfter)> done);
+
+    // Seconds until a manual report may go (0: now) and a short note saying why. UI thread.
+    qint64 ManualReportWait(QString *note = nullptr);
+
+    // The cooldown rules; "" when all hold.
+    QString ManualQuotaSelfTest();
 
     // The page and its menu item, appended to [menu]. Call after Install.
     void InstallImprovePage(QWidget *window, QMenu *menu);

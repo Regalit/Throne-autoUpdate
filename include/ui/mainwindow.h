@@ -129,7 +129,7 @@ public:
     void profile_start(int _id = -1);
 
     // Shadowlos: «Обновить» pressed; exits and lets `ThroneCore selfupdate` apply the ready update.
-    void RequestSelfUpdate();
+    bool RequestSelfUpdate();
 
     void profile_stop(bool crash = false, bool block = false, bool manual = false);
 

@@ -22,7 +22,7 @@
  * Main-window objects tagged by ShadowlosChrome:
  *   QFrame#slMenuCard, QFrame#slCard, QFrame#slStatusCard
  *   QToolButton[slRole="menu"|"pill"], QToolButton#slFilterButton
- *   QCheckBox[slRole="toggle"], QLabel[slRole="toggleLabel"|"status"|"badge"]
+ *   QCheckBox[slRole="toggle"], QLabel[slRole="toggleLabel"|"status"|"badge"|"updateStatus"|"updateStatusTag"]
  */
 
 /* ------------------------------------------------------------------ base */
@@ -130,6 +130,35 @@ QToolButton[slRole="pill"]:pressed {
 
 QToolButton[slRole="pill"]:disabled {
     color: #5E676E;
+}
+
+/* «Обновить» while a verified update is ready: the ordinary pill with a quiet accent outline
+   (the 1px border comes out of the padding, so the pill keeps its size). */
+QToolButton#slAppUpdate[slUpdateReady="true"] {
+    border: 1px solid #33A5FF;
+    padding: 7px 11px 7px 7px;
+}
+
+/* Its status line: «У вас последняя версия …», «Скачиваю … 45%», errors. */
+QLabel[slRole="updateStatus"] {
+    background: transparent;
+    color: #C7CDD1;
+    font-size: 12px;
+}
+
+/* The same line in a narrow window, hung under the button as a quiet tag (badge colours). */
+QLabel[slRole="updateStatusTag"] {
+    background-color: #1A2023;
+    border: 1px solid #2E3438;
+    border-radius: 8px;
+    color: #C7CDD1;
+    font-size: 12px;
+    padding: 2px 8px;
+}
+
+QLabel[slRole="updateStatus"][slError="true"],
+QLabel[slRole="updateStatusTag"][slError="true"] {
+    color: #FF8A80;
 }
 
 /* Routing switch in the menu card: three segments, the active one marked like a selected tab. */

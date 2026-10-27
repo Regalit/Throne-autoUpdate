@@ -306,6 +306,8 @@ namespace Shadowlos::Journal {
         check(QStringLiteral("network key"), keyProblems.isEmpty(), keyProblems.isEmpty() ? QStringLiteral("ok") : keyProblems);
         const QString censusProblems = CensusSelfTest();
         check(QStringLiteral("census"), censusProblems.isEmpty(), censusProblems.isEmpty() ? QStringLiteral("ok") : censusProblems);
+        const QString quotaProblems = ManualQuotaSelfTest();
+        check(QStringLiteral("manual report quota"), quotaProblems.isEmpty(), quotaProblems.isEmpty() ? QStringLiteral("ok") : quotaProblems);
         const QString stopwatchProblems = Shadowlos::Chrome::StopwatchSelfTest();
         check(QStringLiteral("corner stopwatch"), stopwatchProblems.isEmpty(), stopwatchProblems.isEmpty() ? QStringLiteral("ok") : stopwatchProblems);
         check(QStringLiteral("envelope without geo"), !UploadEnvelope(QStringLiteral("journal"), QStringLiteral("j1"), QStringLiteral("x")).contains(QStringLiteral("geo")), {});

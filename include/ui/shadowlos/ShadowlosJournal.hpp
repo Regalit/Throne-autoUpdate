@@ -6,7 +6,10 @@
 #include <QString>
 #include <QStringList>
 
+#include <functional>
+
 class QAbstractButton;
+class QAction;
 class QMenu;
 class QWidget;
 
@@ -116,6 +119,49 @@ namespace Shadowlos::Journal {
     // The verdict rules, the kept-verdict rules and the badge text; "" when all hold.
     QString CensusSelfTest();
 
+    // A census result for the «Улучшение обхода блокировок» page. measured is false when no
+    // verdict came (the tunnel is up, the network changed meanwhile); note then says why.
+    struct CensusNow {
+        bool measured = false;
+        QString verdict; // «Нет блокировок», «Обычные блокировки», …; «Не удалось определить»
+        QString counts;  // «контроль 2/2, иностранные 0/5, устойчивые 5/5»
+        QString region;
+        QString op;
+        qint64 at = 0; // ms since epoch
+        QString note;
+    };
+
+    // Measures now (a pass is joined when one is under way); done runs on the UI thread once.
+    // True when it first waits for a torn-down tunnel to go (the census tick then runs it).
+    bool CensusMeasureNow(std::function<void(const CensusNow &)> done);
+
+    // The last result on the current network; false before anything was measured on it.
+    bool CensusLast(CensusNow *out);
+
+    // ── the «Улучшение обхода блокировок» page (ShadowlosImprove.cpp) ──
+
+    // The Tools menu's consent action (shadowlos_send_journal); nullptr before Install.
+    QAction *ConsentAction();
+
+    // «Отправить логи»: a reason "manual" upload of the latest journal lines, now. Manual
+    // reports share the server's 20 a day per user with crash reports, so the client allows one
+    // per 10 min and 5 a UTC day, and waits out a 429's Retry-After (kept across restarts).
+    // retryAfter is the 429's Retry-After in seconds (0 when absent).
+    enum class ManualResult { Sent, Off, NoToken, NoConnection, TooOften, Refused, Cooldown };
+    void SendManualReport(std::function<void(ManualResult result, int status, qint64 retryAfter)> done);
+
+    // Seconds until a manual report may go (0: now) and a short note saying why. UI thread.
+    qint64 ManualReportWait(QString *note = nullptr);
+
+    // The cooldown rules; "" when all hold.
+    QString ManualQuotaSelfTest();
+
+    // The page and its menu item, appended to [menu]. Call after Install.
+    void InstallImprovePage(QWidget *window, QMenu *menu);
+
+    // A small link that opens the page, for the badge row (so the simple view has it in sight).
+    QWidget *MakeImproveLink(QWidget *parent);
+
 #else
 
     inline int RunSelfTestIfAsked(const QStringList &) { return -1; }
@@ -128,6 +174,8 @@ namespace Shadowlos::Journal {
     inline void ConnectEnd(bool) {}
     inline void Disconnect(bool, bool) {}
     inline QWidget *MakeBlockingBadge(QWidget *) { return nullptr; }
+    // Prod has no journal, so no page and no menu item.
+    inline void InstallImprovePage(QWidget *, QMenu *) {}
 
 #endif
 

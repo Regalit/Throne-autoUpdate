@@ -110,6 +110,7 @@ set(PROJECT_SOURCES
         src/ui/shadowlos/ShadowlosScrub.cpp
         src/ui/shadowlos/ShadowlosGeo.cpp
         src/ui/shadowlos/ShadowlosCensus.cpp
+        src/ui/shadowlos/ShadowlosImprove.cpp
         src/global/Utils.cpp
         include/global/Logger.hpp
         src/global/Logger.cpp
@@ -648,6 +649,7 @@ set_property(SOURCE src/ui/shadowlos/ShadowlosJournal.cpp PROPERTY SKIP_UNITY_BU
 set_property(SOURCE src/ui/shadowlos/ShadowlosScrub.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 set_property(SOURCE src/ui/shadowlos/ShadowlosGeo.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 set_property(SOURCE src/ui/shadowlos/ShadowlosCensus.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
+set_property(SOURCE src/ui/shadowlos/ShadowlosImprove.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Verified to link. OMIT_VIRTUALTABLE/VIEW/ANALYZE/CTE/WINDOWFUNC/DECLTYPE all break this build.
 target_compile_definitions(Throne PRIVATE

@@ -1005,6 +1005,9 @@ namespace Shadowlos::Chrome {
         ui->menuTools->addAction(debugAction);
         // Dev builds: the error journal's consent action goes under it (a no-op in prod).
         Shadowlos::Journal::Install(window, ui->menuTools, ui->checkBox_VPN, ui->checkBox_SystemProxy);
+        // Dev builds: «Улучшение обхода блокировок» at the end of Settings (the menu card is
+        // never hidden, so the simple view has it too). Nothing in prod.
+        Shadowlos::Journal::InstallImprovePage(window, ui->menu_preferences);
 
         // View card: the simple / full view switch, right of the actions.
         auto *viewCard = makeCard(central, "slCard");
@@ -1053,9 +1056,11 @@ namespace Shadowlos::Chrome {
         // margins, gaps between the five row items, the actions card's margins, and the gaps
         // between its pills.
         constexpr int kRowFixedWidth = 24 + 4 * 8 + 32 + 3 * 8;
-        new CompactPills(central,
-                         {add, ui->toolButton_update_subs, speedtest, latency},
-                         {powerCard, viewCard, modesCard}, kRowFixedWidth);
+        QList<QWidget *> measured{powerCard, viewCard, modesCard};
+        // Dev builds: the «Улучшить обход» link in the badge row wants its label too (it
+        // elides, so it never widens the window; the pills give way first).
+        if (auto *link = central->findChild<QWidget *>(QStringLiteral("slImproveLink"))) measured << link;
+        new CompactPills(central, {add, ui->toolButton_update_subs, speedtest, latency}, measured, kRowFixedWidth);
 
         // Profile tabs over the Logs / Connections / Graph tabs, as before.
         ui->verticalLayout_3->removeWidget(ui->splitter);

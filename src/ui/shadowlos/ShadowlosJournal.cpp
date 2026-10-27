@@ -37,6 +37,7 @@
 #include <QSaveFile>
 #include <QSettings>
 #include <QSysInfo>
+#include <QTimeZone>
 #include <QTimer>
 #include <QUrl>
 
@@ -64,6 +65,7 @@ namespace Shadowlos::Journal {
         constexpr qint64 kBackoffMins[] = {6, 12, 24, 30};
         constexpr auto kUploadPath = "/api/mobile/client-logs";
         constexpr auto kCrashSeparator = "--- journal of the previous run (last 150 lines) ---";
+        constexpr int kManualReportChars = 60000;
 
         QString translate(const char *text) {
             return QCoreApplication::translate("ShadowlosJournal", text);
@@ -328,9 +330,10 @@ namespace Shadowlos::Journal {
             return Verdict::Retry;
         }
 
-        // Straight to our server, never through our own inbound or the system proxy.
+        // Straight to our server, never through our own inbound or the system proxy. A manual
+        // report ([queued] false) goes out beside the queue and leaves its busy flag alone.
         void post(const QString &reason, const QString &requestId, const QString &log,
-                  const std::function<void(int status, qint64 retryAfter)> &done) {
+                  const std::function<void(int status, qint64 retryAfter)> &done, bool queued = true) {
             QString token;
             if (!up().nam || !ApiToken(&token)) return;
             const QJsonObject body = UploadEnvelope(reason, requestId, log);
@@ -342,11 +345,11 @@ namespace Shadowlos::Journal {
             request.setTransferTimeout(30 * 1000);
             QElapsedTimer clock;
             clock.start();
-            up().busy = true;
+            if (queued) up().busy = true;
             auto *reply = up().nam->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-            QObject::connect(reply, &QNetworkReply::finished, up().nam, [reply, clock, done] {
+            QObject::connect(reply, &QNetworkReply::finished, up().nam, [reply, clock, done, queued] {
                 reply->deleteLater();
-                up().busy = false;
+                if (queued) up().busy = false;
                 const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                 // Only failures are journaled: a line per success would itself be sent every round.
                 if (status != 200) {
@@ -474,6 +477,102 @@ namespace Shadowlos::Journal {
             LOG_INFO(QStringLiteral("[journal] sending turned on"));
         }
 
+        QPointer<QAction> consentAction;
+
+        // ── the manual report quota (pure rules, then the file) ───────────────
+
+        constexpr qint64 kManualGapSecs = 10 * 60;
+        constexpr int kManualPerDay = 5;
+        constexpr qint64 kManual429Secs = 60 * 60; // the server's daily-limit Retry-After
+
+        struct ManualQuota {
+            qint64 last = 0;  // the last report the server answered, secs since epoch
+            QString day;      // the UTC day of [count]
+            int count = 0;
+            qint64 until = 0; // a 429's Retry-After, as an end time
+        };
+
+        enum class ManualWhy { None, Gap, Daily, Server };
+
+        QString utcDay(qint64 now) {
+            return QDateTime::fromSecsSinceEpoch(now, QTimeZone::UTC).date().toString(Qt::ISODate);
+        }
+
+        // The wait before the next manual report at [now] (0: none) and why.
+        qint64 manualWait(const ManualQuota &q, qint64 now, ManualWhy *why) {
+            *why = ManualWhy::None;
+            // A hold over a day (a huge Retry-After, a clock set back) is not honoured.
+            if (now < q.until && q.until - now <= 86400) {
+                *why = ManualWhy::Server;
+                return q.until - now;
+            }
+            if (q.day == utcDay(now) && q.count >= kManualPerDay) {
+                *why = ManualWhy::Daily;
+                const QDateTime midnight(QDateTime::fromSecsSinceEpoch(now, QTimeZone::UTC).date().addDays(1), QTime(0, 0), QTimeZone::UTC);
+                return qMax<qint64>(1, midnight.toSecsSinceEpoch() - now);
+            }
+            if (q.last > 0 && now - q.last >= 0 && now - q.last < kManualGapSecs) {
+                *why = ManualWhy::Gap;
+                return kManualGapSecs - (now - q.last);
+            }
+            return 0;
+        }
+
+        // A report the server answered (any status but a 429 or a server error) counts.
+        void manualCounted(ManualQuota &q, qint64 now) {
+            const QString today = utcDay(now);
+            if (q.day != today) {
+                q.day = today;
+                q.count = 0;
+            }
+            ++q.count;
+            q.last = now;
+        }
+
+        void manualRefused429(ManualQuota &q, qint64 now, qint64 retryAfter) {
+            q.until = now + qMin<qint64>(retryAfter > 0 ? retryAfter : kManual429Secs, 86400);
+        }
+
+        QString minutes(qint64 secs) {
+            return QString::number(qMax<qint64>(1, (secs + 59) / 60));
+        }
+
+        // The note under the button while it waits.
+        QString manualNote(ManualWhy why, qint64 secs) {
+            switch (why) {
+                case ManualWhy::Server:
+                    return secs >= 30 * 60 ? QStringLiteral("Лимит отчётов на сегодня исчерпан, попробуйте позже.")
+                                           : QStringLiteral("Сервер просит подождать: ещё %1 мин.").arg(minutes(secs));
+                case ManualWhy::Daily:
+                    return QStringLiteral("Сегодня отправлено %1 отчётов, это предел. Попробуйте завтра.").arg(kManualPerDay);
+                case ManualWhy::Gap:
+                    return QStringLiteral("Следующий отчёт — через %1 мин.").arg(minutes(secs));
+                default:
+                    return {};
+            }
+        }
+
+        // <journal>/manual.json; not cleared when sending is turned off, so the limit holds.
+        ManualQuota loadQuota() {
+            ManualQuota q;
+            QFile f(path("manual.json"));
+            if (!f.open(QIODevice::ReadOnly)) return q;
+            const auto o = QJsonDocument::fromJson(f.readAll()).object();
+            q.last = o.value(QStringLiteral("last")).toInteger();
+            q.day = o.value(QStringLiteral("day")).toString();
+            q.count = o.value(QStringLiteral("count")).toInt();
+            q.until = o.value(QStringLiteral("until")).toInteger();
+            return q;
+        }
+
+        void saveQuota(const ManualQuota &q) {
+            QSaveFile f(path("manual.json"));
+            if (!f.open(QIODevice::WriteOnly)) return;
+            f.write(QJsonDocument(QJsonObject{{"last", q.last}, {"day", q.day}, {"count", q.count}, {"until", q.until}})
+                        .toJson(QJsonDocument::Compact));
+            f.commit();
+        }
+
         // ── ui ─────────────────────────────────────────────────────────────────
 
         QString label(QString text, const QString &name) {
@@ -593,6 +692,7 @@ namespace Shadowlos::Journal {
         action->setChecked(consentOn());
         QObject::connect(action, &QAction::toggled, window, [](bool on) { setConsent(on); });
         tools->addAction(action);
+        consentAction = action;
 
         qApp->installEventFilter(new UiTracker(window));
 
@@ -628,6 +728,92 @@ namespace Shadowlos::Journal {
         QTimer::singleShot(kFirstUploadMs, u.timer, [] { tick(); });
 
         InstallGeo(window);
+    }
+
+    QAction *ConsentAction() {
+        return consentAction;
+    }
+
+    // Free text (journal-format.md: manual is not the journal format): one header line, then
+    // the newest journal lines that fit, each scrubbed as JSON. The queue's sent mark is left
+    // alone, so the periodic upload still sends these lines as the journal.
+    qint64 ManualReportWait(QString *note) {
+        ManualWhy why;
+        const qint64 wait = manualWait(loadQuota(), QDateTime::currentSecsSinceEpoch(), &why);
+        if (note != nullptr) *note = manualNote(why, wait);
+        return wait;
+    }
+
+    void SendManualReport(std::function<void(ManualResult, int, qint64)> done) {
+        if (!consentOn()) {
+            done(ManualResult::Off, 0, 0);
+            return;
+        }
+        if (ManualReportWait() > 0) {
+            done(ManualResult::Cooldown, 0, 0);
+            return;
+        }
+        QString token;
+        if (!up().nam || !ApiToken(&token)) {
+            done(ManualResult::NoToken, 0, 0);
+            return;
+        }
+        Event("app", "report", "ok", QStringLiteral("manual"));
+        QStringList lines;
+        {
+            QMutexLocker lock(&st().mutex);
+            lines = readLinesLocked();
+        }
+        const QString header = QStringLiteral("manual report: the user pressed «Отправить логи» (latest journal lines follow)");
+        QStringList tail;
+        qsizetype size = header.size() + 1;
+        for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
+            const QString line = ScrubJsonLine(*it);
+            if (size + line.size() + 1 > kManualReportChars) break;
+            size += line.size() + 1;
+            tail.prepend(line);
+        }
+        const QString id = u'm' + QString::fromLatin1(QByteArray::number(QRandomGenerator::system()->generate64(), 16).rightJustified(16, '0'));
+        post(QStringLiteral("manual"), id, header + u'\n' + tail.join(u'\n'), [done](int status, qint64 retryAfter) {
+            const qint64 now = QDateTime::currentSecsSinceEpoch();
+            ManualQuota q = loadQuota();
+            if (status == 429) manualRefused429(q, now, retryAfter);
+            else if (status != 0 && status < 500) manualCounted(q, now);
+            saveQuota(q);
+            if (status == 200) done(ManualResult::Sent, status, 0);
+            else if (status == 429) done(ManualResult::TooOften, status, retryAfter);
+            else if (status == 0 || status >= 500) done(ManualResult::NoConnection, status, 0);
+            else done(ManualResult::Refused, status, 0);
+        }, false);
+    }
+
+    QString ManualQuotaSelfTest() {
+        QStringList bad;
+        const auto expect = [&bad](const char *name, const ManualQuota &q, qint64 now, qint64 wantWait, ManualWhy wantWhy) {
+            ManualWhy why;
+            const qint64 wait = manualWait(q, now, &why);
+            if (wait != wantWait || why != wantWhy) bad << QStringLiteral("%1: wait %2 why %3").arg(QLatin1String(name)).arg(wait).arg(int(why));
+        };
+        // 2026-10-27 12:00:00 UTC.
+        const qint64 noon = QDateTime(QDate(2026, 10, 27), QTime(12, 0), QTimeZone::UTC).toSecsSinceEpoch();
+        ManualQuota q;
+        expect("fresh", q, noon, 0, ManualWhy::None);
+        manualCounted(q, noon);
+        expect("gap", q, noon + 60, 540, ManualWhy::Gap);
+        expect("gap over", q, noon + 600, 0, ManualWhy::None);
+        for (int i = 1; i < kManualPerDay; ++i) manualCounted(q, noon + i * 600);
+        expect("fifth today", q, noon + 4 * 600 + 600, 12 * 3600 - 3000, ManualWhy::Daily);
+        expect("next day", q, noon + 12 * 3600, 0, ManualWhy::None);
+        manualCounted(q, noon + 12 * 3600);
+        if (q.count != 1 || q.day != QStringLiteral("2026-10-28")) bad << QStringLiteral("new day count %1 %2").arg(q.count).arg(q.day);
+        ManualQuota r;
+        manualRefused429(r, noon, 0);
+        expect("429 default", r, noon + 10, 3590, ManualWhy::Server);
+        manualRefused429(r, noon, 120);
+        expect("429 retry-after", r, noon, 120, ManualWhy::Server);
+        if (manualNote(ManualWhy::Server, 3590) != QStringLiteral("Лимит отчётов на сегодня исчерпан, попробуйте позже.")) bad << QStringLiteral("429 note");
+        if (manualNote(ManualWhy::Gap, 540) != QStringLiteral("Следующий отчёт — через 9 мин.")) bad << QStringLiteral("gap note");
+        return bad.join(QStringLiteral("; "));
     }
 
     void Event(const char *layer, const char *step, const char *outcome, const QString &d, const QString &err, qint64 ms) {

@@ -95,6 +95,10 @@ namespace Shadowlos::Journal {
     // check has run yet. UI thread.
     QByteArray CurrentNetworkKey(QString *netType = nullptr, bool *checked = nullptr);
 
+    // The network's key read now from the adapters (the 15 s check may not have run since a
+    // switch), with the same key rules. Does not touch the check's own state. UI thread.
+    QByteArray FreshNetworkKey(QString *netType = nullptr);
+
     // Whether our TUN adapter (throne-tun, Wintun) is still up: a torn-down tunnel takes a
     // moment to leave. UI thread.
     bool TunAdapterUp();

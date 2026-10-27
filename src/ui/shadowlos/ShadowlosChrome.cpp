@@ -929,7 +929,7 @@ namespace Shadowlos::Chrome {
         auto *statusColumn = new QVBoxLayout();
         statusColumn->setSpacing(8);
         if (QWidget *badge = Shadowlos::Journal::MakeBlockingBadge(central)) {
-            statusColumn->addWidget(badge, 0, Qt::AlignRight | Qt::AlignTop);
+            statusColumn->addWidget(badge); // a fixed-height row, the badge right-aligned in it
         }
         statusColumn->addWidget(ui->data_view, 1);
         actionsRow->addLayout(statusColumn, 1);

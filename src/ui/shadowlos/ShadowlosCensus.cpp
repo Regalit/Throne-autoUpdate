@@ -13,11 +13,14 @@
 #include <QPointer>
 #include <QRegularExpression>
 #include <QResizeEvent>
+#include <QHBoxLayout>
 #include <QSet>
+#include <QSslConfiguration>
 #include <QSslSocket>
 #include <QTimer>
 
 #include <functional>
+#include <iterator>
 #include <memory>
 #include <optional>
 
@@ -268,6 +271,20 @@ namespace Shadowlos::Journal {
 
         // ── one probe pass ───────────────────────────────────────────────────
 
+        // The probe sockets' TLS settings. Qt here has only the OpenSSL backend, which fetches no
+        // CRL and asks no OCSP responder. What can wait on the network on Windows is its on-demand
+        // root lookup (CertGetCertificateChain, which may download over AIA) for a root it has
+        // not loaded: setting the CA list up front turns that off for these sockets only.
+        // Certificates are still verified: a forged one is a refusal, as on Android.
+        const QSslConfiguration &probeTls() {
+            static const QSslConfiguration conf = [] {
+                QSslConfiguration c = QSslConfiguration::defaultConfiguration();
+                c.setCaCertificates(QSslConfiguration::systemCaCertificates());
+                return c;
+            }();
+            return conf;
+        }
+
         class TlsPass : public QObject {
         public:
             TlsPass(const QStringList &hosts, int deadlineMs, std::function<void(const Results &)> done)
@@ -281,6 +298,7 @@ namespace Shadowlos::Journal {
                 for (const QString &host : hosts) {
                     auto *socket = new QSslSocket(this);
                     socket->setProxy(QNetworkProxy::NoProxy);
+                    socket->setSslConfiguration(probeTls());
                     connect(socket, &QSslSocket::encrypted, this, [this, host, socket] { conclude(host, socket, true); });
                     connect(socket, &QAbstractSocket::errorOccurred, this, [this, host, socket](QAbstractSocket::SocketError e) {
                         // A timeout is no evidence; a refusal, reset, name or TLS failure is.
@@ -373,7 +391,13 @@ namespace Shadowlos::Journal {
         constexpr int kFirstStepMs = 3000;  // census_sensor.dart firstStep
         constexpr int kReaskStepMs = 7000;  // reaskStep: once, never a loop
         constexpr qint64 kRealEveryMs = 30 * 60 * 1000;
-        constexpr qint64 kAgainSoonMs = 60 * 1000; // after unknown / no internet
+        // After unknown / no internet: 60 s, then 120 s, then every 300 s.
+        constexpr qint64 kAgainSoonMs[] = {60 * 1000, 120 * 1000, 300 * 1000};
+
+        // The wait before the next try after [notReal] measurements in a row without a real verdict.
+        qint64 againSoonMs(int notReal) {
+            return kAgainSoonMs[qBound(0, notReal, int(std::size(kAgainSoonMs)) - 1)];
+        }
         constexpr qint64 kSettleMs = 2000;          // after a tunnel goes down
         constexpr qint64 kTeardownMaxMs = 15 * 1000;
 
@@ -390,6 +414,10 @@ namespace Shadowlos::Journal {
             bool tunnelWas = false;
             qint64 settleUntil = 0;
             qint64 teardownUntil = 0;
+            QByteArray geoKey;       // the 15 s check's key last seen (s.net may be ahead of it)
+            int seenConnects = -1;   // ConnectCount() last seen
+            int notReal = 0;         // measurements in a row without a real verdict
+            QString lastLogged;      // network+verdict+tier of the last census line
         };
 
         State &st() {
@@ -459,12 +487,24 @@ namespace Shadowlos::Journal {
             auto &s = st();
             s.measuring = false;
             s.keeper.record(net, c, nowMs());
-            s.nextAt = nowMs() + (isReal(c.blocking) ? kRealEveryMs : kAgainSoonMs);
-            Event("app", "census", "ok",
-                  QStringLiteral("verdict=%1 tier=%2 %3 passes=%4 trigger=%5 net_type=%6")
-                      .arg(QLatin1String(word(c.blocking)), QLatin1String(c.tier), c.counts())
-                      .arg(passes).arg(trigger, s.netType),
-                  {}, ms);
+            if (isReal(c.blocking)) {
+                s.notReal = 0;
+                s.nextAt = nowMs() + kRealEveryMs;
+            } else {
+                s.nextAt = nowMs() + againSoonMs(s.notReal);
+                ++s.notReal;
+            }
+            // A line only when the verdict or tier changes (or the network does): offline, the
+            // re-measures would otherwise write one every minute or so.
+            const QString logged = QString::fromLatin1(net.toHex()) + u'|' + QLatin1String(word(c.blocking)) + u'|' + QLatin1String(c.tier);
+            if (logged != s.lastLogged) {
+                s.lastLogged = logged;
+                Event("app", "census", "ok",
+                      QStringLiteral("verdict=%1 tier=%2 %3 passes=%4 trigger=%5 net_type=%6")
+                          .arg(QLatin1String(word(c.blocking)), QLatin1String(c.tier), c.counts())
+                          .arg(passes).arg(trigger, s.netType),
+                      {}, ms);
+            }
             render();
         }
 
@@ -472,7 +512,9 @@ namespace Shadowlos::Journal {
         bool stale(const QByteArray &net, int epoch, const QString &trigger, qint64 ms) {
             auto &s = st();
             QString why;
-            if (net != s.net) why = QStringLiteral("dropped: the network changed");
+            // Read now, not from the 15 s check: a switch it has not seen yet must not store
+            // this verdict under the old network.
+            if (net != s.net || FreshNetworkKey() != net) why = QStringLiteral("dropped: the network changed");
             else if (ConnectCount() != epoch && Configs::dataManager->settingsRepo->spmode_vpn) why = QStringLiteral("dropped: a connect started meanwhile");
             else if (tunMode()) why = QStringLiteral("dropped: the tunnel is up");
             if (why.isEmpty()) return false;
@@ -485,6 +527,16 @@ namespace Shadowlos::Journal {
 
         void measure() {
             auto &s = st();
+            // The key as the adapters say now: a switch the 15 s check has not seen yet is a new
+            // network already.
+            QString type;
+            const QByteArray fresh = FreshNetworkKey(&type);
+            if (fresh != s.net) {
+                s.net = fresh;
+                s.netType = type;
+                s.trigger = QStringLiteral("network-change");
+                s.notReal = 0;
+            }
             s.measuring = true;
             s.due = false;
             const QString trigger = s.trigger;
@@ -515,16 +567,27 @@ namespace Shadowlos::Journal {
             bool checked = false;
             const QByteArray key = CurrentNetworkKey(&type, &checked);
             if (!checked) return; // geo's first look has not run yet
-            s.netType = type;
-            if (!s.netKnown || key != s.net) {
-                // A verdict belongs to the network it was measured on: a new one is measured anew
-                // (one seen before shows its own kept verdict meanwhile).
-                s.trigger = s.netKnown ? QStringLiteral("network-change") : QStringLiteral("start");
-                s.net = key;
+            // Only a change in the check's own key is a switch: measure() may already have moved
+            // s.net to a fresher key, and the check catching up to it is not another switch.
+            if (!s.netKnown || key != s.geoKey) {
+                s.geoKey = key;
+                s.netType = type;
+                if (!s.netKnown || key != s.net) {
+                    // A verdict belongs to the network it was measured on: a new one is measured
+                    // anew (one seen before shows its own kept verdict meanwhile).
+                    s.trigger = s.netKnown ? QStringLiteral("network-change") : QStringLiteral("start");
+                    s.net = key;
+                    s.due = true;
+                    s.notReal = 0;
+                }
                 s.netKnown = true;
-                s.due = true;
             }
             const qint64 now = nowMs();
+            // A TUN session that came and went between two ticks still left a tunnel to wait for.
+            if (const int connects = ConnectCount(); connects != s.seenConnects) {
+                if (s.seenConnects >= 0 && Configs::dataManager->settingsRepo->spmode_vpn) s.tunnelWas = true;
+                s.seenConnects = connects;
+            }
             if (tunMode()) {
                 // Our tunnel takes every socket: no probe, the last verdict stays.
                 s.tunnelWas = true;
@@ -549,17 +612,30 @@ namespace Shadowlos::Journal {
     } // namespace
 
     QWidget *MakeBlockingBadge(QWidget *parent) {
-        auto *label = new BadgeLabel(parent);
+        // A row of fixed height that is there with or without the badge, so the status panel
+        // under it does not jump when the badge shows or hides.
+        auto *row = new QWidget(parent);
+        row->setObjectName(QStringLiteral("slBlockingBadgeRow"));
+        auto *layout = new QHBoxLayout(row);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->addStretch(1);
+        auto *label = new BadgeLabel(row);
         label->setObjectName(QStringLiteral("slBlockingBadge"));
         label->setProperty("slRole", "badge");
+        label->setFullText(QStringLiteral("x"));
+        row->setFixedHeight(label->sizeHint().height());
+        label->setFullText({});
         label->setVisible(false);
+        layout->addWidget(label);
+        row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
         st().label = label;
+        st().seenConnects = ConnectCount();
         auto *timer = new QTimer(label);
         timer->setInterval(kTickMs);
         QObject::connect(timer, &QTimer::timeout, label, [] { tick(); });
         timer->start();
         QTimer::singleShot(500, label, [] { tick(); });
-        return label;
+        return row;
     }
 
     QString CensusSelfTest() {
@@ -629,6 +705,11 @@ namespace Shadowlos::Journal {
         k.record(b, classify({}), 5);
         if (shown(b) != Blocking::Unknown) bad << QStringLiteral("unknown on a new network was not unknown");
         if (shown(a) != Blocking::Regular) bad << QStringLiteral("back on network a lost its verdict");
+
+        // Offline back-off: 60 s, 120 s, then 300 s for good.
+        if (againSoonMs(0) != 60000 || againSoonMs(1) != 120000 || againSoonMs(2) != 300000 || againSoonMs(9) != 300000) {
+            bad << QStringLiteral("back-off is not 60/120/300 s");
+        }
 
         // home_geo_badge_test.dart
         const auto eq = [&bad](const char *name, const QString &got, const QString &want) {

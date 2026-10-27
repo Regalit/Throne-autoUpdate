@@ -412,6 +412,12 @@ namespace Shadowlos::Journal {
         return g().net.key;
     }
 
+    QByteArray FreshNetworkKey(QString *netType) {
+        const Net net = currentNet();
+        if (netType) *netType = net.type;
+        return net.key;
+    }
+
     bool TunAdapterUp() {
 #ifdef Q_OS_WIN
         QByteArray buf;

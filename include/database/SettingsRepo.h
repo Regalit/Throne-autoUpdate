@@ -77,6 +77,8 @@ namespace Configs {
         int shadowlos_managed_group = -1; // group provisioned from shadowlos.json, -1 = none
         int shadowlos_managed_route = -1; // route profile provisioned from shadowlos.json, -1 = none
         int shadowlos_routing_revision = 0; // preset revision already installed
+        int shadowlos_regional_route = -1; // «Настройка под ваш регион» profile, -1 = not made yet
+        QString shadowlos_install_id; // random per install (UUID v4), sent to our API
         int shadowlos_ui_revision = 0; // Shadowlos look already applied as the default theme
         int shadowlos_test_revision = 0; // Shadowlos latency-test defaults already applied
         int shadowlos_simple_view = 1; // main window shows the simple server list, not the full one

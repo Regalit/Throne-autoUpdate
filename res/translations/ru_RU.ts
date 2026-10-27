@@ -9732,4 +9732,19 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Обновлений нет</translation>
     </message>
 </context>
+<context>
+    <name>ShadowlosRouting</name>
+    <message>
+        <source>Russian sites directly, everything else through the VPN</source>
+        <translation>Российские сайты напрямую, остальное через VPN</translation>
+    </message>
+    <message>
+        <source>Rules picked for your region and provider</source>
+        <translation>Правила, подобранные для вашего региона и провайдера</translation>
+    </message>
+    <message>
+        <source>All traffic through the VPN</source>
+        <translation>Весь трафик через VPN</translation>
+    </message>
+</context>
 </TS>

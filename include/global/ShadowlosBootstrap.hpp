@@ -1,6 +1,11 @@
 #pragma once
 
+#include <QJsonObject>
 #include <QString>
+
+#include <memory>
+
+namespace Configs { class RouteRule; }
 
 // Shadowlos provisioning.
 //
@@ -24,6 +29,13 @@ namespace Shadowlos {
     //
     // Must be called after Configs::initDB (needs dataManager).
     void ApplyBootstrap();
+
+    // One rule of a throne-route-profile document (shadowlos.json "routing", the
+    // regional routing endpoint), with the outbound and type tokens our server uses.
+    std::shared_ptr<Configs::RouteRule> RuleFromRoutingJson(const QJsonObject& obj);
+
+    // The name of the managed profile provisioned from shadowlos.json.
+    QString ComfyRouteProfileName();
 
     // True when the bootstrap file asked for TUN mode to start enabled.
     // Consulted by MainWindow once the UI exists -- enabling TUN can trigger a

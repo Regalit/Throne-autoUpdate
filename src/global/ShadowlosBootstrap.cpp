@@ -223,6 +223,14 @@ namespace Shadowlos {
         }
     }
 
+    std::shared_ptr<Configs::RouteRule> RuleFromRoutingJson(const QJsonObject& obj) {
+        return ruleFromJson(obj);
+    }
+
+    QString ComfyRouteProfileName() {
+        return ComfyRouteName;
+    }
+
     bool WantsTunOnStart() {
         return tunOnStart;
     }

@@ -239,7 +239,9 @@ namespace Shadowlos {
     void ImportStaticProfilesIfEmpty() {
         if (staticProfiles.trimmed().isEmpty()) return;
         const auto group = Configs::dataManager->groupsRepo->GetGroup(Configs::dataManager->settingsRepo->shadowlos_managed_group);
-        if (group == nullptr || !group->Profiles().isEmpty()) return;
+        // Only before the first successful refresh: a user who later deletes every server
+        // does not get the archive's old rows back.
+        if (group == nullptr || !group->Profiles().isEmpty() || group->sub_last_update > 0) return;
         // Queued ahead of the startup refresh on the same updater queue: a refresh that
         // works replaces these rows as it replaces any; one that fails leaves them.
         qInfo() << "[Shadowlos] the group is empty; adding the servers that came with the archive";

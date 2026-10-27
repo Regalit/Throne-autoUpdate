@@ -91,6 +91,9 @@ namespace {
         for (const int id : group->Profiles()) {
             const auto ent = Configs::dataManager->profilesRepo->GetProfile(id);
             if (ent == nullptr || ent->latency <= 0 || isRussianExit(ent)) continue;
+            // Only VLESS: a WireGuard server can pass the latency test and still carry nothing
+            // once it is the tunnel, so it is never chosen for the user.
+            if (ent->type != QStringLiteral("vless") && ent->type != QStringLiteral("xrayvless")) continue;
             if (now - ent->latency_at > kFreshSecs) continue;
             if (id == lastId) return id;
             if (best == nullptr || ent->latency < best->latency) best = ent;

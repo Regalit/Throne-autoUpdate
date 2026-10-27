@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QString>
+#include <QtGlobal>
 
 class QMainWindow;
 namespace Ui {
@@ -36,6 +37,16 @@ namespace Shadowlos::Chrome {
 
     // Rebuilds the main window. Call once, straight after ui->setupUi().
     void Install(QMainWindow *window, Ui::MainWindow *ui);
+
+    // Corner labels in the status card: the app version at its left end and, at its right
+    // end, how long the running profile has been connected (mm:ss, then h:mm:ss; hidden
+    // while nothing runs). Call with true once a profile has started, false when it stops.
+    // UI thread only.
+    void ConnectStopwatch(bool connected);
+    QString StopwatchText(qint64 seconds);
+    // For `--journal-selftest` (dev builds): the format and the timer on a throwaway card.
+    // Returns the problems found, empty when all is well.
+    QString StopwatchSelfTest();
 
     // The status card is a single line; the texts it shows are written for two.
     QString StatusLine(const QString &text);

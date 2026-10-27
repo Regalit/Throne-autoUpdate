@@ -7,6 +7,7 @@
 // Brings in ui_mainwindow.h, i.e. the full Ui::MainWindow. Only when MW_INTERFACE is unset,
 // which is why CMake keeps this file out of unity batches.
 #include "include/ui/mainwindow.h"
+#include "NkrVersion.h"
 
 #include "include/database/DatabaseManager.h"
 #include "include/database/GroupsRepo.h"
@@ -21,6 +22,8 @@
 #include <QCheckBox>
 #include <QCoreApplication>
 #include <QDebug>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QEvent>
 #include <QFont>
 #include <QFontDatabase>
@@ -563,6 +566,50 @@ namespace Shadowlos::ChromeImpl {
         QApplication::setFont(font);
     }
 
+    // ------------------------------------------------------- corner labels
+    // The version at the status card's left end and, at its right end, how long the
+    // running profile has been connected. One 1 s timer, running only while connected.
+    struct Corner {
+        QPointer<QLabel> version;
+        QPointer<QLabel> stopwatch;
+        QPointer<QTimer> timer;
+        QElapsedTimer since;
+    };
+
+    Corner &corner() {
+        static Corner c;
+        return c;
+    }
+
+    void tickStopwatch() {
+        Corner &c = corner();
+        if (c.stopwatch == nullptr || !c.since.isValid()) return;
+        c.stopwatch->setText(Shadowlos::Chrome::StopwatchText(c.since.elapsed() / 1000));
+    }
+
+    QLabel *makeCornerLabel(QWidget *parent, const QString &name) {
+        auto *label = new QLabel(parent);
+        label->setObjectName(name);
+        label->setProperty("slRole", "corner");
+        label->setAttribute(Qt::WA_TransparentForMouseEvents);
+        label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
+        return label;
+    }
+
+    // The two labels and the timer, owned by `owner` (the status card).
+    Corner &makeCorners(QWidget *owner) {
+        Corner &c = corner();
+        c.since.invalidate();
+        c.version = makeCornerLabel(owner, QStringLiteral("slCornerVersion"));
+        c.version->setText(QStringLiteral(NKR_VERSION));
+        c.stopwatch = makeCornerLabel(owner, QStringLiteral("slCornerStopwatch"));
+        c.stopwatch->setVisible(false);
+        c.timer = new QTimer(owner);
+        c.timer->setInterval(1000);
+        QObject::connect(c.timer, &QTimer::timeout, owner, [] { tickStopwatch(); });
+        return c;
+    }
+
 } // namespace Shadowlos::ChromeImpl
 
 namespace Shadowlos::Chrome {
@@ -593,6 +640,70 @@ namespace Shadowlos::Chrome {
             pending = false;
             ChromeImpl::syncThemeFont();
         });
+    }
+
+    QString StopwatchText(qint64 seconds) {
+        if (seconds < 0) seconds = 0;
+        const qint64 h = seconds / 3600, m = seconds / 60 % 60, s = seconds % 60;
+        const auto two = [](qint64 n) { return QStringLiteral("%1").arg(n, 2, 10, QLatin1Char('0')); };
+        if (h > 0) return QStringLiteral("%1:%2:%3").arg(h).arg(two(m), two(s));
+        return QStringLiteral("%1:%2").arg(two(m), two(s));
+    }
+
+    void ConnectStopwatch(bool connected) {
+        using namespace Shadowlos::ChromeImpl;
+        Corner &c = corner();
+        if (c.stopwatch == nullptr || c.timer == nullptr) return;
+        if (connected) {
+            c.since.start();
+            tickStopwatch();
+            c.stopwatch->setVisible(true);
+            c.timer->start();
+        } else {
+            c.timer->stop();
+            c.since.invalidate();
+            c.stopwatch->clear();
+            c.stopwatch->setVisible(false);
+        }
+        qDebug().noquote() << "[corner] stopwatch" << (connected ? "started" : "reset");
+    }
+
+    QString StopwatchSelfTest() {
+        using namespace Shadowlos::ChromeImpl;
+        QStringList problems;
+        const auto expect = [&](const QString &what, const QString &got, const QString &want) {
+            if (got != want) problems << QStringLiteral("%1: got '%2', want '%3'").arg(what, got, want);
+        };
+        const struct { qint64 secs; const char *want; } cases[] = {
+            {-5, "00:00"}, {0, "00:00"}, {9, "00:09"}, {61, "01:01"}, {3599, "59:59"},
+            {3600, "1:00:00"}, {3661, "1:01:01"}, {36000 + 59, "10:00:59"},
+        };
+        for (const auto &c : cases) expect(QStringLiteral("text %1").arg(c.secs), StopwatchText(c.secs), QString::fromLatin1(c.want));
+
+        // The timer on a throwaway card: hidden until connected, counts each second, resets on stop.
+        // The real window's corners are put back afterwards, should it already exist.
+        const Corner saved = corner();
+        QWidget card;
+        Corner &c = makeCorners(&card);
+        expect(QStringLiteral("version"), c.version->text(), QStringLiteral(NKR_VERSION));
+        const auto state = [&] {
+            return QStringLiteral("%1/%2/%3").arg(c.stopwatch->isVisibleTo(&card) ? "shown" : "hidden",
+                                                   c.timer->isActive() ? "ticking" : "idle", c.stopwatch->text());
+        };
+        expect(QStringLiteral("before connect"), state(), QStringLiteral("hidden/idle/"));
+        ConnectStopwatch(true);
+        expect(QStringLiteral("on connect"), state(), QStringLiteral("shown/ticking/00:00"));
+        QEventLoop loop;
+        QTimer::singleShot(2300, &loop, &QEventLoop::quit);
+        loop.exec();
+        expect(QStringLiteral("after 2.3 s"), state(), QStringLiteral("shown/ticking/00:02"));
+        ConnectStopwatch(false);
+        expect(QStringLiteral("on stop"), state(), QStringLiteral("hidden/idle/"));
+        ConnectStopwatch(true);
+        expect(QStringLiteral("reconnect"), state(), QStringLiteral("shown/ticking/00:00"));
+        ConnectStopwatch(false);
+        corner() = saved;
+        return problems.join(QStringLiteral("; "));
     }
 
     QString StatusLine(const QString &text) {
@@ -963,11 +1074,16 @@ namespace Shadowlos::Chrome {
             label->setMinimumWidth(1); // long server names clip instead of widening the window
             repolish(label);
         }
+        // Corner labels: the version on the left, the connect stopwatch on the right.
+        Corner &corners = makeCorners(statusCard);
+
+        statusLayout->addWidget(corners.version);
         statusLayout->addWidget(ui->label_running);
         statusLayout->addStretch(1);
         statusLayout->addWidget(ui->label_inbound);
         statusLayout->addStretch(1);
         statusLayout->addWidget(ui->label_speed);
+        statusLayout->addWidget(corners.stopwatch);
         root->addWidget(statusCard);
 
         // Every widget uic made has been moved into `central`; this deletes the empty old

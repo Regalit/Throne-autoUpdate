@@ -26,6 +26,7 @@
 #include "include/global/RunningProfiles.hpp"
 #include "include/global/VpnCredentialOverride.hpp"
 #include "include/ui/profile/dialog_vpn_auth.h"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
 #include "include/sys/Process.hpp"
@@ -404,6 +405,7 @@ void MainWindow::profile_start(int _id) {
             clearRestartNeeded();
             start_vpn_challenge_poll();
             refresh_status();
+            Shadowlos::Chrome::ConnectStopwatch(running != nullptr); // Shadowlos: corner stopwatch; a crash may have stopped it already
             refresh_proxy_list({ent->id});
             refresh_auto_selector_view();
 
@@ -574,6 +576,7 @@ void MainWindow::profile_stop(bool crash, bool block, bool manual) {
             if (manual && !restartingForAuth) clear_vpn_credential_overrides();
             stop_vpn_challenge_poll();
             refresh_status();
+            Shadowlos::Chrome::ConnectStopwatch(false); // Shadowlos: corner stopwatch
             refresh_proxy_list({id});
 
             mu_stopping.unlock();

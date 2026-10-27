@@ -1,4 +1,5 @@
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
 #if SHADOWLOS_DEV
 
@@ -305,6 +306,8 @@ namespace Shadowlos::Journal {
         check(QStringLiteral("network key"), keyProblems.isEmpty(), keyProblems.isEmpty() ? QStringLiteral("ok") : keyProblems);
         const QString censusProblems = CensusSelfTest();
         check(QStringLiteral("census"), censusProblems.isEmpty(), censusProblems.isEmpty() ? QStringLiteral("ok") : censusProblems);
+        const QString stopwatchProblems = Shadowlos::Chrome::StopwatchSelfTest();
+        check(QStringLiteral("corner stopwatch"), stopwatchProblems.isEmpty(), stopwatchProblems.isEmpty() ? QStringLiteral("ok") : stopwatchProblems);
         check(QStringLiteral("envelope without geo"), !UploadEnvelope(QStringLiteral("journal"), QStringLiteral("j1"), QStringLiteral("x")).contains(QStringLiteral("geo")), {});
 
         print(failed == 0 ? QStringLiteral("journal selftest: all %1 passed").arg(std::size(cases) + extra)

@@ -22,6 +22,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <vector>
 
 // The blocking census of the Android app, for the dev badge. Ported from shadowlos
 // app/lib/modules/probes/{network_class,census_sensor,tls_probe}.dart (itself a lift of
@@ -409,6 +410,7 @@ namespace Shadowlos::Journal {
             int seenConnects = -1;   // ConnectCount() last seen
             int notReal = 0;         // measurements in a row without a real verdict
             QString lastLogged;      // network+verdict+tier of the last census line
+            std::vector<std::function<void(const CensusNow &)>> waiters; // the page's «Проверить доступность»
         };
 
         State &st() {
@@ -430,6 +432,10 @@ namespace Shadowlos::Journal {
 
         bool tunMode() {
             return Configs::dataManager->settingsRepo->spmode_vpn && TunnelActive();
+        }
+
+        QString tunText() {
+            return QStringLiteral("Пока VPN подключён в режиме TUN, проверить нельзя: проверка идёт мимо VPN. Отключите VPN и нажмите ещё раз.");
         }
 
         QString fullLabel(Blocking b) {
@@ -482,6 +488,25 @@ namespace Shadowlos::Journal {
 
         void measure();
 
+        CensusNow describe(const Census &c, qint64 at) {
+            CensusNow r;
+            r.measured = true;
+            r.verdict = note(c.blocking);
+            if (r.verdict.isEmpty()) r.verdict = QStringLiteral("Не удалось определить");
+            r.counts = c.summary();
+            const QJsonObject geo = LatestGeo();
+            r.region = geoRegion(geo);
+            r.op = geoOperator(geo);
+            r.at = at;
+            return r;
+        }
+
+        void answerWaiters(const CensusNow &r) {
+            auto waiters = std::move(st().waiters);
+            st().waiters.clear();
+            for (const auto &done : waiters) done(r);
+        }
+
         void finishMeasurement(const Census &c, int passes, const QByteArray &net, const QString &trigger, qint64 ms) {
             auto &s = st();
             s.measuring = false;
@@ -496,7 +521,7 @@ namespace Shadowlos::Journal {
             // A line only when the verdict or tier changes (or the network does): offline, the
             // re-measures would otherwise write one every minute or so.
             const QString logged = QString::fromLatin1(net.toHex()) + u'|' + QLatin1String(word(c.blocking)) + u'|' + QLatin1String(c.tier);
-            if (logged != s.lastLogged) {
+            if (logged != s.lastLogged || trigger == QStringLiteral("manual")) {
                 s.lastLogged = logged;
                 Event("app", "census", "ok",
                       QStringLiteral("verdict=%1 tier=%2 %3 passes=%4 trigger=%5 net_type=%6")
@@ -505,6 +530,7 @@ namespace Shadowlos::Journal {
                       {}, ms);
             }
             render();
+            answerWaiters(describe(c, nowMs()));
         }
 
         // Dropped: another network now, or a connect began (TUN may have carried the probes).
@@ -521,6 +547,11 @@ namespace Shadowlos::Journal {
             s.due = true;
             Event("app", "census", "fail", QStringLiteral("trigger=%1 net_type=%2").arg(trigger, s.netType), why, ms);
             render();
+            CensusNow r;
+            r.note = why.contains(QStringLiteral("network")) ? QStringLiteral("Сеть сменилась во время проверки. Нажмите ещё раз.")
+                     : why.contains(QStringLiteral("connect")) ? QStringLiteral("Во время проверки началось подключение. Нажмите ещё раз.")
+                                                               : tunText();
+            answerWaiters(r);
             return true;
         }
 
@@ -616,6 +647,9 @@ namespace Shadowlos::Journal {
         row->setObjectName(QStringLiteral("slBlockingBadgeRow"));
         auto *layout = new QHBoxLayout(row);
         layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(8);
+        // The page that runs this check by hand, left of the badge.
+        layout->addWidget(MakeImproveLink(row));
         layout->addStretch(1);
         auto *label = new BadgeLabel(row);
         label->setObjectName(QStringLiteral("slBlockingBadge"));
@@ -634,6 +668,27 @@ namespace Shadowlos::Journal {
         timer->start();
         QTimer::singleShot(500, label, [] { tick(); });
         return row;
+    }
+
+    void CensusMeasureNow(std::function<void(const CensusNow &)> done) {
+        auto &s = st();
+        if (tunMode()) {
+            CensusNow r;
+            r.note = tunText();
+            done(r);
+            return;
+        }
+        s.waiters.push_back(std::move(done));
+        if (s.measuring) return;
+        s.trigger = QStringLiteral("manual");
+        measure();
+    }
+
+    bool CensusLast(CensusNow *out) {
+        const auto *e = st().keeper.entry(st().net);
+        if (e == nullptr || !e->last) return false;
+        *out = describe(e->census, e->measuredAt);
+        return true;
     }
 
     QString CensusSelfTest() {

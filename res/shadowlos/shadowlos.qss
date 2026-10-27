@@ -202,6 +202,66 @@ QLabel[slRole="badge"] {
     padding: 6px 10px;
 }
 
+/* Dev builds: «Улучшение обхода блокировок» (ShadowlosImprove). Cards are QFrame#slCard. */
+QToolButton[slRole="link"] {
+    background: transparent;
+    border: none;
+    color: #33A5FF;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 0px 2px;
+}
+
+QToolButton[slRole="link"]:hover {
+    color: #4DB1FF;
+    text-decoration: underline;
+}
+
+QLabel[slRole="improveHeading"] {
+    color: #5E676E;
+    font-size: 13px;
+    font-weight: 500;
+    background: transparent;
+}
+
+QLabel[slRole="improveSwitch"] {
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 500;
+    background: transparent;
+}
+
+QLabel[slRole="improveCardTitle"] {
+    color: #FFFFFF;
+    font-size: 14px;
+    font-weight: 700;
+    background: transparent;
+}
+
+QLabel[slRole="improveVerdict"] {
+    color: #33A5FF;
+    font-size: 14px;
+    font-weight: 700;
+    background: transparent;
+}
+
+QLabel[slRole="improveText"] {
+    color: #C7CDD1;
+    font-size: 13px;
+    background: transparent;
+}
+
+QLabel[slRole="improveHint"],
+QLabel[slRole="improveStatus"] {
+    color: #919AA1;
+    font-size: 12px;
+    background: transparent;
+}
+
+QLabel[slRole="improveStatus"][slError="true"] {
+    color: #FF8A80;
+}
+
 QToolButton[slRole="pill"]::menu-indicator {
     image: none;
     width: 0px;

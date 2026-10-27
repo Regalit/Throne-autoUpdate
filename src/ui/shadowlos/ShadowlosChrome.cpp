@@ -1005,6 +1005,9 @@ namespace Shadowlos::Chrome {
         ui->menuTools->addAction(debugAction);
         // Dev builds: the error journal's consent action goes under it (a no-op in prod).
         Shadowlos::Journal::Install(window, ui->menuTools, ui->checkBox_VPN, ui->checkBox_SystemProxy);
+        // Dev builds: «Улучшение обхода блокировок» at the end of Settings (the menu card is
+        // never hidden, so the simple view has it too). Nothing in prod.
+        Shadowlos::Journal::InstallImprovePage(window, ui->menu_preferences);
 
         // View card: the simple / full view switch, right of the actions.
         auto *viewCard = makeCard(central, "slCard");

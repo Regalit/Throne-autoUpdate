@@ -64,6 +64,7 @@ namespace Shadowlos::Journal {
         constexpr qint64 kBackoffMins[] = {6, 12, 24, 30};
         constexpr auto kUploadPath = "/api/mobile/client-logs";
         constexpr auto kCrashSeparator = "--- journal of the previous run (last 150 lines) ---";
+        constexpr int kManualReportChars = 60000;
 
         QString translate(const char *text) {
             return QCoreApplication::translate("ShadowlosJournal", text);
@@ -328,9 +329,10 @@ namespace Shadowlos::Journal {
             return Verdict::Retry;
         }
 
-        // Straight to our server, never through our own inbound or the system proxy.
+        // Straight to our server, never through our own inbound or the system proxy. A manual
+        // report ([queued] false) goes out beside the queue and leaves its busy flag alone.
         void post(const QString &reason, const QString &requestId, const QString &log,
-                  const std::function<void(int status, qint64 retryAfter)> &done) {
+                  const std::function<void(int status, qint64 retryAfter)> &done, bool queued = true) {
             QString token;
             if (!up().nam || !ApiToken(&token)) return;
             const QJsonObject body = UploadEnvelope(reason, requestId, log);
@@ -342,11 +344,11 @@ namespace Shadowlos::Journal {
             request.setTransferTimeout(30 * 1000);
             QElapsedTimer clock;
             clock.start();
-            up().busy = true;
+            if (queued) up().busy = true;
             auto *reply = up().nam->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-            QObject::connect(reply, &QNetworkReply::finished, up().nam, [reply, clock, done] {
+            QObject::connect(reply, &QNetworkReply::finished, up().nam, [reply, clock, done, queued] {
                 reply->deleteLater();
-                up().busy = false;
+                if (queued) up().busy = false;
                 const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                 // Only failures are journaled: a line per success would itself be sent every round.
                 if (status != 200) {
@@ -474,6 +476,8 @@ namespace Shadowlos::Journal {
             LOG_INFO(QStringLiteral("[journal] sending turned on"));
         }
 
+        QPointer<QAction> consentAction;
+
         // ── ui ─────────────────────────────────────────────────────────────────
 
         QString label(QString text, const QString &name) {
@@ -593,6 +597,7 @@ namespace Shadowlos::Journal {
         action->setChecked(consentOn());
         QObject::connect(action, &QAction::toggled, window, [](bool on) { setConsent(on); });
         tools->addAction(action);
+        consentAction = action;
 
         qApp->installEventFilter(new UiTracker(window));
 
@@ -628,6 +633,47 @@ namespace Shadowlos::Journal {
         QTimer::singleShot(kFirstUploadMs, u.timer, [] { tick(); });
 
         InstallGeo(window);
+    }
+
+    QAction *ConsentAction() {
+        return consentAction;
+    }
+
+    // Free text (journal-format.md: manual is not the journal format): one header line, then
+    // the newest journal lines that fit, each scrubbed as JSON. The queue's sent mark is left
+    // alone, so the periodic upload still sends these lines as the journal.
+    void SendManualReport(std::function<void(ManualResult, int)> done) {
+        if (!consentOn()) {
+            done(ManualResult::Off, 0);
+            return;
+        }
+        QString token;
+        if (!up().nam || !ApiToken(&token)) {
+            done(ManualResult::NoToken, 0);
+            return;
+        }
+        Event("app", "report", "ok", QStringLiteral("manual"));
+        QStringList lines;
+        {
+            QMutexLocker lock(&st().mutex);
+            lines = readLinesLocked();
+        }
+        const QString header = QStringLiteral("manual report: the user pressed «Отправить логи» (latest journal lines follow)");
+        QStringList tail;
+        qsizetype size = header.size() + 1;
+        for (auto it = lines.crbegin(); it != lines.crend(); ++it) {
+            const QString line = ScrubJsonLine(*it);
+            if (size + line.size() + 1 > kManualReportChars) break;
+            size += line.size() + 1;
+            tail.prepend(line);
+        }
+        const QString id = u'm' + QString::fromLatin1(QByteArray::number(QRandomGenerator::system()->generate64(), 16).rightJustified(16, '0'));
+        post(QStringLiteral("manual"), id, header + u'\n' + tail.join(u'\n'), [done](int status, qint64) {
+            if (status == 200) done(ManualResult::Sent, status);
+            else if (status == 429) done(ManualResult::TooOften, status);
+            else if (status == 0 || status >= 500) done(ManualResult::NoConnection, status);
+            else done(ManualResult::Refused, status);
+        }, false);
     }
 
     void Event(const char *layer, const char *step, const char *outcome, const QString &d, const QString &err, qint64 ms) {

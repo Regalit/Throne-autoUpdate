@@ -92,11 +92,14 @@ namespace Shadowlos::Journal {
     void NetEvent(const QString &d, const QJsonObject &geo);
 
     // The network the last 15 s check saw: its key ("" for none), net_type, and whether a
-    // check has run yet. UI thread.
-    QByteArray CurrentNetworkKey(QString *netType = nullptr, bool *checked = nullptr);
+    // check has run yet; [checks] counts the looks taken (the 15 s check and a connect's).
+    // UI thread.
+    QByteArray CurrentNetworkKey(QString *netType = nullptr, bool *checked = nullptr, int *checks = nullptr);
 
     // The network's key read now from the adapters (the 15 s check may not have run since a
-    // switch), with the same key rules. Does not touch the check's own state. UI thread.
+    // switch), with the same key rules. It goes through the shared key memo (last adapter,
+    // gateway MAC and key) exactly as the check does, so the check then derives the same key;
+    // it leaves the check's last network and its counter alone. UI thread.
     QByteArray FreshNetworkKey(QString *netType = nullptr);
 
     // Whether our TUN adapter (throne-tun, Wintun) is still up: a torn-down tunnel takes a

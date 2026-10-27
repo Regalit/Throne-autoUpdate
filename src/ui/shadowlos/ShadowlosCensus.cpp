@@ -15,7 +15,6 @@
 #include <QResizeEvent>
 #include <QHBoxLayout>
 #include <QSet>
-#include <QSslConfiguration>
 #include <QSslSocket>
 #include <QTimer>
 
@@ -271,20 +270,6 @@ namespace Shadowlos::Journal {
 
         // ── one probe pass ───────────────────────────────────────────────────
 
-        // The probe sockets' TLS settings. Qt here has only the OpenSSL backend, which fetches no
-        // CRL and asks no OCSP responder. What can wait on the network on Windows is its on-demand
-        // root lookup (CertGetCertificateChain, which may download over AIA) for a root it has
-        // not loaded: setting the CA list up front turns that off for these sockets only.
-        // Certificates are still verified: a forged one is a refusal, as on Android.
-        const QSslConfiguration &probeTls() {
-            static const QSslConfiguration conf = [] {
-                QSslConfiguration c = QSslConfiguration::defaultConfiguration();
-                c.setCaCertificates(QSslConfiguration::systemCaCertificates());
-                return c;
-            }();
-            return conf;
-        }
-
         class TlsPass : public QObject {
         public:
             TlsPass(const QStringList &hosts, int deadlineMs, std::function<void(const Results &)> done)
@@ -298,7 +283,12 @@ namespace Shadowlos::Journal {
                 for (const QString &host : hosts) {
                     auto *socket = new QSslSocket(this);
                     socket->setProxy(QNetworkProxy::NoProxy);
-                    socket->setSslConfiguration(probeTls());
+                    // The default TLS configuration on purpose. Qt here has only the OpenSSL
+                    // backend: no CRL or OCSP fetch. Its on-demand Windows root lookup
+                    // (CertGetCertificateChain) may go to the network, but turning it off (a CA
+                    // list set up front) makes a host whose root a fresh Windows store has not
+                    // fetched yet fail TLS, which counts as blocking: a false «блокировки» is
+                    // worse than a host now and then left unmeasured by the deadline.
                     connect(socket, &QSslSocket::encrypted, this, [this, host, socket] { conclude(host, socket, true); });
                     connect(socket, &QAbstractSocket::errorOccurred, this, [this, host, socket](QAbstractSocket::SocketError e) {
                         // A timeout is no evidence; a refusal, reset, name or TLS failure is.
@@ -415,6 +405,7 @@ namespace Shadowlos::Journal {
             qint64 settleUntil = 0;
             qint64 teardownUntil = 0;
             QByteArray geoKey;       // the 15 s check's key last seen (s.net may be ahead of it)
+            int netSetAtCheck = -1;  // the check counter when s.net was last set
             int seenConnects = -1;   // ConnectCount() last seen
             int notReal = 0;         // measurements in a row without a real verdict
             QString lastLogged;      // network+verdict+tier of the last census line
@@ -427,6 +418,14 @@ namespace Shadowlos::Journal {
 
         qint64 nowMs() {
             return QDateTime::currentMSecsSinceEpoch();
+        }
+
+        // Whether the tick moves to [key], the network the geo check reports. [net] may be ahead
+        // of the check (measure() read the adapters itself): the check catching up to it is no
+        // switch, but a check taken after net was set that reports another network is one, even
+        // the network the check saw before (A -> B seen only by measure() -> back to A).
+        bool tickSwitches(const QByteArray &key, const QByteArray &geoKey, const QByteArray &net, int checks, int netSetAtCheck) {
+            return key != net && (key != geoKey || checks != netSetAtCheck);
         }
 
         bool tunMode() {
@@ -533,6 +532,7 @@ namespace Shadowlos::Journal {
             const QByteArray fresh = FreshNetworkKey(&type);
             if (fresh != s.net) {
                 s.net = fresh;
+                CurrentNetworkKey(nullptr, nullptr, &s.netSetAtCheck);
                 s.netType = type;
                 s.trigger = QStringLiteral("network-change");
                 s.notReal = 0;
@@ -565,23 +565,21 @@ namespace Shadowlos::Journal {
             auto &s = st();
             QString type;
             bool checked = false;
-            const QByteArray key = CurrentNetworkKey(&type, &checked);
+            int checks = 0;
+            const QByteArray key = CurrentNetworkKey(&type, &checked, &checks);
             if (!checked) return; // geo's first look has not run yet
-            // Only a change in the check's own key is a switch: measure() may already have moved
-            // s.net to a fresher key, and the check catching up to it is not another switch.
-            if (!s.netKnown || key != s.geoKey) {
-                s.geoKey = key;
+            if (!s.netKnown || tickSwitches(key, s.geoKey, s.net, checks, s.netSetAtCheck)) {
+                // A verdict belongs to the network it was measured on: a new one is measured anew
+                // (one seen before shows its own kept verdict meanwhile).
+                s.trigger = s.netKnown ? QStringLiteral("network-change") : QStringLiteral("start");
+                s.net = key;
+                s.netSetAtCheck = checks;
                 s.netType = type;
-                if (!s.netKnown || key != s.net) {
-                    // A verdict belongs to the network it was measured on: a new one is measured
-                    // anew (one seen before shows its own kept verdict meanwhile).
-                    s.trigger = s.netKnown ? QStringLiteral("network-change") : QStringLiteral("start");
-                    s.net = key;
-                    s.due = true;
-                    s.notReal = 0;
-                }
-                s.netKnown = true;
+                s.due = true;
+                s.notReal = 0;
             }
+            s.geoKey = key;
+            s.netKnown = true;
             const qint64 now = nowMs();
             // A TUN session that came and went between two ticks still left a tunnel to wait for.
             if (const int connects = ConnectCount(); connects != s.seenConnects) {
@@ -705,6 +703,19 @@ namespace Shadowlos::Journal {
         k.record(b, classify({}), 5);
         if (shown(b) != Blocking::Unknown) bad << QStringLiteral("unknown on a new network was not unknown");
         if (shown(a) != Blocking::Regular) bad << QStringLiteral("back on network a lost its verdict");
+
+        // Switches seen by the tick, with measure() reading the adapters ahead of the 15 s check.
+        {
+            const QByteArray A = "net-a", B = "net-b", C = "net-c";
+            if (tickSwitches(A, A, A, 7, 7)) bad << QStringLiteral("a steady network was a switch");
+            if (!tickSwitches(C, A, A, 8, 7)) bad << QStringLiteral("a switch the check saw was missed");
+            // measure() moved to B at check 5; the check has not looked again and still says A.
+            if (tickSwitches(A, A, B, 5, 5)) bad << QStringLiteral("the check's stale key undid measure()'s fresher one");
+            // The check catches up to B: no second measurement.
+            if (tickSwitches(B, A, B, 6, 5)) bad << QStringLiteral("the check catching up was a switch");
+            // Back on A before the check ever saw B: the next check (6) still says A.
+            if (!tickSwitches(A, A, B, 6, 5)) bad << QStringLiteral("a quick switch back was missed");
+        }
 
         // Offline back-off: 60 s, 120 s, then 300 s for good.
         if (againSoonMs(0) != 60000 || againSoonMs(1) != 120000 || againSoonMs(2) != 300000 || againSoonMs(9) != 300000) {

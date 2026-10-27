@@ -98,6 +98,7 @@ namespace Shadowlos::Journal {
             QByteArray lastKey;  // the key given to it
             Net net;
             bool checked = false;
+            int checks = 0; // looks taken at the network (the 15 s check, a connect's)
             bool busy = false;
             QString pendingLine; // a net line waiting for the answer in flight ("" none)
         };
@@ -341,6 +342,7 @@ namespace Shadowlos::Journal {
             const Net net = currentNet();
             const bool changed = s.checked && (net.key != s.net.key || net.type != s.net.type);
             s.net = net;
+            ++s.checks;
             if (!s.checked) {
                 s.checked = true;
                 setLatest(withNet(s.cache.value(net.key).geo, net));
@@ -406,9 +408,10 @@ namespace Shadowlos::Journal {
         return bad.join(QStringLiteral("; "));
     }
 
-    QByteArray CurrentNetworkKey(QString *netType, bool *checked) {
+    QByteArray CurrentNetworkKey(QString *netType, bool *checked, int *checks) {
         if (netType) *netType = g().net.type;
         if (checked) *checked = g().checked;
+        if (checks) *checks = g().checks;
         return g().net.key;
     }
 
@@ -470,6 +473,7 @@ namespace Shadowlos::Journal {
         const Net net = currentNet();
         s.net = net;
         s.checked = true;
+        ++s.checks;
         writeNetLine(QStringLiteral("connect"));
     }
 

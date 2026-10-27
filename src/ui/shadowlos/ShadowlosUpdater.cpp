@@ -35,7 +35,9 @@ namespace Shadowlos::Updater {
     namespace {
 
         constexpr int kFirstCheckMs = 30 * 1000;
-        constexpr int kCheckEveryMs = 6 * 60 * 60 * 1000;
+        // Dev builds follow a channel that moves several times a day: an app left running
+        // (closing the window only hides it to the tray) must not wait 6 h to see a release.
+        constexpr int kCheckEveryMs = SHADOWLOS_DEV ? 20 * 60 * 1000 : 6 * 60 * 60 * 1000;
 
         QString translate(const char *text) {
             return QCoreApplication::translate("ShadowlosUpdater", text);

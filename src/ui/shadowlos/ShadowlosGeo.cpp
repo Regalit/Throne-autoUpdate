@@ -406,6 +406,33 @@ namespace Shadowlos::Journal {
         return bad.join(QStringLiteral("; "));
     }
 
+    QByteArray CurrentNetworkKey(QString *netType, bool *checked) {
+        if (netType) *netType = g().net.type;
+        if (checked) *checked = g().checked;
+        return g().net.key;
+    }
+
+    bool TunAdapterUp() {
+#ifdef Q_OS_WIN
+        QByteArray buf;
+        ULONG size = 32 * 1024;
+        ULONG ret = ERROR_BUFFER_OVERFLOW;
+        for (int i = 0; i < 3 && ret == ERROR_BUFFER_OVERFLOW; ++i) {
+            buf.resize(int(size));
+            ret = GetAdaptersAddresses(AF_UNSPEC, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER,
+                                       nullptr, reinterpret_cast<PIP_ADAPTER_ADDRESSES>(buf.data()), &size);
+        }
+        if (ret != NO_ERROR) return false;
+        for (auto *a = reinterpret_cast<const IP_ADAPTER_ADDRESSES *>(buf.constData()); a; a = a->Next) {
+            if (a->OperStatus != IfOperStatusUp) continue;
+            // generate.cpp names it throne-tun; Windows may add " 2" after an unclean exit.
+            const QString name = QString::fromWCharArray(a->FriendlyName ? a->FriendlyName : L"").toLower();
+            if (name.startsWith(QStringLiteral("throne-tun"))) return true;
+        }
+#endif
+        return false;
+    }
+
     QJsonObject LatestGeo() {
         QMutexLocker lock(&latestMutex());
         return latest();

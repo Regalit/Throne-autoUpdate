@@ -22,7 +22,7 @@
  * Main-window objects tagged by ShadowlosChrome:
  *   QFrame#slMenuCard, QFrame#slCard, QFrame#slStatusCard
  *   QToolButton[slRole="menu"|"pill"], QToolButton#slFilterButton
- *   QCheckBox[slRole="toggle"], QLabel[slRole="toggleLabel"|"status"]
+ *   QCheckBox[slRole="toggle"], QLabel[slRole="toggleLabel"|"status"|"badge"]
  */
 
 /* ------------------------------------------------------------------ base */
@@ -151,6 +151,17 @@ QToolButton[slRole="segment"]:checked {
     background-color: #1A374D;
     border-color: #33A5FF;
     color: #33A5FF;
+}
+
+/* Dev builds: the blocking badge right of the routing switch, a quiet pill (not a button). */
+QLabel[slRole="badge"] {
+    background-color: #1A2023;
+    border: 1px solid #2E3438;
+    border-radius: 10px;
+    color: #C7CDD1;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 10px;
 }
 
 QToolButton[slRole="pill"]::menu-indicator {

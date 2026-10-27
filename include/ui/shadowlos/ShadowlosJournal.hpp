@@ -91,6 +91,24 @@ namespace Shadowlos::Journal {
     // An app/net line (outcome ok) carrying the nested geo object. Thread-safe.
     void NetEvent(const QString &d, const QJsonObject &geo);
 
+    // The network the last 15 s check saw: its key ("" for none), net_type, and whether a
+    // check has run yet. UI thread.
+    QByteArray CurrentNetworkKey(QString *netType = nullptr, bool *checked = nullptr);
+
+    // Whether our TUN adapter (throne-tun, Wintun) is still up: a torn-down tunnel takes a
+    // moment to leave. UI thread.
+    bool TunAdapterUp();
+
+    // ── the blocking census and its badge (ShadowlosCensus.cpp) ──
+
+    // The badge for the menu card: the blocking type found by the census (the Android app's
+    // control / foreign / resilient probe, run off the VPN) plus region and operator from geo.
+    // nullptr in a prod build.
+    QWidget *MakeBlockingBadge(QWidget *parent);
+
+    // The verdict rules, the kept-verdict rules and the badge text; "" when all hold.
+    QString CensusSelfTest();
+
 #else
 
     inline int RunSelfTestIfAsked(const QStringList &) { return -1; }
@@ -102,6 +120,7 @@ namespace Shadowlos::Journal {
     inline void ConnectStart(const QString &, bool) {}
     inline void ConnectEnd(bool) {}
     inline void Disconnect(bool, bool) {}
+    inline QWidget *MakeBlockingBadge(QWidget *) { return nullptr; }
 
 #endif
 

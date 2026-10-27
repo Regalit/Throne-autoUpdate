@@ -10,10 +10,14 @@ class QWidget;
 // Windows only; elsewhere these are no-ops.
 namespace Shadowlos::Updater {
 
-    // Checks quietly 30 s after start and then every 6 h; when a verified update is
-    // ready the button lights up. Pressing it is the only way an update is applied.
+    // Checks quietly 30 s after start and then every 6 h (20 min in dev); when a verified
+    // update is ready the button gets an accent. The button is always enabled: pressed with
+    // an update downloaded it installs it, otherwise it checks now (or joins the check under
+    // way), spinning its icon, and downloads and installs what it finds. Pressing it is the
+    // only way an update is applied. The outcome goes on the returned status line, which
+    // the caller puts next to the button; no dialogs.
     // After an update (a pending marker left by apply), confirms it once the core is up.
-    void Install(QWidget *window, QToolButton *button);
+    QWidget *Install(QWidget *window, QToolButton *button);
 
     // «Обновить» pressed: starts `selfupdate apply`, which waits for this process to end;
     // false (nothing started, e.g. UAC declined) means the app must stay open.

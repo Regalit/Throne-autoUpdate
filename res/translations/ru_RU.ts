@@ -9728,8 +9728,48 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Готова версия %1. Нажмите, чтобы обновить.</translation>
     </message>
     <message>
-        <source>No updates</source>
-        <translation>Обновлений нет</translation>
+        <source>Check for updates</source>
+        <translation>Проверить обновления</translation>
+    </message>
+    <message>
+        <source>Checking for updates...</source>
+        <translation>Проверяю обновления…</translation>
+    </message>
+    <message>
+        <source>Downloading %1... %2%</source>
+        <translation>Скачиваю %1… %2%</translation>
+    </message>
+    <message>
+        <source>Done, restarting</source>
+        <translation>Готово, перезапускаю</translation>
+    </message>
+    <message>
+        <source>You have the latest version %1</source>
+        <translation>У вас последняя версия %1</translation>
+    </message>
+    <message>
+        <source>No connection to the update server</source>
+        <translation>Нет связи с сервером обновлений</translation>
+    </message>
+    <message>
+        <source>The update file failed verification</source>
+        <translation>Файл обновления не прошёл проверку</translation>
+    </message>
+    <message>
+        <source>The update server answered with an error</source>
+        <translation>Сервер обновлений ответил ошибкой</translation>
+    </message>
+    <message>
+        <source>Could not save the update</source>
+        <translation>Не удалось сохранить обновление</translation>
+    </message>
+    <message>
+        <source>Could not check for updates</source>
+        <translation>Не удалось проверить обновления</translation>
+    </message>
+    <message>
+        <source>Could not start the update</source>
+        <translation>Не удалось запустить обновление</translation>
     </message>
 </context>
 <context>

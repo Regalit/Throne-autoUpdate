@@ -457,9 +457,10 @@ void MainWindow::OpenDashboard() {
 
 // Shadowlos: upstream's CheckUpdate (throneproj GitHub releases, no signature) is gone. Updates
 // come from our channel through `ThroneCore selfupdate`; the «Обновить» button (ShadowlosUpdater) calls this.
-void MainWindow::RequestSelfUpdate() {
+bool MainWindow::RequestSelfUpdate() {
     // The apply starts first and waits for this process to end; if it cannot start, the app stays.
-    if (!Shadowlos::Updater::LaunchApply(Configs::dataManager->settingsRepo->started_id)) return;
+    if (!Shadowlos::Updater::LaunchApply(Configs::dataManager->settingsRepo->started_id)) return false;
     exit_reason = ExitReason::RunUpdater;
     on_menu_exit_triggered();
+    return true;
 }

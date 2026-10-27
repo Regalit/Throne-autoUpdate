@@ -820,12 +820,14 @@ namespace Shadowlos::Chrome {
             repolish(button);
             menuRow->addWidget(button);
         }
-        // «Обновить»: dim until a verified update is ready, then lit (ShadowlosUpdater). Right
-        // after the menus, not at the far end, which a narrow window pushes out of sight.
+        // «Обновить»: always pressable, an accent while a verified update is ready, its outcome
+        // on a status line beside it (ShadowlosUpdater). Right after the menus, not at the far
+        // end, which a narrow window pushes out of sight. The status line shrinks to nothing
+        // before the routing switch has to move.
         auto *appUpdate = makePill(menuCard, "slAppUpdate", translate("Update app"), "refresh");
         appUpdate->setCursor(Qt::PointingHandCursor);
         menuRow->addWidget(appUpdate);
-        Shadowlos::Updater::Install(window, appUpdate);
+        menuRow->addWidget(Shadowlos::Updater::Install(window, appUpdate));
         // Routing: «Удобный» / «Настройка под ваш регион» / «Все через VPN», one click,
         // also in the simple view (the menu card is never hidden).
         menuRow->addSpacing(8);

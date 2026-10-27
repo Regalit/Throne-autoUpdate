@@ -8,6 +8,9 @@
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "NkrVersion.h"
 
+#include <algorithm>
+#include <memory>
+
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
@@ -16,6 +19,10 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QBoxLayout>
+#include <QLabel>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
@@ -111,50 +118,358 @@ namespace Shadowlos::Updater {
             return appDir() + QStringLiteral("/ThroneCore.exe");
         }
 
-        void setReady(QToolButton *button, const QString &version) {
-            const bool ready = !version.isEmpty();
-            button->setEnabled(ready);
-            button->setProperty("slUpdateReady", ready);
-            button->setToolTip(ready ? translate("Version %1 is ready. Press to update.").arg(version)
-                                     : translate("No updates"));
-            button->style()->unpolish(button);
-            button->style()->polish(button);
+        // The short line right of «Обновить». It takes only the room the menu card has left,
+        // so it never pushes the routing switch along. When that room is too small for the
+        // sentence (a narrow window: the default size has none), the sentence hangs from the
+        // button's lower edge instead, over the gap between the menu card and the cards,
+        // as a small tag inside the window, not a pop-up.
+        class StatusLine final : public QLabel {
+        public:
+            StatusLine(QWidget *parent, QWidget *window, QWidget *anchor)
+                : QLabel(parent), m_anchor(anchor), m_hang(new QLabel(window)) {
+                setObjectName(QStringLiteral("slUpdateStatus"));
+                setProperty("slRole", "updateStatus");
+                setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+                m_hang->setObjectName(QStringLiteral("slUpdateStatusTag"));
+                m_hang->setProperty("slRole", "updateStatusTag");
+                m_hang->setAttribute(Qt::WA_TransparentForMouseEvents);
+                m_hang->hide();
+                parent->installEventFilter(this);
+            }
+
+            void showText(const QString &text, bool error) {
+                setText(text);
+                setToolTip(text);
+                m_hang->setText(text);
+                for (QWidget *w : {static_cast<QWidget *>(this), static_cast<QWidget *>(m_hang)}) {
+                    w->setProperty("slError", error);
+                    w->style()->unpolish(w);
+                    w->style()->polish(w);
+                }
+                rewant();
+                update();
+                // The layout settles first; then it is known whether the sentence fits.
+                QTimer::singleShot(0, this, [this] { place(); });
+            }
+
+            // All of the sentence or nothing: only room that nothing else in the row wants is
+            // taken, so the button keeps its label and the switch only moves into free space.
+            QSize sizeHint() const override { return {m_want, fontMetrics().height() + 4}; }
+            QSize minimumSizeHint() const override { return {0, fontMetrics().height() + 4}; }
+
+        protected:
+            void paintEvent(QPaintEvent *) override {
+                if (!fits()) return;
+                QPainter p(this);
+                p.setPen(palette().color(QPalette::WindowText));
+                p.drawText(rect(), Qt::AlignVCenter | Qt::AlignLeft, text());
+            }
+            void resizeEvent(QResizeEvent *e) override {
+                QLabel::resizeEvent(e);
+                place();
+            }
+            void moveEvent(QMoveEvent *e) override {
+                QLabel::moveEvent(e);
+                place();
+            }
+            bool eventFilter(QObject *watched, QEvent *event) override {
+                if (watched == parentWidget() && event->type() == QEvent::Resize) rewant();
+                return false;
+            }
+
+        private:
+            int fullWidth() const { return fontMetrics().horizontalAdvance(text()) + 4; }
+
+            // The row's free width with this line left out: margins, the other items' size
+            // hints and the gaps between them (a few px spare for rounding).
+            int freeWidth() const {
+                const auto *row = qobject_cast<QBoxLayout *>(parentWidget()->layout());
+                if (row == nullptr) return 0;
+                const QMargins m = row->contentsMargins();
+                int used = m.left() + m.right() + 8;
+                for (int i = 0; i < row->count(); ++i) {
+                    QLayoutItem *item = row->itemAt(i);
+                    if (item->widget() == this || item->isEmpty()) {
+                        if (item->spacerItem()) used += item->sizeHint().width();
+                        continue;
+                    }
+                    used += item->sizeHint().width() + row->spacing();
+                }
+                return parentWidget()->width() - used;
+            }
+
+            void rewant() {
+                const int want = !text().isEmpty() && freeWidth() >= fullWidth() ? fullWidth() : 0;
+                if (want == m_want) return;
+                m_want = want;
+                updateGeometry();
+            }
+            bool fits() const { return !text().isEmpty() && width() >= fullWidth(); }
+
+            void place() {
+                if (text().isEmpty() || fits() || m_anchor.isNull()) {
+                    m_hang->hide();
+                    return;
+                }
+                QWidget *window = m_hang->parentWidget();
+                m_hang->adjustSize();
+                const QPoint below = m_anchor->mapTo(window, QPoint(0, m_anchor->height()));
+                // The anchor's card ends a few px below the button; the tag straddles that edge.
+                const int maxWidth = std::max(0, window->width() - below.x() - 12);
+                const QString shown = m_hang->fontMetrics().elidedText(text(), Qt::ElideRight, maxWidth - 20);
+                if (m_hang->text() != shown) {
+                    m_hang->setText(shown);
+                    m_hang->adjustSize();
+                }
+                m_hang->move(below.x(), below.y() + 2);
+                m_hang->raise();
+                m_hang->show();
+            }
+
+            QPointer<QWidget> m_anchor;
+            QLabel *m_hang;
+            int m_want = 0;
+        };
+
+        // The button, its status line, and what the check under way has said so far.
+        struct State {
+            QPointer<QToolButton> button;
+            QPointer<StatusLine> status;
+            QPointer<QTimer> spin;
+            QPointer<QTimer> clear;
+            QPixmap glyph; // the refresh icon at 2x, spun while busy
+            int angle = 0;
+            bool manual = false;    // the user pressed «Обновить» and waits for this check
+            // An apply has been asked for: the app is on its way out (prepare_exit runs a nested
+            // event loop), so nothing may start a second exit, check or UAC prompt.
+            bool applying = false;
+            QString ready;          // version whose verified package is downloaded
+            QString progressText;   // the last line worth showing of the check under way
+        };
+
+        State &state() {
+            static State st;
+            return st;
         }
 
-        void runCheck(QPointer<QToolButton> button) {
-            if (!QFileInfo::exists(coreExe()) || currentCheck()) return;
-            auto *proc = new QProcess(button);
+        void showStatus(const QString &text, bool error = false, bool fade = false) {
+            auto &st = state();
+            if (st.status) st.status->showText(text, error);
+            if (st.clear) {
+                if (fade) st.clear->start();
+                else st.clear->stop();
+            }
+        }
+
+        // Turns the arrow inside the icon's square; the square itself stays put.
+        QIcon spinFrame(const QPixmap &glyph, int angle) {
+            QPixmap frame(glyph.size());
+            frame.setDevicePixelRatio(glyph.devicePixelRatio());
+            frame.fill(Qt::transparent);
+            const QSizeF size = QSizeF(glyph.size()) / glyph.devicePixelRatio();
+            const QPointF c(size.width() / 2, size.height() / 2);
+            QPainter p(&frame);
+            p.setRenderHint(QPainter::SmoothPixmapTransform);
+            p.setRenderHint(QPainter::Antialiasing);
+            p.drawPixmap(QPointF(0, 0), glyph);
+            QPainterPath circle;
+            circle.addEllipse(c, size.width() * 0.36, size.height() * 0.36);
+            p.setClipPath(circle);
+            p.translate(c);
+            p.rotate(angle);
+            p.translate(-c);
+            p.drawPixmap(QPointF(0, 0), glyph);
+            return QIcon(frame);
+        }
+
+        void setBusy(bool busy) {
+            auto &st = state();
+            if (!st.button || !st.spin) return;
+            if (busy && !st.spin->isActive()) {
+                st.spin->start();
+            } else if (!busy && st.spin->isActive()) {
+                st.spin->stop();
+                st.angle = 0;
+                st.button->setIcon(QIcon(st.glyph));
+            }
+        }
+
+        void setReady(const QString &version) {
+            auto &st = state();
+            st.ready = version;
+            if (!st.button) return;
+            const bool ready = !version.isEmpty();
+            st.button->setProperty("slUpdateReady", ready);
+            st.button->setToolTip(ready ? translate("Version %1 is ready. Press to update.").arg(version)
+                                        : translate("Check for updates"));
+            st.button->style()->unpolish(st.button);
+            st.button->style()->polish(st.button);
+        }
+
+        // The sentence for a failed check: by the core's error kind, or by its text from
+        // a core that predates kinds.
+        QString errorText(const QString &kind, const QString &error) {
+            QString k = kind;
+            if (k.isEmpty()) {
+                const QString e = error.toLower();
+                if (e.contains(QStringLiteral("signature")) || e.contains(QStringLiteral("sha256")) ||
+                    e.contains(QStringLiteral("mismatch")) || e.contains(QStringLiteral("refused")))
+                    k = QStringLiteral("verify");
+                else if (e.contains(QStringLiteral("dial")) || e.contains(QStringLiteral("timeout")) ||
+                         e.contains(QStringLiteral("connection")) || e.contains(QStringLiteral("no such host")))
+                    k = QStringLiteral("network");
+            }
+            if (k == QStringLiteral("network")) return translate("No connection to the update server");
+            if (k == QStringLiteral("verify")) return translate("The update file failed verification");
+            if (k == QStringLiteral("server")) return translate("The update server answered with an error");
+            if (k == QStringLiteral("disk")) return translate("Could not save the update");
+            return translate("Could not check for updates");
+        }
+
+        // «Готово, перезапускаю», then apply. The pause lets the line be seen.
+        // The package a check left ready; gone when a newer release replaced it since.
+        bool packageReady() {
+            return QFileInfo::exists(workDir() + QStringLiteral("/ready.json"));
+        }
+
+        void installNow() {
+            auto &st = state();
+            if (st.applying) return;
+            st.applying = true;
+            st.manual = false;
+            if (st.button) st.button->setEnabled(false);
+            setBusy(true);
+            showStatus(translate("Done, restarting"));
+            QTimer::singleShot(600, qApp, [] {
+                auto *mw = GetMainWindow();
+                if (mw && mw->RequestSelfUpdate()) return; // the app exits; applying stays set
+                auto &st = state();
+                st.applying = false;
+                if (st.button) st.button->setEnabled(true);
+                setBusy(false);
+                showStatus(translate("Could not start the update"), true, true);
+            });
+        }
+
+        // One JSON line of `selfupdate check`: progress, or the result.
+        void onProgress(const QJsonObject &line) {
+            const qint64 done = line.value(QStringLiteral("done")).toInteger();
+            const qint64 size = line.value(QStringLiteral("size")).toInteger();
+            const int percent = size > 0 ? int(done * 100 / size) : 0;
+            auto &st = state();
+            st.progressText = translate("Downloading %1... %2%")
+                                  .arg(line.value(QStringLiteral("version")).toString())
+                                  .arg(percent);
+            if (st.manual) showStatus(st.progressText);
+        }
+
+        void onResult(const QJsonObject &res, int code, const QString &stderrText) {
+            auto &st = state();
+            const bool manual = st.manual;
+            st.manual = false;
+            st.progressText.clear();
+            const QString result = res.value(QStringLiteral("state")).toString();
+            if (result == QStringLiteral("ready")) {
+                const QString version = res.value(QStringLiteral("version")).toString();
+                LOG_INFO(QStringLiteral("[update] %1 is ready").arg(version));
+                setReady(version);
+                if (manual) {
+                    installNow();
+                    return;
+                }
+                // Found in the background: the accent and the tooltip say so; the line stays quiet.
+                setBusy(false);
+                if (st.status && st.status->property("slError").toBool()) showStatus({});
+            } else if (result == QStringLiteral("none")) {
+                setReady({});
+                setBusy(false);
+                if (manual) showStatus(translate("You have the latest version %1").arg(QStringLiteral(NKR_VERSION)), false, true);
+                else if (st.status && st.status->property("slError").toBool()) showStatus({});
+            } else {
+                // Keep whatever was ready before; a failed check is retried on the next round.
+                const QString error = res.value(QStringLiteral("error")).toString();
+                LOG_INFO(QStringLiteral("[update] check failed (%1): %2").arg(code).arg(error + stderrText));
+                if (manual && !st.ready.isEmpty() && packageReady()) {
+                    // The press joined a check that failed, but a verified package is still here.
+                    installNow();
+                    return;
+                }
+                setBusy(false);
+                if (manual) showStatus(errorText(res.value(QStringLiteral("kind")).toString(), error), true, true);
+            }
+        }
+
+        // Starts a check, or, pressed while one runs (a background one included), waits for it.
+        void runCheck(bool manual) {
+            auto &st = state();
+            if (st.applying) return;
+            if (manual) {
+                st.manual = true;
+                setBusy(true);
+                showStatus(st.progressText.isEmpty() ? translate("Checking for updates...") : st.progressText);
+            }
+            if (currentCheck() || !st.button) return;
+            if (!QFileInfo::exists(coreExe())) {
+                onResult({}, -1, QStringLiteral("no ThroneCore.exe"));
+                return;
+            }
+            auto *proc = new QProcess(st.button);
             currentCheck() = proc;
-            QElapsedTimer clock;
-            clock.start();
-            QObject::connect(proc, &QProcess::finished, proc, [proc, button, clock](int code, QProcess::ExitStatus) {
+            auto buffer = std::make_shared<QByteArray>();
+            auto result = std::make_shared<QJsonObject>();
+            auto clock = std::make_shared<QElapsedTimer>();
+            clock->start();
+            // Each line is JSON: progress lines while it downloads, the result last.
+            const auto readLines = [proc, buffer, result](bool all) {
+                *buffer += proc->readAllStandardOutput();
+                qsizetype nl;
+                while ((nl = buffer->indexOf('\n')) >= 0 || (all && !buffer->trimmed().isEmpty())) {
+                    const QByteArray line = nl >= 0 ? buffer->left(nl) : *buffer;
+                    buffer->remove(0, nl >= 0 ? nl + 1 : buffer->size());
+                    const auto obj = QJsonDocument::fromJson(line.trimmed()).object();
+                    if (obj.value(QStringLiteral("state")).toString() == QStringLiteral("downloading")) onProgress(obj);
+                    else if (!obj.isEmpty()) *result = obj;
+                }
+            };
+            QObject::connect(proc, &QProcess::readyReadStandardOutput, proc, [readLines] { readLines(false); });
+            QObject::connect(proc, &QProcess::finished, proc, [proc, readLines, result, clock](int code, QProcess::ExitStatus) {
                 proc->deleteLater();
-                const auto res = QJsonDocument::fromJson(proc->readAllStandardOutput().trimmed()).object();
-                const QString state = res.value(QStringLiteral("state")).toString();
+                currentCheck() = nullptr; // a press from here on starts a new check
+                readLines(true);
+                const QString state = result->value(QStringLiteral("state")).toString();
                 // The core made the request; the journal gets its outcome, not an HTTP status.
                 const bool checked = state == QStringLiteral("ready") || state == QStringLiteral("none");
                 Journal::Event("api", "call", checked ? "ok" : "fail",
                                QStringLiteral("GET %1 selfupdate %2").arg(QUrl(baseUrl()).path(), checked ? state : QStringLiteral("failed")),
-                               checked ? QString() : res.value(QStringLiteral("error")).toString(), clock.elapsed());
-                if (state == QStringLiteral("ready")) {
-                    const QString version = res.value(QStringLiteral("version")).toString();
-                    LOG_INFO(QStringLiteral("[update] %1 is ready").arg(version));
-                    if (button) setReady(button, version);
-                } else if (state == QStringLiteral("none")) {
-                    if (button) setReady(button, {});
-                } else {
-                    // Keep whatever was ready before; a failed check is retried on the next round.
-                    LOG_INFO(QStringLiteral("[update] check failed (%1): %2")
-                                 .arg(code)
-                                 .arg(res.value(QStringLiteral("error")).toString() +
-                                      QString::fromUtf8(proc->readAllStandardError()).trimmed()));
-                }
+                               checked ? QString() : result->value(QStringLiteral("error")).toString(), clock->elapsed());
+                onResult(*result, code, QString::fromUtf8(proc->readAllStandardError()).trimmed());
+            });
+            // A core that cannot be started never sends finished: let go of the check here.
+            QObject::connect(proc, &QProcess::errorOccurred, proc, [proc](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart) return;
+                proc->deleteLater();
+                currentCheck() = nullptr;
+                onResult({}, -1, proc->errorString());
             });
             proc->start(coreExe(), {QStringLiteral("selfupdate"), QStringLiteral("check"),
                                        QStringLiteral("-base"), baseUrl(),
                                        QStringLiteral("-appid"), appId(),
                                        QStringLiteral("-code"), QString::number(SHADOWLOS_VERSION_CODE),
                                        QStringLiteral("-work"), workDir()});
+        }
+
+        // «Обновить» pressed: a downloaded update installs at once; otherwise check now.
+        void onPressed() {
+            auto &st = state();
+            if (st.applying) return;
+            if (!st.ready.isEmpty() && !currentCheck()) {
+                if (packageReady()) {
+                    installNow();
+                    return;
+                }
+                setReady({}); // a newer release took its place; find out what is there now
+            }
+            runCheck(true);
         }
 
         // Tells the waiting `selfupdate apply` that this build came up: the core is running.
@@ -174,24 +489,42 @@ namespace Shadowlos::Updater {
 
     } // namespace
 
-    void Install(QWidget *window, QToolButton *button) {
+    QWidget *Install(QWidget *window, QToolButton *button) {
+        auto *status = new StatusLine(button->parentWidget(), window, button);
 #ifdef Q_OS_WIN
-        setReady(button, {});
-        QObject::connect(button, &QToolButton::clicked, window, [] {
-            if (auto *mw = GetMainWindow()) mw->RequestSelfUpdate();
+        auto &st = state();
+        st.button = button;
+        st.status = status;
+        st.glyph = button->icon().pixmap(button->iconSize(), 2.0);
+        st.spin = new QTimer(button);
+        st.spin->setInterval(40);
+        QObject::connect(st.spin.data(), &QTimer::timeout, button, [] {
+            auto &st = state();
+            st.angle = (st.angle + 12) % 360;
+            if (st.button) st.button->setIcon(spinFrame(st.glyph, st.angle));
         });
+        // «Последняя версия» and errors go after a while.
+        st.clear = new QTimer(button);
+        st.clear->setSingleShot(true);
+        st.clear->setInterval(15 * 1000);
+        QObject::connect(st.clear.data(), &QTimer::timeout, button, [] {
+            if (!state().manual) showStatus({});
+        });
+        setReady({});
+        QObject::connect(button, &QToolButton::clicked, window, [] { onPressed(); });
         if (const QString dir = pendingDir(); !dir.isEmpty()) confirmWhenUp(window, dir);
 
-        QPointer<QToolButton> guarded(button);
-        QTimer::singleShot(kFirstCheckMs, button, [guarded] { runCheck(guarded); });
+        QTimer::singleShot(kFirstCheckMs, button, [] { runCheck(false); });
         auto *every = new QTimer(button);
         every->setInterval(kCheckEveryMs);
-        QObject::connect(every, &QTimer::timeout, button, [guarded] { runCheck(guarded); });
+        QObject::connect(every, &QTimer::timeout, button, [] { runCheck(false); });
         every->start();
 #else
         Q_UNUSED(window)
         button->hide();
+        status->hide();
 #endif
+        return status;
     }
 
     bool LaunchApply(int resumeProfileId) {

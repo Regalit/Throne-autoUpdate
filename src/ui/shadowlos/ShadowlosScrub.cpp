@@ -150,6 +150,19 @@ namespace Shadowlos::Journal {
         for (auto it = obj.begin(); it != obj.end(); ++it) {
             if (it.value().isString() && it.key() != QStringLiteral("ts")) it.value() = Scrub(it.value().toString());
         }
+        // The scrub above sees top-level strings only: the net line's nested geo object is
+        // checked key by key instead, and any other nested value is dropped rather than sent
+        // unscrubbed.
+        for (const QString &key : obj.keys()) {
+            const QJsonValue v = obj.value(key);
+            if (key == QStringLiteral("geo")) {
+                const QJsonObject geo = SanitizeGeo(v.toObject());
+                if (geo.isEmpty()) obj.remove(key);
+                else obj.insert(key, geo);
+            } else if (v.isObject() || v.isArray()) {
+                obj.remove(key);
+            }
+        }
         QString out = QStringLiteral("{");
         const auto append = [&](const QString &key) {
             if (!obj.contains(key)) return;
@@ -241,7 +254,56 @@ namespace Shadowlos::Journal {
         const bool lineOk = gotLine == wantLine && QJsonDocument::fromJson(gotLine.toUtf8()).isObject();
         if (!lineOk) ++failed;
         print((lineOk ? QStringLiteral("PASS  json line: ") : QStringLiteral("FAIL  json line: ")) + gotLine);
-        print(failed == 0 ? QStringLiteral("journal selftest: all %1 passed").arg(std::size(cases) + 1)
+        int extra = 1;
+        const auto check = [&](const QString &name, bool ok, const QString &got) {
+            ++extra;
+            if (!ok) ++failed;
+            print((ok ? QStringLiteral("PASS  ") : QStringLiteral("FAIL  ")) + name + QStringLiteral(": ") + got);
+        };
+        const auto json = [](const QJsonObject &o) { return QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Compact)); };
+        const auto parse = [](const char *text) { return QJsonDocument::fromJson(QByteArray(text)).object(); };
+
+        // geo: only the whitelisted keys, plain text, no address in any form.
+        const struct { const char *in; const char *want; } geoCases[] = {
+            // A city is never kept, however plain (shadowlos 2feb9c58).
+            {R"({"net_type":"wifi","country":"TH","region":"Bangkok","city":"Bang Kapi","asn":45758,"org":"AIS Fibre"})",
+             R"({"asn":45758,"country":"TH","net_type":"wifi","org":"AIS Fibre","region":"Bangkok"})"},
+            {R"({"net_type":"ethernet","ip":"203.0.113.7","country":"RU","region":"Санкт-Петербург"})",
+             R"({"country":"RU","net_type":"ethernet","region":"Санкт-Петербург"})"},
+            {R"({"region":"St. Petersburg"})", R"({"region":"St. Petersburg"})"},
+            {R"({"region":"2001:db8::1","org":"Amazon.com, Inc.","asn":16509})", R"({"asn":16509,"org":"AS16509"})"},
+            {R"({"region":"203.0.113.7","carrier":"node1.example.de"})", R"({})"},
+            {R"({"org":"see https://x.example.com","region":"aa:bb:cc:dd:ee:ff"})", R"({})"},
+            {R"({"country":"th","net_type":"Wi-Fi","asn":"45758","mcc_mnc":"52003x","region":"a\tb","org":"host=x"})", R"({})"},
+            {R"({"region":" padded","carrier":"Ivan.Petrov","asn":-1,"mcc_mnc":"52003"})", R"({"mcc_mnc":"52003"})"},
+        };
+        for (const auto &c : geoCases) {
+            const QString got = json(SanitizeGeo(parse(c.in)));
+            check(QStringLiteral("geo ") + QString::fromUtf8(c.in), got == QString::fromUtf8(c.want), got);
+        }
+
+        // A net line: the nested geo is checked on the way out, other nested values go.
+        const QString netLine = QStringLiteral(
+            R"({"ts":"2026-10-26T12:00:00.100Z","sid":4,"seq":8,"layer":"app","step":"net","outcome":"ok","d":"net_type=wifi region=203.0.113.7","geo":{"net_type":"wifi","city":"Khimki","region":"203.0.113.7","ip":"203.0.113.7","country":"TH"},"x":{"ip":"203.0.113.7"}})");
+        const QString wantNet = QStringLiteral(
+            R"({"ts":"2026-10-26T12:00:00.100Z","sid":4,"seq":8,"layer":"app","step":"net","outcome":"ok","d":"net_type=wifi region=<ip>","geo":{"country":"TH","net_type":"wifi"}})");
+        const QString gotNet = ScrubJsonLine(netLine);
+        check(QStringLiteral("net line"), gotNet == wantNet && QJsonDocument::fromJson(gotNet.toUtf8()).isObject(), gotNet);
+
+        // The envelope: Windows shape, the latest geo, never an address.
+        SetLatestGeoForTest(parse(R"({"net_type":"wifi","country":"TH","asn":45758,"org":"Amazon.com","city":"Bangkok","region":"203.0.113.7"})"));
+        const QJsonObject env = UploadEnvelope(QStringLiteral("journal"), QStringLiteral("j1-2-abcdef01"), QStringLiteral("x"));
+        const QString envGeo = json(env.value(QStringLiteral("geo")).toObject());
+        check(QStringLiteral("envelope"),
+              !env.contains(QStringLiteral("android")) && !env.contains(QStringLiteral("sdk")) &&
+                  env.value(QStringLiteral("platform")).toString() == QStringLiteral("windows") &&
+                  env.value(QStringLiteral("app_id")).toString() == QStringLiteral("shadowlos-throne-dev") &&
+                  envGeo == QStringLiteral(R"({"asn":45758,"country":"TH","net_type":"wifi","org":"AS45758"})"),
+              QStringLiteral("keys ") + QStringList(env.keys()).join(u',') + QStringLiteral(" geo ") + envGeo);
+        SetLatestGeoForTest({});
+        check(QStringLiteral("envelope without geo"), !UploadEnvelope(QStringLiteral("journal"), QStringLiteral("j1"), QStringLiteral("x")).contains(QStringLiteral("geo")), {});
+
+        print(failed == 0 ? QStringLiteral("journal selftest: all %1 passed").arg(std::size(cases) + extra)
                           : QStringLiteral("journal selftest: %1 FAILED").arg(failed));
         return failed == 0 ? 0 : 1;
     }

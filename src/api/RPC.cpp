@@ -212,7 +212,10 @@ namespace API {
             std::lock_guard<std::mutex> g(call->mu);
             if (!ok || call->status != 0) {
                 if (ok && call->status != 0) {
-                    MW_show_log("[Core error] " + QString::fromUtf8(call->data));
+                    // The core may fail a call with no message: name the call and its status then.
+                    const QString detail = QString::fromUtf8(call->data).trimmed();
+                    MW_show_log("[Core error] " + methodName + ": " +
+                                (detail.isEmpty() ? QStringLiteral("status %1, no message").arg(call->status) : detail));
                     // `rsp` is filled on failure too, so callers can inspect the core's error payload.
                     rsp.assign(call->data.begin(), call->data.end());
                 }

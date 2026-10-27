@@ -3,7 +3,6 @@ package probe
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -32,16 +31,7 @@ func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string,
 			}
 			client, closeClient := outboundHTTPClient(ctx, outbound)
 			defer closeClient()
-			// Shadowlos: one slow or unlucky first request no longer marks a working server down, and a
-			// server only counts as working when more than the test URL gets through it.
-			targets := testTargets(url)
-			duration, err := raceURLTest(ctx, client, targets, firstRequestTimeout(i, tag, twice, timeout))
-			if err != nil && ctx.Err() == nil {
-				duration, err = raceURLTest(ctx, client, targets, timeout)
-			}
-			if err == nil && twice {
-				duration, err = raceURLTest(ctx, client, targets, timeout)
-			}
+			duration, err := measureURLTest(ctx, client, testTargets(url), firstRequestTimeout(i, tag, twice, timeout), timeout, twice)
 			return &URLTestResult{Duration: duration, Tag: tag, Error: err}
 		},
 		fail: func(tag string, err error) *URLTestResult {
@@ -53,8 +43,9 @@ func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string,
 	return results
 }
 
-// Shadowlos: a second site has to answer through the server as well, so a server whose exit
-// reaches the test URL and nothing else does not read as working and get auto-picked.
+// Shadowlos: sites asked next to the configured test URL. Any one of them answering through the
+// server proves the handshake and real traffic, so one blocked, slow or flaky site can no longer
+// mark a working server down (cp.cloudflare.com over plain HTTP, telegram.org from a Russian exit).
 var crossCheckURLs = []string{
 	"https://www.gstatic.com/generate_204",
 	"https://telegram.org/",
@@ -70,9 +61,26 @@ func testTargets(url string) []string {
 	return targets
 }
 
-// raceURLTest asks every target at once through the same client. It succeeds with the
-// configured URL's time once that URL and at least one other target have answered, and fails
-// as soon as either can no longer happen, with the configured URL's error when it has one.
+// measureURLTest is one server's verdict. A server is down only when no target answers through
+// it, on the first try and on one retry. With twice, a second, warm round gives the latency;
+// if only that round fails the server still answered a moment ago, so the first round's
+// (cold, slower) time stands instead of an error.
+func measureURLTest(ctx context.Context, client *http.Client, targets []string, firstTimeout, timeout time.Duration, twice bool) (time.Duration, error) {
+	duration, err := raceURLTest(ctx, client, targets, firstTimeout)
+	if err != nil && ctx.Err() == nil {
+		duration, err = raceURLTest(ctx, client, targets, timeout)
+	}
+	if err == nil && twice {
+		if warm, warmErr := raceURLTest(ctx, client, targets, timeout); warmErr == nil {
+			duration = warm
+		}
+	}
+	return duration, err
+}
+
+// raceURLTest asks every target at once through the same client. The configured URL (urls[0])
+// gives the time when it answers; when it fails, the first other target that answered gives it.
+// It fails only when every target fails, with the configured URL's error.
 func raceURLTest(ctx context.Context, client *http.Client, urls []string, timeout time.Duration) (time.Duration, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -89,33 +97,28 @@ func raceURLTest(ctx context.Context, client *http.Client, urls []string, timeou
 		}()
 	}
 	var (
-		primary      time.Duration
-		primaryOK    bool
-		others       int
-		otherFailed  int
-		lastOtherErr error
+		primaryErr error
+		fallback   time.Duration
+		fallbackOK bool
 	)
 	for range urls {
 		r := <-results
 		switch {
-		case r.idx == 0 && r.err != nil:
-			return 0, r.err
+		case r.idx == 0 && r.err == nil:
+			return r.duration, nil
 		case r.idx == 0:
-			primary, primaryOK = r.duration, true
-		case r.err != nil:
-			otherFailed++
-			lastOtherErr = r.err
-		default:
-			others++
+			primaryErr = r.err
+		case r.err == nil && !fallbackOK:
+			fallback, fallbackOK = r.duration, true
 		}
-		if primaryOK && (others > 0 || len(urls) == 1) {
-			return primary, nil
-		}
-		if otherFailed == len(urls)-1 && len(urls) > 1 {
-			return 0, fmt.Errorf("only the test URL answers through this server: %w", lastOtherErr)
+		if primaryErr != nil && fallbackOK {
+			return fallback, nil
 		}
 	}
-	return 0, errors.New("url test: no result")
+	if primaryErr == nil {
+		return 0, errors.New("url test: no result")
+	}
+	return 0, primaryErr
 }
 
 func urlTest(ctx context.Context, client *http.Client, url string, timeout time.Duration) (time.Duration, error) {

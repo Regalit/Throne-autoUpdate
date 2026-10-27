@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -143,4 +145,31 @@ func TestCheckErrorKinds(t *testing.T) {
 			t.Fatalf("got %+v", res)
 		}
 	})
+}
+
+// The GUI installs on a press only while ready.json is there: a newer announcement must
+// drop the older ready package before its own download, even when that download fails.
+func TestCheckDropsReadyPackageForANewerRelease(t *testing.T) {
+	useTestKey(t)
+	pkg := makeZip(t, map[string][]byte{"App.exe": []byte("new")})
+	f := &fakeServer{pkg: pkg, rel: release(pkg, 10001, testPriv)}
+	base, work := f.start(t), t.TempDir()
+	if res := check(http.DefaultClient, base, "shadowlos-throne-dev", 10000, work); res.State != "ready" {
+		t.Fatalf("got %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(work, readyFile)); err != nil {
+		t.Fatal("no ready.json after a ready check")
+	}
+
+	big := makeZip(t, map[string][]byte{"App.exe": bytes.Repeat([]byte("y"), 200000)})
+	f.pkg, f.rel, f.cutAfter = big, release(big, 10002, testPriv), 100
+	f.downloads.Store(0)
+	if res := check(http.DefaultClient, base, "shadowlos-throne-dev", 10000, work); res.State != "error" || res.Kind != kindNetwork {
+		t.Fatalf("got %+v", res)
+	}
+	for _, name := range []string{readyFile, packageFile} {
+		if _, err := os.Stat(filepath.Join(work, name)); !os.IsNotExist(err) {
+			t.Fatalf("%s of the older release kept", name)
+		}
+	}
 }

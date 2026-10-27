@@ -235,11 +235,14 @@ namespace Shadowlos::Updater {
         struct State {
             QPointer<QToolButton> button;
             QPointer<StatusLine> status;
-            QTimer *spin = nullptr;
-            QTimer *clear = nullptr;
+            QPointer<QTimer> spin;
+            QPointer<QTimer> clear;
             QPixmap glyph; // the refresh icon at 2x, spun while busy
             int angle = 0;
             bool manual = false;    // the user pressed «Обновить» and waits for this check
+            // An apply has been asked for: the app is on its way out (prepare_exit runs a nested
+            // event loop), so nothing may start a second exit, check or UAC prompt.
+            bool applying = false;
             QString ready;          // version whose verified package is downloaded
             QString progressText;   // the last line worth showing of the check under way
         };
@@ -252,8 +255,10 @@ namespace Shadowlos::Updater {
         void showStatus(const QString &text, bool error = false, bool fade = false) {
             auto &st = state();
             if (st.status) st.status->showText(text, error);
-            if (fade) st.clear->start();
-            else st.clear->stop();
+            if (st.clear) {
+                if (fade) st.clear->start();
+                else st.clear->stop();
+            }
         }
 
         // Turns the arrow inside the icon's square; the square itself stays put.
@@ -279,7 +284,7 @@ namespace Shadowlos::Updater {
 
         void setBusy(bool busy) {
             auto &st = state();
-            if (!st.button) return;
+            if (!st.button || !st.spin) return;
             if (busy && !st.spin->isActive()) {
                 st.spin->start();
             } else if (!busy && st.spin->isActive()) {
@@ -322,14 +327,26 @@ namespace Shadowlos::Updater {
         }
 
         // «Готово, перезапускаю», then apply. The pause lets the line be seen.
+        // The package a check left ready; gone when a newer release replaced it since.
+        bool packageReady() {
+            return QFileInfo::exists(workDir() + QStringLiteral("/ready.json"));
+        }
+
         void installNow() {
+            auto &st = state();
+            if (st.applying) return;
+            st.applying = true;
+            st.manual = false;
+            if (st.button) st.button->setEnabled(false);
             setBusy(true);
             showStatus(translate("Done, restarting"));
             QTimer::singleShot(600, qApp, [] {
                 auto *mw = GetMainWindow();
-                if (mw && mw->RequestSelfUpdate()) return;
+                if (mw && mw->RequestSelfUpdate()) return; // the app exits; applying stays set
+                auto &st = state();
+                st.applying = false;
+                if (st.button) st.button->setEnabled(true);
                 setBusy(false);
-                state().manual = false;
                 showStatus(translate("Could not start the update"), true, true);
             });
         }
@@ -372,6 +389,11 @@ namespace Shadowlos::Updater {
                 // Keep whatever was ready before; a failed check is retried on the next round.
                 const QString error = res.value(QStringLiteral("error")).toString();
                 LOG_INFO(QStringLiteral("[update] check failed (%1): %2").arg(code).arg(error + stderrText));
+                if (manual && !st.ready.isEmpty() && packageReady()) {
+                    // The press joined a check that failed, but a verified package is still here.
+                    installNow();
+                    return;
+                }
                 setBusy(false);
                 if (manual) showStatus(errorText(res.value(QStringLiteral("kind")).toString(), error), true, true);
             }
@@ -380,6 +402,7 @@ namespace Shadowlos::Updater {
         // Starts a check, or, pressed while one runs (a background one included), waits for it.
         void runCheck(bool manual) {
             auto &st = state();
+            if (st.applying) return;
             if (manual) {
                 st.manual = true;
                 setBusy(true);
@@ -438,10 +461,13 @@ namespace Shadowlos::Updater {
         // «Обновить» pressed: a downloaded update installs at once; otherwise check now.
         void onPressed() {
             auto &st = state();
+            if (st.applying) return;
             if (!st.ready.isEmpty() && !currentCheck()) {
-                st.manual = false;
-                installNow();
-                return;
+                if (packageReady()) {
+                    installNow();
+                    return;
+                }
+                setReady({}); // a newer release took its place; find out what is there now
             }
             runCheck(true);
         }
@@ -472,7 +498,7 @@ namespace Shadowlos::Updater {
         st.glyph = button->icon().pixmap(button->iconSize(), 2.0);
         st.spin = new QTimer(button);
         st.spin->setInterval(40);
-        QObject::connect(st.spin, &QTimer::timeout, button, [] {
+        QObject::connect(st.spin.data(), &QTimer::timeout, button, [] {
             auto &st = state();
             st.angle = (st.angle + 12) % 360;
             if (st.button) st.button->setIcon(spinFrame(st.glyph, st.angle));
@@ -481,7 +507,7 @@ namespace Shadowlos::Updater {
         st.clear = new QTimer(button);
         st.clear->setSingleShot(true);
         st.clear->setInterval(15 * 1000);
-        QObject::connect(st.clear, &QTimer::timeout, button, [] {
+        QObject::connect(st.clear.data(), &QTimer::timeout, button, [] {
             if (!state().manual) showStatus({});
         });
         setReady({});

@@ -3,6 +3,7 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -43,9 +44,10 @@ func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string,
 	return results
 }
 
-// Shadowlos: sites asked next to the configured test URL. Any one of them answering through the
-// server proves the handshake and real traffic, so one blocked, slow or flaky site can no longer
-// mark a working server down (cp.cloudflare.com over plain HTTP, telegram.org from a Russian exit).
+// Shadowlos: sites asked next to the configured test URL. A valid answer from any one of them
+// (see urlTest) proves the handshake and real traffic, so one blocked, slow or flaky site can no
+// longer mark a working server down (cp.cloudflare.com over plain HTTP, telegram.org from a
+// Russian exit). Trade-off: an exit that reaches only one of the targets passes too.
 var crossCheckURLs = []string{
 	"https://www.gstatic.com/generate_204",
 	"https://telegram.org/",
@@ -79,8 +81,8 @@ func measureURLTest(ctx context.Context, client *http.Client, targets []string, 
 }
 
 // raceURLTest asks every target at once through the same client. The configured URL (urls[0])
-// gives the time when it answers; when it fails, the first other target that answered gives it.
-// It fails only when every target fails, with the configured URL's error.
+// gives the time when its answer is valid; otherwise the first other target with a valid answer
+// gives it. It fails only when no target gives a valid answer, with the configured URL's error.
 func raceURLTest(ctx context.Context, client *http.Client, urls []string, timeout time.Duration) (time.Duration, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -121,6 +123,10 @@ func raceURLTest(ctx context.Context, client *http.Client, urls []string, timeou
 	return 0, primaryErr
 }
 
+// urlTest succeeds only on an answer that proves the tunnel reached the real host. Over HTTPS
+// any status does: the TLS handshake with that host already proves it. Over plain HTTP only a
+// 2xx does, since a 4xx/5xx can come from the proxy server itself (an expired credential falling
+// back to its web server) or from an injected block page, with no traffic getting through.
 func urlTest(ctx context.Context, client *http.Client, url string, timeout time.Duration) (time.Duration, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -134,5 +140,8 @@ func urlTest(ctx context.Context, client *http.Client, url string, timeout time.
 		return 0, err
 	}
 	_ = resp.Body.Close()
+	if req.URL.Scheme != "https" && (resp.StatusCode < 200 || resp.StatusCode > 299) {
+		return 0, fmt.Errorf("%s: unexpected status %s over plain HTTP", url, resp.Status)
+	}
 	return time.Since(begin), nil
 }

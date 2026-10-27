@@ -501,7 +501,8 @@ namespace Shadowlos::Journal {
         // The wait before the next manual report at [now] (0: none) and why.
         qint64 manualWait(const ManualQuota &q, qint64 now, ManualWhy *why) {
             *why = ManualWhy::None;
-            if (now < q.until) {
+            // A hold over a day (a huge Retry-After, a clock set back) is not honoured.
+            if (now < q.until && q.until - now <= 86400) {
                 *why = ManualWhy::Server;
                 return q.until - now;
             }
@@ -529,7 +530,7 @@ namespace Shadowlos::Journal {
         }
 
         void manualRefused429(ManualQuota &q, qint64 now, qint64 retryAfter) {
-            q.until = now + (retryAfter > 0 ? retryAfter : kManual429Secs);
+            q.until = now + qMin<qint64>(retryAfter > 0 ? retryAfter : kManual429Secs, 86400);
         }
 
         QString minutes(qint64 secs) {

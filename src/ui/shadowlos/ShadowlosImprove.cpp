@@ -215,7 +215,7 @@ namespace Shadowlos::Journal {
         private:
             // Keeps the button off while a cooldown lasts, its note under it; [shown] is a
             // result just shown, which stays when there is no cooldown to show.
-            void refreshCooldown(const QString &shown = {}) {
+            void refreshCooldown(const QString &shown = {}, bool shownIsError = false) {
                 if (m_sending) return;
                 QString note;
                 const qint64 wait = ManualReportWait(&note);
@@ -223,7 +223,7 @@ namespace Shadowlos::Journal {
                 if (wait > 0) {
                     // A fresh result («Логи отправлены») first, the wait after it.
                     m_sendStatus->setText(shown.isEmpty() ? note : shown + u' ' + note);
-                    setError(m_sendStatus, false);
+                    setError(m_sendStatus, shownIsError && !shown.isEmpty());
                     m_sendStatus->show();
                     // Minutes are shown, so a look each half minute keeps them right.
                     m_cooldown->start(int(qMin<qint64>(wait, 30) * 1000));
@@ -254,7 +254,8 @@ namespace Shadowlos::Journal {
                     self->m_sendStatus->setText(text);
                     setError(self->m_sendStatus, result != ManualResult::Sent);
                     self->m_sendStatus->show();
-                    self->refreshCooldown(result == ManualResult::Sent ? text : QString());
+                    // A refusal counts toward the quota too; its text stays, with the wait after it.
+                    self->refreshCooldown(text, result != ManualResult::Sent);
                 });
             }
 

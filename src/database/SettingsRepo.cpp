@@ -103,6 +103,7 @@ namespace Configs {
             {"shadowlos_ui_revision", &shadowlos_ui_revision},
             {"shadowlos_test_revision", &shadowlos_test_revision},
             {"shadowlos_simple_view", &shadowlos_simple_view},
+            {"shadowlos_send_journal", &shadowlos_send_journal},
             {"inbound_socks_port",     &inbound_socks_port},
             {"mux_concurrency",        &mux_concurrency},
             {"test_concurrent",        &test_concurrent},

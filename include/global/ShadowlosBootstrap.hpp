@@ -42,6 +42,14 @@ namespace Shadowlos {
     // The name of the managed profile provisioned from shadowlos.json.
     QString ComfyRouteProfileName();
 
+    // Our API's base URL and Sl-Sub token, from the managed subscription
+    // (…/dynamic_config?user_id_hash=<64 hex>…); false without it. The token is a
+    // secret: never log it.
+    bool ApiFromSubscription(QString *base, QString *token);
+
+    // settings->shadowlos_install_id (UUID v4), made on first use; X-Sl-Install-Id.
+    QString InstallId();
+
     // True when the bootstrap file asked for TUN mode to start enabled.
     // Consulted by MainWindow once the UI exists -- enabling TUN can trigger a
     // privilege-elevation prompt, so it must not happen during initDB.

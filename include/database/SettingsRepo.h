@@ -82,6 +82,7 @@ namespace Configs {
         int shadowlos_ui_revision = 0; // Shadowlos look already applied as the default theme
         int shadowlos_test_revision = 0; // Shadowlos latency-test defaults already applied
         int shadowlos_simple_view = 1; // main window shows the simple server list, not the full one
+        int shadowlos_send_journal = 1; // dev builds: send the error journal to the developers (Tools menu)
         QString mux_protocol = "smux";
         bool mux_padding = false;
         int mux_concurrency = 8;

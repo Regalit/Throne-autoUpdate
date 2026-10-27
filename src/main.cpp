@@ -24,6 +24,7 @@
 #include "include/ui/mainwindow_interface.h"
 #include "include/stats/traffic/TrafficStatsManager.hpp"
 #include "include/api/RPC.h"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
 #ifdef Q_OS_WIN
 #include "include/sys/windows/MiniDump.h"
@@ -243,6 +244,8 @@ int main(int argc, char* argv[]) {
 #endif
 
     QStringList arguments = QApplication::arguments();
+    // Shadowlos dev builds: `--journal-selftest` checks the journal's scrub rules and exits.
+    if (const int code = Shadowlos::Journal::RunSelfTestIfAsked(arguments); code >= 0) return code;
     // Must run before the working directory moves below: argument paths may be relative to it.
     const QString launchDeeplink = Deeplink_ExtractFromArgs(arguments);
     const QStringList launchFiles = LaunchFiles_ExtractFromArgs(arguments, QDir::current());
@@ -385,6 +388,7 @@ int main(int argc, char* argv[]) {
     // Must follow the single-instance check: opening the log earlier truncates the running instance's file and fakes a crash marker.
     Logging::Init(configDir);
     LOG_INFO(QString("appdata mode: %1").arg(useAppdata ? "yes" : "no"));
+    Shadowlos::Journal::Start(); // Shadowlos: dev-build error journal (no-op in prod)
 #ifdef Q_OS_WIN
     Windows_SetCrashDumpPath();
     Windows_ConfigureWER();

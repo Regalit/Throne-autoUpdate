@@ -9747,4 +9747,11 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Весь трафик через VPN</translation>
     </message>
 </context>
+<context>
+    <name>ShadowlosJournal</name>
+    <message>
+        <source>Send the error journal to the developers</source>
+        <translation>Отправлять журнал ошибок разработчикам</translation>
+    </message>
+</context>
 </TS>

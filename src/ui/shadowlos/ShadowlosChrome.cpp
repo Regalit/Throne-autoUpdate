@@ -1,5 +1,6 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "include/ui/shadowlos/ShadowlosRouting.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
 
@@ -889,6 +890,8 @@ namespace Shadowlos::Chrome {
         QObject::connect(debugAction, &QAction::triggered, ui->toolButton_debug, &QToolButton::click);
         ui->menuTools->addSeparator();
         ui->menuTools->addAction(debugAction);
+        // Dev builds: the error journal's consent action goes under it (a no-op in prod).
+        Shadowlos::Journal::Install(window, ui->menuTools, ui->checkBox_VPN, ui->checkBox_SystemProxy);
 
         // View card: the simple / full view switch, right of the actions.
         auto *viewCard = makeCard(central, "slCard");

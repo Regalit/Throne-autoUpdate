@@ -5,11 +5,13 @@
 #include "include/database/DatabaseManager.h"
 #include "include/database/SettingsRepo.h"
 #include "include/global/Logger.hpp"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "NkrVersion.h"
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -21,6 +23,7 @@
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
+#include <QUrl>
 
 #ifdef Q_OS_WIN
 #include "3rdparty/WinCommander.hpp"
@@ -120,10 +123,17 @@ namespace Shadowlos::Updater {
             if (!QFileInfo::exists(coreExe()) || currentCheck()) return;
             auto *proc = new QProcess(button);
             currentCheck() = proc;
-            QObject::connect(proc, &QProcess::finished, proc, [proc, button](int code, QProcess::ExitStatus) {
+            QElapsedTimer clock;
+            clock.start();
+            QObject::connect(proc, &QProcess::finished, proc, [proc, button, clock](int code, QProcess::ExitStatus) {
                 proc->deleteLater();
                 const auto res = QJsonDocument::fromJson(proc->readAllStandardOutput().trimmed()).object();
                 const QString state = res.value(QStringLiteral("state")).toString();
+                // The core made the request; the journal gets its outcome, not an HTTP status.
+                const bool checked = state == QStringLiteral("ready") || state == QStringLiteral("none");
+                Journal::Event("api", "call", checked ? "ok" : "fail",
+                               QStringLiteral("GET %1 selfupdate %2").arg(QUrl(baseUrl()).path(), checked ? state : QStringLiteral("failed")),
+                               checked ? QString() : res.value(QStringLiteral("error")).toString(), clock.elapsed());
                 if (state == QStringLiteral("ready")) {
                     const QString version = res.value(QStringLiteral("version")).toString();
                     LOG_INFO(QStringLiteral("[update] %1 is ready").arg(version));

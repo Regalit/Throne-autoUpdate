@@ -1,0 +1,217 @@
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
+
+#if SHADOWLOS_DEV
+
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QRegularExpression>
+#include <QSet>
+
+#ifdef Q_OS_WIN
+#include <windows.h>
+#endif
+
+#include <cstdio>
+#include <functional>
+
+namespace Shadowlos::Journal {
+
+    namespace {
+
+        using Rx = QRegularExpression;
+        constexpr auto CI = Rx::CaseInsensitiveOption;
+
+        // Calls `replace` for each match; it returns the text to put in its place.
+        QString replaceEach(const QString &s, const Rx &re, const std::function<QString(const QRegularExpressionMatch &)> &replace) {
+            QString out;
+            qsizetype last = 0;
+            auto it = re.globalMatch(s);
+            while (it.hasNext()) {
+                const auto m = it.next();
+                out += QStringView(s).mid(last, m.capturedStart() - last);
+                out += replace(m);
+                last = m.capturedEnd();
+            }
+            out += QStringView(s).mid(last);
+            return out;
+        }
+
+        // "Host-looking" tokens that are really source files (main.dart:42, mainwindow.cpp:120):
+        // kept, they are what a stack trace is made of.
+        bool isSourceExt(QStringView ext) {
+            static const QSet<QString> exts{"dart", "kt", "java", "go", "so", "js", "c", "cc", "cpp",
+                                            "h", "hpp", "py", "xml", "json"};
+            return exts.contains(ext.toString().toLower());
+        }
+
+        QStringView extOf(QStringView name) {
+            return name.mid(name.lastIndexOf(u'.') + 1);
+        }
+
+        bool looksLikeKey(QStringView m) {
+            bool digit = false, upper = false, lower = false;
+            for (const QChar c : m) {
+                if (c >= u'0' && c <= u'9') digit = true;
+                else if (c >= u'A' && c <= u'Z') upper = true;
+                else if (c >= u'a' && c <= u'z') lower = true;
+            }
+            return digit && upper && lower;
+        }
+
+    } // namespace
+
+    // Order matters: links first (they carry everything else), then tokens and key=value
+    // secrets, then the shapes of addresses and keys.
+    QString Scrub(const QString &text) {
+        static const Rx uri(QStringLiteral(R"(\b([a-z][a-z0-9+.-]{1,15})://[^\s"'<>]+)"), CI);
+        static const Rx jwt(QStringLiteral(R"(\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*)"));
+        static const Rx bearer(QStringLiteral(R"(\bbearer\s+[A-Za-z0-9._~+/=-]+)"), CI);
+        static const Rx keyValue(QStringLiteral(
+            R"(\b(password|passwd|pwd|pass|token|secret|psk|private_key|public_key|key|auth|authorization|cookie|uuid|sid|pbk|sni|host|server|address|addr|telegram_id|tg_id|tgid|user_id|userid|user_id_hash)(\s*[=:]\s*)("[^"]*"|[^\s,;&"']+))"), CI);
+        static const Rx uuid(QStringLiteral(R"(\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b)"), CI);
+        static const Rx email(QStringLiteral(R"([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})"));
+        static const Rx ipv4(QStringLiteral(R"(\b(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}(?::\d{1,5})?\b)"));
+        static const Rx ipv6(QStringLiteral(R"([0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7})"), CI);
+        static const Rx hostPort(QStringLiteral(R"(\b((?:[a-z0-9-]+\.)+[a-z][a-z0-9-]{1,62}):(\d{2,5})\b)"), CI);
+        static const Rx domain(QStringLiteral(
+            R"(\b(?:[a-z0-9-]+\.)+(?:com|net|org|ru|su|io|me|info|xyz|app|dev|cc|club|online|site|top|pro|biz|xn--p1ai)\b)"), CI);
+        static const Rx hex(QStringLiteral(R"(\b[0-9a-f]{32,}\b)"), CI);
+        static const Rx base64(QStringLiteral(R"([A-Za-z0-9+/_-]{32,}={0,2})"));
+
+        QString s = text;
+        s.replace(uri, QStringLiteral("\\1://<redacted>"));
+        s.replace(jwt, QStringLiteral("<jwt>"));
+        s.replace(bearer, QStringLiteral("Bearer <redacted>"));
+        s.replace(keyValue, QStringLiteral("\\1\\2<redacted>"));
+        s.replace(uuid, QStringLiteral("<uuid>"));
+        s.replace(email, QStringLiteral("<email>"));
+        s.replace(ipv4, QStringLiteral("<ip>"));
+        // IPv6 / MAC: 4+ hex digits and either 4+ colons or a "::". Times (12:34:56) and
+        // String::class stay.
+        s = replaceEach(s, ipv6, [](const QRegularExpressionMatch &m) {
+            const QString t = m.captured();
+            const int colons = int(t.count(u':'));
+            if (t.size() - colons >= 4 && (colons >= 4 || t.contains(QStringLiteral("::")))) return QStringLiteral("<ip>");
+            return t;
+        });
+        s = replaceEach(s, hostPort, [](const QRegularExpressionMatch &m) {
+            if (isSourceExt(extOf(m.capturedView(1)))) return m.captured();
+            return QStringLiteral("<host>:") + m.captured(2);
+        });
+        // A match followed by ".<letter>" is a dotted identifier (java.net.SocketException),
+        // and one ending in a source extension is a file name (dart_vm_initializer.cc).
+        s = replaceEach(s, domain, [&s](const QRegularExpressionMatch &m) {
+            const qsizetype end = m.capturedEnd();
+            if (end + 1 < s.size() && s.at(end) == u'.' && s.at(end + 1).isLetter()) return m.captured();
+            if (isSourceExt(extOf(m.capturedView()))) return m.captured();
+            return QStringLiteral("<host>");
+        });
+        s.replace(hex, QStringLiteral("<hex>"));
+        // Only a mix of digits, upper and lower case: long paths and identifiers never have all three.
+        s = replaceEach(s, base64, [](const QRegularExpressionMatch &m) {
+            return looksLikeKey(m.capturedView()) ? QStringLiteral("<secret>") : m.captured();
+        });
+        return s;
+    }
+
+    // Decode, scrub every string, encode again in the journal's key order: scrubbing the raw
+    // text could cut an escaped quote in half and leave a line that no longer parses.
+    QString ScrubJsonLine(const QString &line) {
+        QJsonParseError error{};
+        const auto doc = QJsonDocument::fromJson(line.toUtf8(), &error);
+        if (error.error != QJsonParseError::NoError || !doc.isObject()) return Scrub(line);
+        QJsonObject obj = doc.object();
+        for (auto it = obj.begin(); it != obj.end(); ++it) {
+            if (it.value().isString() && it.key() != QStringLiteral("ts")) it.value() = Scrub(it.value().toString());
+        }
+        QString out = QStringLiteral("{");
+        const auto append = [&](const QString &key) {
+            if (!obj.contains(key)) return;
+            if (out.size() > 1) out += u',';
+            const QJsonValue v = obj.take(key);
+            // A one-element array is the shortest way to get Qt's own escaping of a value.
+            QString encoded = QString::fromUtf8(QJsonDocument(QJsonArray{v}).toJson(QJsonDocument::Compact));
+            out += QStringLiteral("\"") + key + QStringLiteral("\":") + encoded.mid(1, encoded.size() - 2);
+        };
+        for (const char *key : {"ts", "sid", "seq", "layer", "step", "outcome", "ms", "err", "d"}) append(QString::fromLatin1(key));
+        for (const QString &key : obj.keys()) append(key);
+        return out + u'}';
+    }
+
+    namespace {
+
+        void print(const QString &text) {
+            const QByteArray bytes = (text + u'\n').toUtf8();
+#ifdef Q_OS_WIN
+            // A GUI exe has no console: write to an inherited handle (redirected output) or
+            // the console of whoever started it.
+            HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+            if (out == nullptr || out == INVALID_HANDLE_VALUE) {
+                static HANDLE console = [] {
+                    if (!AttachConsole(ATTACH_PARENT_PROCESS)) return INVALID_HANDLE_VALUE;
+                    return CreateFileW(L"CONOUT$", GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0, nullptr);
+                }();
+                out = console;
+            }
+            if (out != INVALID_HANDLE_VALUE) {
+                DWORD written = 0;
+                WriteFile(out, bytes.constData(), DWORD(bytes.size()), &written, nullptr);
+            }
+#else
+            fwrite(bytes.constData(), 1, size_t(bytes.size()), stdout);
+            fflush(stdout);
+#endif
+        }
+
+    } // namespace
+
+    int RunSelfTestIfAsked(const QStringList &args) {
+        if (!args.contains(QStringLiteral("--journal-selftest"))) return -1;
+        // Fake values only.
+        const struct { const char *in; const char *want; } cases[] = {
+            {"GET https://sub.example.com/dynamic_config?user_id_hash=abc failed", "GET https://<redacted> failed"},
+            {"import vless://id@host:443?sni=x#name done", "import vless://<redacted> done"},
+            {"jwt eyJhbGciOiJI.eyJzdWIiOiIx.c2lnbmF0dXJl", "jwt <jwt>"},
+            {"sent Bearer abc.DEF-123", "sent Bearer <redacted>"},
+            {"password=hunter2 next", "password=<redacted> next"},
+            {"user_id_hash: 0000000000000000000000000000000000000000000000000000000000000000", "user_id_hash: <redacted>"},
+            {"sni=\"cdn.example.net\", ok", "sni=<redacted>, ok"},
+            {"id 123e4567-e89b-12d3-a456-426614174000 ok", "id <uuid> ok"},
+            {"mail ivan.petrov@mail.ru now", "mail <email> now"},
+            {"dial tcp 203.0.113.7:443: i/o timeout", "dial tcp <ip>: i/o timeout"},
+            {"dial [2001:db8::1]:443", "dial [<ip>]:443"},
+            {"mac aa:bb:cc:dd:ee:ff", "mac <ip>"},
+            {"at 12:34:56 String::class", "at 12:34:56 String::class"},
+            {"connect cdn.example.org:8443 refused", "connect <host>:8443 refused"},
+            {"lib/main.dart:42 mainwindow.cpp:120", "lib/main.dart:42 mainwindow.cpp:120"},
+            {"resolve shadowlos.xyz failed", "resolve <host> failed"},
+            {"java.net.SocketException in dart_vm_initializer.cc(41) ThroneCore.exe", "java.net.SocketException in dart_vm_initializer.cc(41) ThroneCore.exe"},
+            {"sha 0123456789abcdef0123456789abcdef", "sha <hex>"},
+            {"blob AbcdefGhijklmnopqrstuvwxyz0123456789", "blob <secret>"},
+            {"io/flutter/embedding/engine/FlutterJNI", "io/flutter/embedding/engine/FlutterJNI"},
+            {"Не удалось подключиться v1.0.4-dev build 10004", "Не удалось подключиться v1.0.4-dev build 10004"},
+        };
+        int failed = 0;
+        for (const auto &c : cases) {
+            const QString in = QString::fromUtf8(c.in), want = QString::fromUtf8(c.want);
+            const QString got = Scrub(in);
+            if (got != want) ++failed;
+            print((got == want ? QStringLiteral("PASS  ") : QStringLiteral("FAIL  ")) + in +
+                  (got == want ? QString() : QStringLiteral("\n      want: ") + want + QStringLiteral("\n      got:  ") + got));
+        }
+        // A link before an escaped quote must leave a line that still parses.
+        const QString line = QStringLiteral(R"({"ts":"2026-10-26T12:00:00.100Z","sid":4,"seq":7,"layer":"core-go","step":"ThroneCore","outcome":"fail","err":"Get \"https://x.example.com/a\": timeout"})");
+        const QString wantLine = QStringLiteral(R"({"ts":"2026-10-26T12:00:00.100Z","sid":4,"seq":7,"layer":"core-go","step":"ThroneCore","outcome":"fail","err":"Get \"https://<redacted>\": timeout"})");
+        const QString gotLine = ScrubJsonLine(line);
+        const bool lineOk = gotLine == wantLine && QJsonDocument::fromJson(gotLine.toUtf8()).isObject();
+        if (!lineOk) ++failed;
+        print((lineOk ? QStringLiteral("PASS  json line: ") : QStringLiteral("FAIL  json line: ")) + gotLine);
+        print(failed == 0 ? QStringLiteral("journal selftest: all %1 passed").arg(std::size(cases) + 1)
+                          : QStringLiteral("journal selftest: %1 FAILED").arg(failed));
+        return failed == 0 ? 0 : 1;
+    }
+
+} // namespace Shadowlos::Journal
+
+#endif // SHADOWLOS_DEV

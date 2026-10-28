@@ -45,5 +45,7 @@
         <file alias="icons/toggle-on.png">shadowlos/icons/toggle-on.png</file>
         <file alias="icons/toggle-on@2x.png">shadowlos/icons/toggle-on@2x.png</file>
         <file alias="fonts/PTRootUI-VF.ttf">shadowlos/fonts/PTRootUI-VF.ttf</file>
+        <!-- The running deer (mascot/moose.webp as a GIF: our static Qt has qgif, not qwebp). -->
+        <file alias="mascot/moose.gif">shadowlos/mascot/moose.gif</file>
     </qresource>
 </RCC>

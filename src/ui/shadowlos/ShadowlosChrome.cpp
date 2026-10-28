@@ -20,6 +20,7 @@
 #include "include/ui/utils/ProfilesTableModel.h"
 #include "include/ui/widget/StartStopButton.hpp"
 
+#include <QAbstractButton>
 #include <QAbstractItemModel>
 #include <QAction>
 #include <QApplication>
@@ -44,8 +45,11 @@
 #include <QLinearGradient>
 #include <QMainWindow>
 #include <QMenu>
+#include <QImageReader>
 #include <QMouseEvent>
+#include <QMovie>
 #include <QPainter>
+#include <QTransform>
 #include <QPointer>
 #include <QProgressBar>
 #include <QScreen>
@@ -424,13 +428,24 @@ namespace Shadowlos::ChromeImpl {
         QPointer<QLabel> m_label;
     };
 
-    // A two-line toggle name: the sub-line in rich text, so its size is set here (bigger when wide).
+    // A toggle name with a bracketed part: Продвинутый shows it as a smaller grey second line
+    // (rich text, so its size is set here, bigger when wide); Обычный shows the name alone on
+    // one line and moves the bracketed part into the tooltip (property slCompact).
     void setToggleText(QLabel *label, bool wide) {
         const QString sub = label->property("slSub").toString();
         if (sub.isEmpty()) return;
+        const QString main = label->property("slMain").toString();
+        const QString tip = label->property("slTip").toString();
+        if (label->property("slCompact").toBool()) {
+            if (label->text() != main.toHtmlEscaped()) label->setText(main.toHtmlEscaped());
+            const QString line = main + QLatin1Char(' ') + sub;
+            label->setToolTip(tip.isEmpty() || tip == line ? line : line + QLatin1Char('\n') + tip);
+            return;
+        }
         label->setText(QStringLiteral("%1<br><span style=\"color:#8A949B; font-size:%3px; font-weight:400\">%2</span>")
-                           .arg(label->property("slMain").toString().toHtmlEscaped(), sub.toHtmlEscaped())
+                           .arg(main.toHtmlEscaped(), sub.toHtmlEscaped())
                            .arg(wide ? 13 : 11));
+        label->setToolTip(tip);
     }
 
     QWidget *makeToggleRow(QWidget *parent, QCheckBox *box) {
@@ -446,6 +461,8 @@ namespace Shadowlos::ChromeImpl {
         const QString text = box->text();
         const int bracket = text.indexOf(QStringLiteral(" ("));
         auto *label = new QLabel(row);
+        label->setToolTip(box->toolTip());
+        label->setProperty("slTip", box->toolTip());
         if (bracket > 0 && text.endsWith(QLatin1Char(')'))) {
             label->setTextFormat(Qt::RichText);
             label->setProperty("slMain", text.left(bracket));
@@ -455,7 +472,6 @@ namespace Shadowlos::ChromeImpl {
             label->setText(text);
         }
         label->setProperty("slRole", "toggleLabel");
-        label->setToolTip(box->toolTip());
         label->setCursor(Qt::PointingHandCursor);
         // Never clip the mode names: the layout asks the label for its width each time, so
         // it follows the font the sheet and the system settle on (a width fixed here goes
@@ -485,6 +501,9 @@ namespace Shadowlos::ChromeImpl {
 
     // Icon-only width of a pill: 8px padding, 24px icon, 12px padding.
     constexpr int kCompactPillWidth = 44;
+    // The power card: the 64px button (96px in Минимальный) centred, with its margins.
+    constexpr int kPowerCardWidth = 112;
+    constexpr int kPowerCardWidthMini = 144;
 
     void stylePill(QToolButton *button, const char *iconName) {
         button->setStyleSheet(QString()); // drops the .ui's per-button sheet
@@ -759,16 +778,87 @@ struct ShadowlosDataViewPeek {
 
 namespace Shadowlos::ChromeImpl {
 
-    QString onlineText(qint64 seconds) {
-        const qint64 h = seconds / 3600, m = seconds / 60 % 60;
-        if (h > 0) return translate("%1 h %2 min").arg(h).arg(m);
-        return translate("%1 min").arg(m);
-    }
+    // ---------------------------------------------------------------- mascot
 
-    // The status card: a big status line, a detail line, one more in a wide window (time
-    // online, traffic, mode), the restart notice when settings changed, a thin progress bar
-    // while busy, the «Подробный журнал» link, and the mascot area at the right edge (an
-    // empty placeholder of fixed size for now). Replaces upstream's data view text.
+    // The running deer of the Telegram Mini App at the status card's right edge. Off: its first
+    // frame, still; connecting or connected: the run in a loop; off again: back to frame 0. It
+    // pauses while the window is hidden or minimized.
+    //
+    // The Mini App's file is an animated WebP; our static Qt has no qwebp plugin but has qgif,
+    // so it ships as a GIF of the same frames (res/shadowlos/mascot/webp_to_gif.py) laid on the
+    // card's colour. Mirrored here, as the Mini App does (-scale-x-100), so it runs left to
+    // right. Frames are decoded one at a time (no frame cache) and only the frame on screen is
+    // kept, scaled once to the area's device pixels.
+    class Mascot final : public QWidget {
+    public:
+        explicit Mascot(QWidget *parent) : QWidget(parent) {
+            setObjectName(QStringLiteral("slMascot"));
+            setAttribute(Qt::WA_TransparentForMouseEvents);
+            m_movie = new QMovie(QStringLiteral(":/shadowlos/mascot/moose.gif"), QByteArray(), this);
+            m_movie->setCacheMode(QMovie::CacheNone);
+            QObject::connect(m_movie, &QMovie::frameChanged, this, [this](int) {
+                m_scaled = QPixmap();
+                update();
+            });
+            if (!m_movie->isValid()) {
+                qWarning().noquote() << "[mascot] cannot play the deer; image formats:"
+                                     << QImageReader::supportedImageFormats().join(' ');
+            }
+            m_movie->jumpToFrame(0);
+        }
+
+        void setSide(int side) {
+            if (size() == QSize(side, side)) return;
+            setFixedSize(side, side);
+            m_scaled = QPixmap();
+            update();
+        }
+
+        // running: the VPN is connecting or connected. shown: the window is on screen.
+        void sync(bool running, bool shown) {
+            if (!running) {
+                if (m_movie->state() != QMovie::NotRunning) m_movie->stop();
+                if (m_movie->currentFrameNumber() != 0) m_movie->jumpToFrame(0);
+                return;
+            }
+            if (!shown) {
+                if (m_movie->state() == QMovie::Running) m_movie->setPaused(true);
+                return;
+            }
+            if (m_movie->state() == QMovie::Paused) m_movie->setPaused(false);
+            else if (m_movie->state() == QMovie::NotRunning) m_movie->start();
+        }
+
+        bool running() const { return m_movie->state() == QMovie::Running; }
+
+    protected:
+        void paintEvent(QPaintEvent *) override {
+            const qreal dpr = devicePixelRatioF();
+            const QSize px = (QSizeF(size()) * dpr).toSize();
+            if (m_scaled.isNull() || m_scaledFor != px) {
+                const QImage frame = m_movie->currentImage();
+                if (frame.isNull()) return;
+                m_scaled = QPixmap::fromImage(frame.scaled(px, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+                m_scaled.setDevicePixelRatio(dpr);
+                m_scaledFor = px;
+            }
+            QPainter p(this);
+            const QSizeF shown = QSizeF(m_scaled.size()) / dpr;
+            // Mirrored about the area's vertical centre line.
+            p.setTransform(QTransform(-1, 0, 0, 1, width(), 0));
+            p.drawPixmap(QPointF((width() - shown.width()) / 2, (height() - shown.height()) / 2), m_scaled);
+        }
+
+    private:
+        QMovie *m_movie = nullptr;
+        QPixmap m_scaled;
+        QSize m_scaledFor;
+    };
+
+    // The status card: the status in big type and one line under it («<server> · <ping> ms»
+    // while connected), the restart notice when settings changed, a problem note (VPN endpoint),
+    // a thin progress bar while busy, and the running deer at the right edge. Replaces
+    // upstream's data view text.
     class StatusCard final : public QFrame {
     public:
         StatusCard(QWidget *parent, Ui::MainWindow *ui) : QFrame(parent), m_ui(ui) {
@@ -811,29 +901,18 @@ namespace Shadowlos::ChromeImpl {
             m_progress->hide();
             text->addSpacing(2);
             text->addWidget(m_progress);
-            m_link = new QToolButton(this);
-            m_link->setObjectName(QStringLiteral("slLogLink"));
-            m_link->setProperty("slRole", "link");
-            m_link->setAutoRaise(true);
-            m_link->setCursor(Qt::PointingHandCursor);
-            m_link->setText(translate("Detailed log"));
-            auto *linkRow = new QHBoxLayout();
-            linkRow->setContentsMargins(0, 2, 0, 0);
-            linkRow->addWidget(m_link);
-            linkRow->addStretch(1);
-            text->addLayout(linkRow);
             text->addStretch(1);
             row->addLayout(text, 1);
 
-            m_mascot = new QFrame(this);
-            m_mascot->setObjectName(QStringLiteral("slMascot"));
-            row->addWidget(m_mascot, 0, Qt::AlignVCenter);
+            m_mascot = new Mascot(this);
+            row->addWidget(m_mascot, 0, Qt::AlignVCenter | Qt::AlignRight);
             setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
             applySizes();
 
             m_timer = new QTimer(this);
             m_timer->setInterval(500);
             QObject::connect(m_timer, &QTimer::timeout, this, [this] {
+                syncMascot();
                 if (!hiddenNow()) refresh();
             });
             m_timer->start();
@@ -842,21 +921,34 @@ namespace Shadowlos::ChromeImpl {
             // status label did (MainWindow's event filter on label_running, url_test_current).
             m_title->installEventFilter(this);
             m_detail->installEventFilter(this);
+            // The deer pauses at once when the window is minimized or hidden, and runs on when
+            // it comes back.
+            if (QWidget *top = parent->window()) top->installEventFilter(this);
         }
-
-        QToolButton *logLink() const { return m_link; }
 
         // The connect stopwatch (the corner label) at the title row's right end.
         void setStopwatch(QLabel *stopwatch) { m_titleRow->addWidget(stopwatch, 0, Qt::AlignVCenter); }
 
         bool wide() const { return m_wide; }
 
+        // While wide (bigger text), the card's minimum stays the narrow one: the bigger fonts
+        // must never set the window's minimum width.
+        QSize minimumSizeHint() const override {
+            const QSize hint = QFrame::minimumSizeHint();
+            if (!m_wide) {
+                m_narrowMinWidth = hint.width();
+                return hint;
+            }
+            return {m_narrowMinWidth > 0 ? std::min(m_narrowMinWidth, hint.width()) : hint.width(), hint.height()};
+        }
+
         void setWide(bool wide) {
             if (wide == m_wide) return;
+            if (wide) m_narrowMinWidth = QFrame::minimumSizeHint().width();
             m_wide = wide;
             setProperty("slWide", wide);
             for (QWidget *w : {static_cast<QWidget *>(this), static_cast<QWidget *>(m_title), static_cast<QWidget *>(m_detail),
-                               static_cast<QWidget *>(m_extra), static_cast<QWidget *>(m_link)}) {
+                               static_cast<QWidget *>(m_extra)}) {
                 repolish(w);
             }
             applySizes();
@@ -870,9 +962,14 @@ namespace Shadowlos::ChromeImpl {
                                static_cast<QWidget *>(m_extra)}) {
                 repolish(w);
             }
-            m_link->setVisible(!minimal);
             applySizes();
             refresh();
+        }
+
+        // Продвинутый: its toggles card is taller (three two-line rows), so is the deer.
+        void setTall(bool tall) {
+            m_tall = tall;
+            applySizes();
         }
 
         void refresh() {
@@ -910,16 +1007,6 @@ namespace Shadowlos::ChromeImpl {
                     if (profile && profile->outbound) parts << profile->outbound->DisplayName();
                     if (profile && profile->latency > 0) parts << translate("%1 ms").arg(profile->latency);
                     detail = parts.join(QStringLiteral(" · "));
-                    QStringList more;
-                    const Corner &c = corner();
-                    if (c.since.isValid()) more << translate("Online %1").arg(onlineText(c.since.elapsed() / 1000));
-                    if (profile) {
-                        const qint64 bytes = profile->traffic_downlink + profile->traffic_uplink;
-                        if (bytes > 0) more << translate("traffic %1").arg(ReadableSize(bytes));
-                    }
-                    if (const auto route = Configs::dataManager->routesRepo->GetRouteProfile(settings->current_route_id))
-                        more << translate("mode «%1»").arg(route->name);
-                    extra = more.join(QStringLiteral(" · "));
                     break;
                 }
                 default:
@@ -934,9 +1021,10 @@ namespace Shadowlos::ChromeImpl {
                 done = p.done;
                 total = p.total;
             }
-            if (!p.note.isEmpty()) {
+            // Only a problem gets a line of its own (the VPN endpoint cannot be reached).
+            if (!p.note.isEmpty() && p.noteProblem) {
                 extra = p.note;
-                problem = p.noteProblem;
+                problem = true;
             }
             // A click-to-test of the running server: upstream writes «Проверка» and then «Результат
             // теста: N ms» on label_running for a few seconds; the detail line shows it.
@@ -960,9 +1048,7 @@ namespace Shadowlos::ChromeImpl {
             if (demoHas("on")) {
                 title = translate("Connected");
                 detail = QStringLiteral("Германия #2 · ") + translate("%1 ms").arg(48);
-                extra = translate("Online %1").arg(onlineText(72 * 60)) + QStringLiteral(" · ") +
-                        translate("traffic %1").arg(QStringLiteral("1.2 GB")) + QStringLiteral(" · ") +
-                        translate("mode «%1»").arg(QStringLiteral("Удобный"));
+                extra.clear();
                 total = 0;
                 restart = false;
                 problem = false;
@@ -992,8 +1078,7 @@ namespace Shadowlos::ChromeImpl {
             m_detail->setFullText(detail);
             m_detail->setVisible(!detail.isEmpty());
             m_extra->setFullText(extra);
-            // The extra line: in a wide window, or when it carries a note.
-            m_extra->setVisible(!extra.isEmpty() && !m_minimal && (m_wide || !p.note.isEmpty()));
+            m_extra->setVisible(!extra.isEmpty() && !m_minimal);
             if (m_extra->property("slError").toBool() != problem) {
                 m_extra->setProperty("slError", problem);
                 repolish(m_extra);
@@ -1022,10 +1107,23 @@ namespace Shadowlos::ChromeImpl {
                 }
                 m_progress->show();
             }
+            syncMascot();
         }
 
     protected:
         bool eventFilter(QObject *watched, QEvent *event) override {
+            if (watched == window() && watched != this) {
+                switch (event->type()) {
+                    case QEvent::WindowStateChange:
+                    case QEvent::Show:
+                    case QEvent::Hide:
+                        QTimer::singleShot(0, this, [this] { syncMascot(); });
+                        break;
+                    default:
+                        break;
+                }
+                return false;
+            }
             if ((watched == m_title || watched == m_detail) && event->type() == QEvent::MouseButtonPress) {
                 // Upstream's filter tests only on a left press while a profile runs.
                 if (QWidget *window = m_ui->label_running->window())
@@ -1041,10 +1139,25 @@ namespace Shadowlos::ChromeImpl {
             return text == testing || text.startsWith(result + QStringLiteral(": "));
         }
 
+        // The deer runs while the VPN is connecting or connected and the window is on screen.
+        void syncMascot() {
+            auto *power = static_cast<StartStopButton *>(m_ui->toolButton_startstop);
+            if (power == nullptr) return;
+            const auto st = power->state();
+            bool running = st == StartStopButton::State::Connecting || st == StartStopButton::State::Running;
+            if (demoHas("on") || demoHas("busy")) running = true;
+            else if (demoHas("off")) running = false;
+            const bool wasRunning = m_mascot->running();
+            m_mascot->sync(running, !hiddenNow());
+            if (wasRunning != m_mascot->running())
+                qDebug().noquote() << "[mascot]" << (m_mascot->running() ? "running" : "still");
+        }
+
         void applySizes() {
-            // Fixed sizes: the mascot drawing will fit these. Wide: the card grows, so does the area.
-            const QSize mascot = m_minimal ? QSize(120, 120) : m_wide ? QSize(300, 172) : QSize(104, 104);
-            m_mascot->setFixedSize(mascot);
+            // The deer fills the card's height: the top row is as tall as its tallest card
+            // (quick actions, or Продвинутый's toggles), the card's margins are 12px.
+            const int side = m_minimal ? 112 : m_wide ? 104 : m_tall ? 100 : 88;
+            m_mascot->setSide(side);
             m_title->setMinimumWidth(0);
         }
 
@@ -1055,11 +1168,12 @@ namespace Shadowlos::ChromeImpl {
         ElideLabel *m_extra = nullptr;
         QLabel *m_action = nullptr;
         QProgressBar *m_progress = nullptr;
-        QToolButton *m_link = nullptr;
-        QFrame *m_mascot = nullptr;
+        Mascot *m_mascot = nullptr;
         QTimer *m_timer = nullptr;
+        mutable int m_narrowMinWidth = 0;
         bool m_wide = false;
         bool m_minimal = false;
+        bool m_tall = false;
     };
 
     // ---------------------------------------------------------------- views
@@ -1150,12 +1264,18 @@ namespace Shadowlos::ChromeImpl {
         QPointer<QMainWindow> window;
         Ui::MainWindow *ui = nullptr;
         QPointer<QWidget> central, menuCard, actionsCard, modesCard, powerCard, bottomBar, filler, speedSep;
-        QPointer<QToolButton> viewButton, chip;
+        // Минимальный: «Вид: Минимальный · Обычный · Продвинутый» under the cards.
+        QPointer<QWidget> viewLine;
+        QList<QPointer<QToolButton>> viewWords;
+        // Dev builds: «Улучшение обхода [switch]» in the bottom bar and what follows it
+        // (Обычный), the toggle row in the toggles card (Продвинутый).
+        QPointer<QWidget> improveSep, improveLabel, improveSwitch, improveHint, badgeSep, badge, improveRow;
+        QPointer<QToolButton> viewButton;
         QPointer<StatusCard> status;
         QList<QPointer<ViewItem>> items;
         QList<QPointer<QToolButton>> pills;
+        QList<QPointer<QLabel>> toggleLabels;
         QSize designMin;
-        bool logOpen = false;
         bool applied = false;
         View view = View::Normal;
     };
@@ -1164,6 +1284,127 @@ namespace Shadowlos::ChromeImpl {
         static Shell s;
         return s;
     }
+
+    // Минимальный's view line: the three names, the current one highlighted; a click on a name
+    // switches at once (no list).
+    QWidget *makeViewLine(QWidget *parent, std::function<void(View)> pick) {
+        Shell &s = shell();
+        auto *line = new QWidget(parent);
+        line->setObjectName(QStringLiteral("slViewLine"));
+        line->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        auto *layout = new QHBoxLayout(line);
+        layout->setContentsMargins(0, 0, 0, 0);
+        layout->setSpacing(6);
+        layout->addStretch(1);
+        auto *title = new QLabel(translate("View: %1").arg(QString()).trimmed(), line);
+        title->setProperty("slRole", "viewLineText");
+        layout->addWidget(title);
+        bool first = true;
+        for (View v : {View::Minimal, View::Normal, View::Advanced}) {
+            if (!first) {
+                auto *dot = new QLabel(QStringLiteral("·"), line);
+                dot->setProperty("slRole", "viewLineText");
+                layout->addWidget(dot);
+            }
+            first = false;
+            auto *word = new QToolButton(line);
+            word->setObjectName(QStringLiteral("slViewWord%1").arg(static_cast<int>(v)));
+            word->setProperty("slRole", "viewWord");
+            word->setText(viewName(v));
+            word->setToolTip(viewLine(v));
+            word->setAccessibleName(viewName(v));
+            word->setAutoRaise(true);
+            word->setCursor(Qt::PointingHandCursor);
+            word->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            // Later: the window resizes under the word that was pressed.
+            QObject::connect(word, &QToolButton::clicked, line, [pick, v] {
+                QTimer::singleShot(0, qApp, [pick, v] { pick(v); });
+            });
+            repolish(word);
+            layout->addWidget(word);
+            s.viewWords << word;
+        }
+        layout->addStretch(1);
+        return line;
+    }
+
+#if SHADOWLOS_DEV
+    // The bottom bar's «Улучшение обхода» switch: small, a muted blue when on. A plain button
+    // (not checkable) whose click flips the setting, so UI Automation can invoke it; it paints
+    // the setting's state.
+    class QuietSwitch final : public QAbstractButton {
+    public:
+        explicit QuietSwitch(QWidget *parent) : QAbstractButton(parent) {
+            setCursor(Qt::PointingHandCursor);
+            setFixedSize(32, 18);
+            setFocusPolicy(Qt::TabFocus);
+        }
+
+        void setOn(bool on) {
+            if (on == m_on) return;
+            m_on = on;
+            setAccessibleDescription(on ? QStringLiteral("включено") : QStringLiteral("выключено"));
+            update();
+        }
+
+        QSize sizeHint() const override { return {32, 18}; }
+
+    protected:
+        void paintEvent(QPaintEvent *) override {
+            QPainter p(this);
+            p.setRenderHint(QPainter::Antialiasing, true);
+            const QRectF track = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
+            const bool hover = underMouse();
+            p.setPen(Qt::NoPen);
+            p.setBrush(m_on ? hex(hover ? 0x3B7FC4 : 0x336FAD) : hex(hover ? 0x394046 : 0x2E3438));
+            p.drawRoundedRect(track, track.height() / 2, track.height() / 2);
+            const qreal d = track.height() - 4;
+            const qreal x = m_on ? track.right() - 2 - d : track.left() + 2;
+            p.setBrush(m_on ? QColor(Qt::white) : hex(0xC7CDD1));
+            p.drawEllipse(QRectF(x, track.top() + 2, d, d));
+        }
+
+        void enterEvent(QEnterEvent *event) override {
+            QAbstractButton::enterEvent(event);
+            update();
+        }
+
+        void leaveEvent(QEvent *event) override {
+            QAbstractButton::leaveEvent(event);
+            update();
+        }
+
+    private:
+        bool m_on = false;
+    };
+#endif
+
+    // The bottom bar's left part for the view and the improve setting. Обычный (dev):
+    // «Улучшение обхода [switch]», then the blocking badge and region when it is on, or a grey
+    // hint when it is off. Продвинутый: the badge and region when it is on (the switch is in
+    // its toggles card). Prod has none of it: only the version.
+    void syncImprove() {
+        Shell &s = shell();
+        bool on = false;
+#if SHADOWLOS_DEV
+        if (QAction *consent = Shadowlos::Journal::ConsentAction()) on = consent->isChecked();
+        if (auto *sw = dynamic_cast<QuietSwitch *>(s.improveSwitch.data())) sw->setOn(on);
+#endif
+        const bool normal = s.view == View::Normal;
+        const bool advanced = s.view == View::Advanced;
+        const auto show = [](QWidget *w, bool visible) {
+            if (w != nullptr && w->isVisibleTo(w->parentWidget()) != visible) w->setVisible(visible);
+        };
+        const bool hasSwitch = s.improveSwitch != nullptr;
+        show(s.improveSep, hasSwitch && (normal || (advanced && on)));
+        show(s.improveLabel, hasSwitch && normal);
+        show(s.improveSwitch, hasSwitch && normal);
+        show(s.improveHint, hasSwitch && normal && !on);
+        show(s.badgeSep, hasSwitch && normal && on);
+        show(s.badge, s.badge != nullptr && on && (normal || advanced));
+        show(s.improveRow, advanced);
+    }
+
 
     QToolButton *makeViewButton(QWidget *parent, const char *name, QMenu *menu) {
         auto *button = new QToolButton(parent);
@@ -1179,62 +1420,77 @@ namespace Shadowlos::ChromeImpl {
 
     // ------------------------------------------------------------ wide window
 
-    // Below the width the labelled quick actions need, they show only their icons (the name
-    // and what they do stay in the tooltip); above it the status card is wide too: a bigger
-    // mascot area and the extra detail line.
+    // The quick actions are icons only (the name and what they do stay in the tooltip) unless
+    // the window is really wide (from about 1500 logical px and only when the labelled row fits);
+    // then they get their labels, the top row's text grows and so does the deer. Going back
+    // waits 16 px below where it switched (no flapping at the edge).
+    //
+    // Labels and wide fonts never set the window's minimum width: the minimum is measured only
+    // in the narrow layout and kept while wide, so a wide window still shrinks back to the same
+    // minimum as 1.0.12-dev.
     class WideWatch final : public QObject {
     public:
-        WideWatch(QWidget *central, const QList<QWidget *> &cards, int fixedWidth)
-            : QObject(central), m_central(central), m_fixedWidth(fixedWidth) {
-            for (QWidget *card : cards) m_cards << card;
+        explicit WideWatch(QWidget *central) : QObject(central), m_central(central) {
             central->installEventFilter(this);
+            // MainWindow::applyTopBarMetrics sets its own minimum on a font or style change
+            // (the content's, which is the labelled row while wide); ours is set again after it.
+            if (QWidget *window = central->window(); window != central) window->installEventFilter(this);
         }
+
+        bool isWide() const { return !m_central.isNull() && m_central->property("slWide").toBool(); }
 
         void relayout() {
             Shell &s = shell();
             if (m_central.isNull() || s.status.isNull()) return;
-            if (s.view == View::Minimal) return;
-            // Measured while narrow: the wide fonts make the cards wider, which must not flip it back.
-            if (!s.status->wide() || m_needed == 0) {
+            if (s.view == View::Minimal) {
+                setWide(false);
+                return;
+            }
+            const bool was = isWide();
+            if (!was) {
+                // Measured while narrow: what the labelled row would need with the wide fonts.
                 int labelled = 0;
                 for (const auto &pill : s.pills) {
-                    if (!pill.isNull()) labelled = std::max(labelled, labelledWidth(pill.data()));
+                    if (!pill.isNull()) labelled = std::max(labelled, wideLabelledWidth(pill.data()));
                 }
-                int needed = m_fixedWidth + 2 * labelled + kStatusWideMin;
-                for (const auto &card : m_cards) {
-                    if (!card.isNull() && !card->isHidden()) needed += card->sizeHint().width();
+                int needed = kRowGaps + kActionsFrame + 2 * labelled + kStatusWideMin;
+                for (QWidget *card : {s.powerCard.data(), s.modesCard.data()}) {
+                    // The toggle names grow from 12 to 15 px.
+                    if (card != nullptr && !card->isHidden()) needed += card->sizeHint().width() * 5 / 4;
                 }
-                m_needed = needed;
+                m_needed = std::max(needed, kReallyWide);
+            } else {
+                // While wide, what the wide cards really ask for; kept until the view changes.
+                int needed = kRowGaps + kStatusWideMin;
+                for (QWidget *card : {s.powerCard.data(), s.actionsCard.data(), s.modesCard.data()}) {
+                    if (card != nullptr && !card->isHidden()) needed += card->sizeHint().width();
+                }
+                m_neededWide = std::max(m_neededWide, needed);
             }
-            const bool wide = m_central->width() >= m_needed;
-            if (m_central->property("slWide").toBool() != wide) {
-                // The top row's text grows with the window (shadowlos.qss, [slWide="true"]).
-                m_central->setProperty("slWide", wide);
-                for (const auto &pill : s.pills) {
-                    if (!pill.isNull()) repolish(pill);
-                }
-                for (QLabel *label : m_central->findChildren<QLabel *>()) {
-                    if (label->property("slRole").toString() != QLatin1String("toggleLabel")) continue;
-                    setToggleText(label, wide);
-                    repolish(label);
-                }
-            }
-            const auto style = wide ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly;
-            for (const auto &pill : s.pills) {
-                if (!pill.isNull() && pill->toolButtonStyle() != style) pill->setToolButtonStyle(style);
-            }
-            s.status->setWide(wide);
+            const int need = std::max(m_needed, m_neededWide);
+            const int width = m_central->width();
+            setWide(was ? width >= need : width >= need + kHysteresis);
+        }
+
+        // Back to the narrow layout and a fresh measure (a view switch).
+        void reset() {
+            m_neededWide = 0;
+            setWide(false);
         }
 
         // The window's minimum follows what the shown parts need (a view switch, a font change),
-        // never below the .ui's floor outside the minimal view.
+        // never below the .ui's floor outside the minimal view; while wide, the narrow layout's.
         void updateMinimum() {
             Shell &s = shell();
             if (s.window.isNull()) return;
-            const QSize hint = s.window->minimumSizeHint();
-            const QSize floor = s.view == View::Minimal ? QSize(0, 0) : s.designMin;
+            QSize hint = s.window->minimumSizeHint();
+            if (!isWide()) m_narrowMinWidth = hint.width();
+            else if (m_narrowMinWidth > 0) hint.setWidth(m_narrowMinWidth);
+            const QSize floor = s.view == View::Minimal ? QSize(0, 0) : s.designMin.expandedTo(QSize(kMinClientWidth, 0));
             const QSize min(qMax(floor.width(), hint.width()), qMax(floor.height(), hint.height()));
             if (s.window->minimumSize() != min) {
+                qDebug().noquote() << "[layout] minimum" << min << "content" << hint
+                                   << "frame +" << (s.window->frameGeometry().width() - s.window->width());
                 s.window->setMinimumSize(min);
                 if (s.window->width() < min.width() || s.window->height() < min.height())
                     s.window->resize(s.window->size().expandedTo(min));
@@ -1243,31 +1499,77 @@ namespace Shadowlos::ChromeImpl {
 
     protected:
         bool eventFilter(QObject *watched, QEvent *event) override {
+            if (m_central.isNull()) return false;
+            if (watched == m_central->window() && watched != m_central.data()) {
+                if (event->type() == QEvent::FontChange || event->type() == QEvent::StyleChange) scheduleMinimum();
+                return false;
+            }
             if (watched != m_central.data()) return false;
             if (event->type() == QEvent::Resize) relayout();
-            if (event->type() == QEvent::LayoutRequest && !m_minPending) {
+            if (event->type() == QEvent::LayoutRequest) scheduleMinimum();
+            return false;
+        }
+
+        void scheduleMinimum() {
+            if (!m_minPending) {
                 m_minPending = true;
                 QTimer::singleShot(0, this, [this] {
                     m_minPending = false;
                     updateMinimum();
                 });
             }
-            return false;
         }
 
     private:
-        static constexpr int kStatusWideMin = 560;
+        void setWide(bool wide) {
+            Shell &s = shell();
+            if (isWide() != wide) {
+                // The top row's text grows with the window (shadowlos.qss, [slWide="true"]).
+                m_central->setProperty("slWide", wide);
+                for (const auto &pill : s.pills) {
+                    if (!pill.isNull()) repolish(pill);
+                }
+                for (const auto &label : s.toggleLabels) {
+                    if (label.isNull()) continue;
+                    setToggleText(label, wide);
+                    repolish(label);
+                }
+                qDebug().noquote() << "[layout]" << (wide ? "wide: quick actions with labels" : "narrow: quick actions as icons")
+                                   << "at" << m_central->width();
+            }
+            const auto style = wide ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly;
+            for (const auto &pill : s.pills) {
+                if (!pill.isNull() && pill->toolButtonStyle() != style) pill->setToolButtonStyle(style);
+            }
+            if (s.status) s.status->setWide(wide);
+        }
+
+        // The narrowest window outside Минимальный, as 1.0.12-dev: its content was this wide
+        // (outer 1884 px at 175%, 1618 at 150%, 1087 at 100%). The v3 cards alone fit in less.
+        static constexpr int kMinClientWidth = 1063;
+        // Only a window this wide (logical px) gets the labels: Ivan's 1333 px window keeps icons.
+        static constexpr int kReallyWide = 1500;
+        static constexpr int kHysteresis = 16;
+        static constexpr int kStatusWideMin = 560; // the status text and the deer
+        // Root margins and the gaps between the row's four cards; the quick actions card's
+        // side margins and the gap between its two columns.
+        static constexpr int kRowGaps = 24 + 3 * 8;
+        static constexpr int kActionsFrame = 32 + 8;
+        static constexpr int kWidePillFontPx = 15;
         bool m_minPending = false;
         int m_needed = 0;
+        int m_neededWide = 0;
+        int m_narrowMinWidth = 0;
 
-        // As the sheet lays a labelled pill out: padding, icon, icon-text gap, text, padding.
-        static int labelledWidth(const QToolButton *pill) {
-            return 8 + pill->iconSize().width() + 6 + pill->fontMetrics().horizontalAdvance(pill->text()) + 12 + 4;
+        // As the sheet lays a labelled pill out in a wide window (15px text, 12/16px padding):
+        // padding, icon, icon-text gap, text, padding.
+        static int wideLabelledWidth(const QToolButton *pill) {
+            QFont font = pill->font();
+            font.setPixelSize(kWidePillFontPx);
+            return 12 + pill->iconSize().width() + 6 + QFontMetrics(font).horizontalAdvance(pill->text()) + 16 + 4;
         }
 
         QPointer<QWidget> m_central;
-        QList<QPointer<QWidget>> m_cards;
-        int m_fixedWidth;
     };
 
     QPointer<WideWatch> &wideWatch() {
@@ -1460,8 +1762,8 @@ namespace Shadowlos::Chrome {
         // Column titles over their values: the simple view's last column is wide.
         table->horizontalHeader()->setDefaultAlignment(simple ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignCenter);
         table->verticalHeader()->setDefaultSectionSize(simple ? 64 : kDenseRowPx);
-        // The logs/connections panel: always in Продвинутый, in Обычный while «Подробный журнал» is open.
-        if (QWidget *panel = ui->splitter->widget(1)) panel->setVisible(!simple || shell().logOpen);
+        // The logs/connections panel: only in Продвинутый.
+        if (QWidget *panel = ui->splitter->widget(1)) panel->setVisible(!simple);
         fitColumns(ui);
     }
 
@@ -1544,25 +1846,40 @@ namespace Shadowlos::Chrome {
             if (w != nullptr) w->setVisible(!mini);
         }
         if (s.filler) s.filler->setVisible(mini);
-        if (s.chip) s.chip->setVisible(mini);
+        if (s.viewLine) s.viewLine->setVisible(mini);
         ui->toolButton_startstop->setFixedSize(mini ? 96 : 64, mini ? 96 : 64);
+        if (s.powerCard) s.powerCard->setFixedWidth(mini ? kPowerCardWidthMini : kPowerCardWidth);
         const QString label = translate("View: %1").arg(viewName(view));
         if (s.viewButton) s.viewButton->setText(label);
-        if (s.chip) s.chip->setText(label);
         for (const auto &item : s.items) {
             if (item.isNull()) continue;
             item->setProperty("slCurrent", item->view() == view);
             repolish(item);
         }
+        for (int i = 0; i < s.viewWords.size(); ++i) {
+            if (s.viewWords[i].isNull()) continue;
+            s.viewWords[i]->setProperty("slCurrent", i == static_cast<int>(view));
+            repolish(s.viewWords[i]);
+        }
+        // Обычный: the toggles on one line each, «Улучшение обхода» in the bottom bar.
+        // Продвинутый: two-line toggles and «Улучшение обхода» among them, as in 1.0.13.
+        for (const auto &toggle : s.toggleLabels) {
+            if (toggle.isNull()) continue;
+            toggle->setProperty("slCompact", view != View::Advanced);
+            setToggleText(toggle, false);
+        }
+        syncImprove();
         // Traffic speed only in Продвинутый.
         ui->label_speed->ensurePolished();
         ui->label_speed->setMinimumWidth(ui->label_speed->fontMetrics().horizontalAdvance(
             StatusLine(QObject::tr("Proxy: %1\nDirect: %2").arg(QStringLiteral("99.9 KiB↑ 99.9 MiB↓"), QStringLiteral("99.9 KiB↑ 99.9 KiB↓")))) + 8);
         ui->label_speed->setVisible(view == View::Advanced);
         if (s.speedSep) s.speedSep->setVisible(view == View::Advanced);
+        // Narrow first: the minimum below is measured in the narrow layout of this view.
+        if (auto w = wideWatch()) w->reset();
         if (s.status) {
             s.status->setMinimal(mini);
-            s.status->logLink()->setText(view == View::Normal && s.logOpen ? translate("Hide log") : translate("Detailed log"));
+            s.status->setTall(view == View::Advanced);
         }
         applySimpleView(ui);
 
@@ -1576,35 +1893,12 @@ namespace Shadowlos::Chrome {
             window->setMinimumSize(hint);
             window->resize(hint.expandedTo(QSize(560, 0)));
         } else {
-            const QSize hint = window->minimumSizeHint();
-            window->setMinimumSize(qMax(s.designMin.width(), hint.width()), qMax(s.designMin.height(), hint.height()));
+            if (auto w = wideWatch()) w->updateMinimum();
             // Back from the minimal view, or the last run ended in it.
             if ((!first && before == View::Minimal) || (first && window->width() < 700)) restoreFullGeometry(window);
         }
         if (auto w = wideWatch()) w->relayout();
         qDebug().noquote() << "[view]" << viewName(view);
-    }
-
-    // «Подробный журнал»: the Logs tab. Продвинутый has the panel; Обычный opens it under the
-    // list and closes it again on a second press.
-    void openLog(Ui::MainWindow *ui) {
-        using namespace Shadowlos::ChromeImpl;
-        Shell &s = shell();
-        QWidget *panel = ui->splitter->widget(1);
-        if (panel == nullptr) return;
-        if (s.view == View::Normal) {
-            s.logOpen = !s.logOpen;
-            applyView(s.view, false);
-            if (!s.logOpen) return;
-        }
-        for (int i = 0; i < ui->stats_widget->count(); ++i) {
-            QWidget *page = ui->stats_widget->widget(i);
-            if (page != nullptr && page->isAncestorOf(ui->masterLogBrowser)) ui->stats_widget->setCurrentIndex(i);
-        }
-        if (ui->splitter->sizes().value(1) < ui->stats_widget->tabBar()->sizeHint().height() * 3) {
-            const int height = ui->splitter->size().height();
-            ui->splitter->setSizes({height * 3 / 5, height * 2 / 5});
-        }
     }
 
     // Dev screenshots: shows the «Вид» list or a quick action's tooltip once the window is on
@@ -1620,8 +1914,8 @@ namespace Shadowlos::Chrome {
             poll->stop();
             QTimer::singleShot(1200, window, [window, ui] {
                 Shell &s = shell();
-                if (demoHas("menu") && s.viewButton) {
-                    QToolButton *button = s.view == View::Minimal ? s.chip.data() : s.viewButton.data();
+                if (demoHas("menu") && s.viewButton && s.view != View::Minimal) {
+                    QToolButton *button = s.viewButton.data();
                     QMenu *menu = button->menu();
                     menu->setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint);
                     menu->setAttribute(Qt::WA_TranslucentBackground, true);
@@ -1750,7 +2044,7 @@ namespace Shadowlos::Chrome {
         root->setContentsMargins(12, 12, 12, 12);
         root->setSpacing(12);
 
-        // The «Вид» list, shared by the menu bar's button and the minimal view's chip.
+        // The «Вид» list of the menu bar's button (Минимальный has its own line of names).
         auto *viewMenu = new QMenu(central);
         viewMenu->setObjectName(QStringLiteral("slViewMenu"));
         for (View v : {View::Minimal, View::Normal, View::Advanced}) {
@@ -1799,26 +2093,18 @@ namespace Shadowlos::Chrome {
         auto *actionsRow = new QHBoxLayout();
         actionsRow->setSpacing(8);
 
-        // Power card. The new button replaces uic's StartStopButton before anything connects
-        // to it; MainWindow only ever reaches it through ui->toolButton_startstop. In the
-        // minimal view the «Вид» chip sits under it.
+        // Power card: the button alone, centred both ways, in a card of fixed width (set per
+        // view). The new button replaces uic's StartStopButton before anything connects to it;
+        // MainWindow only ever reaches it through ui->toolButton_startstop.
         auto *powerCard = makeCard(central, "slCard");
         s.powerCard = powerCard;
-        // No explicit minimum: it would override the size hint and squeeze the chip.
+        powerCard->setFixedWidth(kPowerCardWidth);
         powerCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-        auto *powerLayout = new QVBoxLayout(powerCard);
-        powerLayout->setContentsMargins(16, 16, 16, 16);
-        powerLayout->setSpacing(12);
-        powerLayout->addSpacerItem(new QSpacerItem(80, 0, QSizePolicy::Fixed, QSizePolicy::Expanding));
+        auto *powerLayout = new QGridLayout(powerCard);
+        powerLayout->setContentsMargins(0, 16, 0, 16);
         auto *power = new PowerButton(powerCard);
         power->setObjectName(QStringLiteral("toolButton_startstop"));
-        powerLayout->addWidget(power, 0, Qt::AlignHCenter);
-        s.chip = makeViewButton(powerCard, "slViewChip", viewMenu);
-        s.chip->setProperty("slRole", "viewChip");
-        repolish(s.chip);
-        s.chip->hide();
-        powerLayout->addWidget(s.chip, 0, Qt::AlignHCenter);
-        powerLayout->addStretch(1);
+        powerLayout->addWidget(power, 0, 0, Qt::AlignCenter);
         if (StartStopButton *old = ui->toolButton_startstop) {
             ui->horizontalLayout_2->removeWidget(old);
             delete old;
@@ -1826,7 +2112,8 @@ namespace Shadowlos::Chrome {
         ui->toolButton_startstop = power;
         actionsRow->addWidget(powerCard);
 
-        // Quick actions: always a 2x2 grid; icons only in a narrow window (WideWatch).
+        // Quick actions: always a 2x2 grid, as small as its icons; labels only in a really wide
+        // window (WideWatch).
         auto *actionsCard = makeCard(central, "slCard");
         s.actionsCard = actionsCard;
         actionsCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
@@ -1878,7 +2165,9 @@ namespace Shadowlos::Chrome {
         // there in Обычный and Продвинутый). Nothing in prod.
         Shadowlos::Journal::InstallImprovePage(window, ui->menuTools);
 
-        // Toggles card: the modes, and in dev builds the journal consent as «Улучшение обхода».
+        // Toggles card: «Все приложения» and «Только браузеры» (and System DNS when enabled in
+        // settings). Продвинутый also has the journal consent as «Улучшение обхода» (dev builds);
+        // Обычный has it in the bottom bar.
         auto *modesCard = makeCard(central, "slCard");
         s.modesCard = modesCard;
         modesCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
@@ -1904,11 +2193,15 @@ namespace Shadowlos::Chrome {
             QObject::connect(consent, &QAction::toggled, box, [box](bool on) {
                 if (box->isChecked() != on) box->setChecked(on);
             });
-            toggles->addWidget(makeToggleRow(modesCard, box));
+            s.improveRow = makeToggleRow(modesCard, box);
+            toggles->addWidget(s.improveRow);
         }
 #endif
         toggles->addStretch(1);
         modesLayout->addLayout(toggles);
+        for (QLabel *label : modesCard->findChildren<QLabel *>()) {
+            if (label->property("slRole").toString() == QLatin1String("toggleLabel")) s.toggleLabels << label;
+        }
         actionsRow->addWidget(modesCard);
 
         // Status card, in place of upstream's data view text. The data view stays (hidden): its
@@ -1918,9 +2211,13 @@ namespace Shadowlos::Chrome {
         ui->data_view->hide();
         auto *status = new StatusCard(central, ui);
         s.status = status;
-        QObject::connect(status->logLink(), &QToolButton::clicked, window, [ui] { openLog(ui); });
         actionsRow->addWidget(status, 1);
         root->addLayout(actionsRow);
+
+        // Минимальный: «Вид: Минимальный · Обычный · Продвинутый», centred under the cards.
+        s.viewLine = makeViewLine(central, [](View picked) { applyView(picked, true); });
+        s.viewLine->hide();
+        root->addWidget(s.viewLine);
 
         // Profile tabs over the Logs / Connections / Graph tabs, as before.
         ui->verticalLayout_3->removeWidget(ui->splitter);
@@ -1932,8 +2229,9 @@ namespace Shadowlos::Chrome {
         s.filler = filler;
         root->addWidget(filler, 1);
 
-        // Bottom bar: version | blocking badge | region · provider · network (dev) on the left,
-        // the routing switch and, in Продвинутый, the traffic speed on the right.
+        // Bottom bar, left: the version; dev builds add «Улучшение обхода [switch]» and, while it
+        // is on, the blocking badge and region · provider · network (or a hint while it is off).
+        // Right: the routing switch and, in Продвинутый, the traffic speed.
         auto *bottomBar = makeCard(central, "slBottomBar");
         s.bottomBar = bottomBar;
         bottomBar->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
@@ -1949,9 +2247,43 @@ namespace Shadowlos::Chrome {
         Corner &corners = makeCorners(status);
         status->setStopwatch(corners.stopwatch);
         barLayout->addWidget(corners.version);
+        s.improveSep = separator();
+        s.improveSep->hide();
+        barLayout->addWidget(s.improveSep);
+#if SHADOWLOS_DEV
+        if (QAction *consent = Shadowlos::Journal::ConsentAction()) {
+            // The same setting as the journal consent (Утилиты) and Продвинутый's toggle.
+            auto *label = new QLabel(QStringLiteral("Улучшение обхода"), bottomBar);
+            label->setObjectName(QStringLiteral("slImproveLabel"));
+            label->setProperty("slRole", "improveLabel");
+            label->setToolTip(consent->text());
+            label->hide();
+            auto *sw = new QuietSwitch(bottomBar);
+            sw->setObjectName(QStringLiteral("slImproveSwitch"));
+            sw->setAccessibleName(QStringLiteral("Улучшение обхода"));
+            sw->setToolTip(consent->text());
+            sw->hide();
+            QObject::connect(sw, &QAbstractButton::clicked, consent, [consent] { consent->setChecked(!consent->isChecked()); });
+            auto *hint = new ElideLabel(bottomBar, "improveHint");
+            hint->setObjectName(QStringLiteral("slImproveHint"));
+            hint->setFullText(QStringLiteral("Включите, чтобы видеть тип блокировок и ваш регион"));
+            hint->hide();
+            QObject::connect(consent, &QAction::toggled, bottomBar, [] { syncImprove(); });
+            barLayout->addWidget(label);
+            barLayout->addWidget(sw, 0, Qt::AlignVCenter);
+            barLayout->addWidget(hint, 1);
+            s.improveLabel = label;
+            s.improveSwitch = sw;
+            s.improveHint = hint;
+            s.badgeSep = separator();
+            s.badgeSep->hide();
+            barLayout->addWidget(s.badgeSep);
+        }
+#endif
         if (QWidget *badge = Shadowlos::Journal::MakeBlockingBadge(bottomBar)) {
-            barLayout->addWidget(separator());
+            badge->hide();
             barLayout->addWidget(badge, 0, Qt::AlignVCenter);
+            s.badge = badge;
         }
         barLayout->addStretch(1);
         barLayout->addWidget(Shadowlos::Routing::MakeSwitch(bottomBar));
@@ -1974,10 +2306,7 @@ namespace Shadowlos::Chrome {
         barLayout->addWidget(ui->label_speed);
         root->addWidget(bottomBar);
 
-        // Besides the pills' labels and the cards measured live (power, toggles): root margins,
-        // the gaps between the four row items, the quick actions card's margins and grid gap.
-        constexpr int kRowFixedWidth = 24 + 3 * 8 + 32 + 8;
-        wideWatch() = new WideWatch(central, {powerCard, modesCard}, kRowFixedWidth);
+        wideWatch() = new WideWatch(central);
 
         // Every widget uic made has been moved into `central`; this deletes the empty old
         // container and its layouts, so drop the pointers to them.

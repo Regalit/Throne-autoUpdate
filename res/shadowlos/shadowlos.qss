@@ -20,9 +20,10 @@
  * widgets that pick a monospace font with setFont() keep it.
  *
  * Main-window objects tagged by ShadowlosChrome:
- *   QFrame#slMenuCard, QFrame#slCard, QFrame#slStatusCard
- *   QToolButton[slRole="menu"|"pill"], QToolButton#slFilterButton
+ *   QFrame#slMenuCard, QFrame#slCard, QFrame#slStatusPanel, QFrame#slBottomBar, QFrame#slMascot
+ *   QToolButton[slRole="menu"|"pill"|"viewChip"|"link"], QToolButton#slFilterButton
  *   QCheckBox[slRole="toggle"], QLabel[slRole="toggleLabel"|"status"|"corner"|"badge"|"updateStatus"|"updateStatusTag"]
+ *   QLabel[slRole="statusTitle"|"statusDetail"|"statusAction"|"viewItemName"|"viewItemLine"], QFrame#slViewItem
  */
 
 /* ------------------------------------------------------------------ base */
@@ -57,10 +58,130 @@ QFrame#slCard {
     border-radius: 16px;
 }
 
-QFrame#slStatusCard {
+/* The bottom bar: version, blocking badge, region, routing switch, speed. */
+QFrame#slBottomBar {
     background-color: #111517;
     border: none;
     border-radius: 16px;
+}
+
+/* The status card in the top row: plain status words, progress, the mascot area. */
+QFrame#slStatusPanel {
+    background-color: #1A2023;
+    border: none;
+    border-radius: 16px;
+}
+
+QLabel[slRole="statusTitle"] {
+    color: #FFFFFF;
+    font-size: 16px;
+    font-weight: 700;
+    background: transparent;
+}
+
+QFrame#slStatusPanel[slMini="true"] QLabel[slRole="statusTitle"] {
+    font-size: 22px;
+}
+
+QLabel[slRole="statusDetail"] {
+    color: #919AA1;
+    font-size: 12px;
+    background: transparent;
+}
+
+QFrame#slStatusPanel[slMini="true"] QLabel[slRole="statusDetail"] {
+    font-size: 14px;
+}
+
+QLabel[slRole="statusDetail"][slError="true"] {
+    color: #FF8A80;
+}
+
+QLabel[slRole="statusAction"] {
+    color: #33A5FF;
+    font-size: 12px;
+    background: transparent;
+}
+
+QProgressBar#slStatusProgress {
+    background-color: #2E3438;
+    border: none;
+    border-radius: 2px;
+    min-height: 4px;
+    max-height: 4px;
+}
+
+QProgressBar#slStatusProgress::chunk {
+    background-color: #33A5FF;
+    border-radius: 2px;
+}
+
+/* The mascot area: an empty placeholder of fixed size until the drawing comes. */
+QFrame#slMascot {
+    background: transparent;
+    border: 1px dashed #2E3438;
+    border-radius: 12px;
+}
+
+/* Thin separators in the bottom bar. */
+QFrame#slSep {
+    background-color: #2E3438;
+    border: none;
+}
+
+/* The «Вид» list: a name over a short line, the current view marked. */
+QMenu#slViewMenu {
+    padding: 6px;
+}
+
+QFrame#slViewItem {
+    background: transparent;
+    border-radius: 8px;
+}
+
+QFrame#slViewItem:hover {
+    background-color: #232A2E;
+}
+
+QFrame#slViewItem[slCurrent="true"] {
+    background-color: #1A374D;
+}
+
+QLabel[slRole="viewItemName"] {
+    color: #FFFFFF;
+    font-size: 13px;
+    font-weight: 500;
+    background: transparent;
+}
+
+QLabel[slRole="viewItemLine"] {
+    color: #919AA1;
+    font-size: 11px;
+    background: transparent;
+}
+
+/* «Вид: Минимальный» under the power button in the minimal view. */
+QToolButton[slRole="viewChip"] {
+    background-color: #111517;
+    border: 1px solid #2E3438;
+    border-radius: 10px;
+    color: #C7CDD1;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 4px 28px 4px 10px;
+}
+
+QToolButton[slRole="viewChip"]:hover {
+    background-color: #232A2E;
+}
+
+QToolButton[slRole="viewChip"]::menu-indicator {
+    image: url(:/shadowlos/icons/chevron-down.png);
+    subcontrol-origin: padding;
+    subcontrol-position: center right;
+    width: 14px;
+    height: 14px;
+    right: 8px;
 }
 
 QLabel[slRole="status"] {
@@ -191,15 +312,31 @@ QToolButton[slRole="segment"]:checked {
     color: #33A5FF;
 }
 
-/* Dev builds: the blocking badge right of the routing switch, a quiet pill (not a button). */
+/* Dev builds: the blocking badge and the region line in the bottom bar, quiet text. */
 QLabel[slRole="badge"] {
-    background-color: #1A2023;
-    border: 1px solid #2E3438;
-    border-radius: 10px;
+    background: transparent;
+    border: none;
     color: #C7CDD1;
     font-size: 12px;
     font-weight: 500;
-    padding: 6px 10px;
+    padding: 0px;
+}
+
+QLabel#slBlockingDot {
+    background-color: #5E676E;
+    border-radius: 4px;
+}
+
+QLabel#slBlockingDot[slLevel="ok"] {
+    background-color: #86D75E;
+}
+
+QLabel#slBlockingDot[slLevel="warn"] {
+    background-color: #FFC633;
+}
+
+QLabel#slBlockingDot[slLevel="bad"] {
+    background-color: #FF453A;
 }
 
 /* Dev builds: «Улучшение обхода блокировок» (ShadowlosImprove). Cards are QFrame#slCard. */
@@ -1063,4 +1200,14 @@ QSlider::handle:horizontal {
     height: 16px;
     margin: -6px 0px;
     border-radius: 8px;
+}
+
+/* The routing switch in the bottom bar: the same segments, a little lower. */
+QFrame#slBottomBar QToolButton[slRole="segment"] {
+    padding: 3px 10px;
+}
+
+/* The traffic speed in the bottom bar (Продвинутый). */
+QFrame#slBottomBar QLabel[slRole="status"] {
+    font-size: 11px;
 }

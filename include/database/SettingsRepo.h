@@ -81,7 +81,8 @@ namespace Configs {
         QString shadowlos_install_id; // random per install (UUID v4), sent to our API
         int shadowlos_ui_revision = 0; // Shadowlos look already applied as the default theme
         int shadowlos_test_revision = 0; // Shadowlos latency-test defaults already applied
-        int shadowlos_simple_view = 1; // main window shows the simple server list, not the full one
+        int shadowlos_simple_view = 1; // before 1.0.13: the simple server list (on) or the full one; migrated to shadowlos_view
+        int shadowlos_view = -1; // main window view: 0 minimal, 1 normal, 2 advanced; -1 = take it from shadowlos_simple_view
         int shadowlos_send_journal = 1; // dev builds: send the error journal to the developers (Tools menu)
         QString mux_protocol = "smux";
         bool mux_padding = false;

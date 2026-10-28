@@ -111,7 +111,7 @@ namespace Shadowlos::Journal {
 
     // ── the blocking census and its badge (ShadowlosCensus.cpp) ──
 
-    // The badge for the menu card: the blocking type found by the census (the Android app's
+    // The badge for the bottom bar: the blocking type found by the census (the Android app's
     // control / foreign / resilient probe, run off the VPN) plus region and operator from geo.
     // nullptr in a prod build.
     QWidget *MakeBlockingBadge(QWidget *parent);
@@ -158,9 +158,6 @@ namespace Shadowlos::Journal {
 
     // The page and its menu item, appended to [menu]. Call after Install.
     void InstallImprovePage(QWidget *window, QMenu *menu);
-
-    // A small link that opens the page, for the badge row (so the simple view has it in sight).
-    QWidget *MakeImproveLink(QWidget *parent);
 
 #else
 

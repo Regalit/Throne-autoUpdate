@@ -70,35 +70,6 @@ namespace Shadowlos::Journal {
             }
         }
 
-        // The page's link: a short label that elides in a narrow window (the full title is its
-        // tooltip and accessible name), as wide as the short label when there is room.
-        class ElidingLink : public QToolButton {
-        public:
-            ElidingLink(const QString &text, QWidget *parent) : QToolButton(parent), m_full(text) {
-                setText(text);
-                setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-            }
-
-            QSize sizeHint() const override {
-                ensurePolished();
-                return {fontMetrics().horizontalAdvance(m_full) + 8, QToolButton::sizeHint().height()};
-            }
-
-            QSize minimumSizeHint() const override {
-                return {0, sizeHint().height()};
-            }
-
-        protected:
-            void resizeEvent(QResizeEvent *event) override {
-                QToolButton::resizeEvent(event);
-                const QString shown = fontMetrics().elidedText(m_full, Qt::ElideRight, qMax(0, width() - 8));
-                if (shown != text()) setText(shown);
-            }
-
-        private:
-            QString m_full;
-        };
-
         class ImproveDialog : public QDialog {
         public:
             explicit ImproveDialog(QWidget *parent) : QDialog(parent) {
@@ -340,18 +311,6 @@ namespace Shadowlos::Journal {
         QObject::connect(action, &QAction::triggered, window, [] { openPage(); });
         menu->addSeparator();
         menu->addAction(action);
-    }
-
-    QWidget *MakeImproveLink(QWidget *parent) {
-        auto *link = new ElidingLink(QStringLiteral("Улучшить обход"), parent);
-        link->setObjectName(QStringLiteral("slImproveLink"));
-        link->setAccessibleName(QStringLiteral("Улучшение обхода блокировок"));
-        link->setToolTip(QStringLiteral("Улучшение обхода блокировок: проверить доступность сайтов и отправить логи разработчикам"));
-        link->setProperty("slRole", "link");
-        link->setCursor(Qt::PointingHandCursor);
-        link->setAutoRaise(true);
-        QObject::connect(link, &QToolButton::clicked, link, [] { openPage(); });
-        return link;
     }
 
 } // namespace Shadowlos::Journal

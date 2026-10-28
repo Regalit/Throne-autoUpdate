@@ -1,4 +1,5 @@
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
+#include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
 #if SHADOWLOS_DEV
 
@@ -7,12 +8,14 @@
 
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QFrame>
 #include <QHash>
 #include <QLabel>
 #include <QNetworkProxy>
 #include <QPointer>
 #include <QRegularExpression>
 #include <QResizeEvent>
+#include <QStyle>
 #include <QHBoxLayout>
 #include <QSet>
 #include <QSslSocket>
@@ -269,6 +272,31 @@ namespace Shadowlos::Journal {
             return parts.join(QStringLiteral(" · "));
         }
 
+        // The bottom bar's network line: region · operator · kind of network, whatever is known.
+        QString geoLine(const QJsonObject &geo, const QString &netType) {
+            QString kind;
+            if (netType == QStringLiteral("wifi")) kind = QStringLiteral("Wi-Fi");
+            else if (netType == QStringLiteral("ethernet")) kind = QStringLiteral("кабель");
+            else if (netType == QStringLiteral("cellular")) kind = QStringLiteral("мобильная сеть");
+            QStringList parts;
+            for (const QString &p : {geoRegion(geo), geoOperator(geo), kind}) {
+                if (!p.isEmpty()) parts << p;
+            }
+            return parts.join(QStringLiteral(" · "));
+        }
+
+        // The badge dot's colour: green none, yellow regular, red whitelist or no internet.
+        const char *dotLevel(std::optional<Blocking> b) {
+            if (!b) return "none";
+            switch (*b) {
+                case Blocking::None: return "ok";
+                case Blocking::Regular: return "warn";
+                case Blocking::Whitelist:
+                case Blocking::NoInternet: return "bad";
+                default: return "none";
+            }
+        }
+
         // ── one probe pass ───────────────────────────────────────────────────
 
         class TlsPass : public QObject {
@@ -357,8 +385,9 @@ namespace Shadowlos::Journal {
                 return {h.width() - fontMetrics().horizontalAdvance(text()) + fontMetrics().horizontalAdvance(full_) + 2, h.height()};
             }
 
+            // The bottom bar keeps the whole text: the window's minimum makes room for it.
             QSize minimumSizeHint() const override {
-                return {qMin(sizeHint().width(), 48), sizeHint().height()};
+                return sizeHint();
             }
 
         protected:
@@ -394,6 +423,9 @@ namespace Shadowlos::Journal {
 
         struct State {
             QPointer<BadgeLabel> label;
+            QPointer<QLabel> dot;
+            QPointer<BadgeLabel> geoLabel;
+            QPointer<QWidget> geoSep;
             Keeper keeper;
             QByteArray net;
             QString netType;
@@ -462,7 +494,15 @@ namespace Shadowlos::Journal {
             // No verdict to show yet, and one is on its way.
             if (n.isEmpty() && !tun && (s.measuring || s.due)) n = QStringLiteral("Проверяем…");
             const QJsonObject geo = LatestGeo();
-            const QString text = badgeText(n, geo);
+            QString text = n;
+            QString where = geoLine(geo, s.netType);
+            const char *level = n == note(shown) ? dotLevel(shown) : "none";
+            // Dev screenshots (SHADOWLOS_UI_DEMO): a made-up place, never the user's own.
+            if (!Shadowlos::Chrome::UiDemo().isEmpty()) {
+                text = QStringLiteral("Нет блокировок");
+                where = QStringLiteral("Москва · МТС · Wi-Fi");
+                level = "ok";
+            }
 
             QStringList tip;
             tip << QStringLiteral("Тип блокировок: ") + (shown ? fullLabel(*shown) : QStringLiteral("ещё не проверяли в этой сети"));
@@ -484,6 +524,20 @@ namespace Shadowlos::Journal {
             s.label->setFullText(text);
             s.label->setToolTip(tip.join(u'\n'));
             s.label->setVisible(!text.isEmpty());
+            if (s.dot) {
+                s.dot->setVisible(!text.isEmpty());
+                if (s.dot->property("slLevel").toString() != QLatin1String(level)) {
+                    s.dot->setProperty("slLevel", QLatin1String(level));
+                    s.dot->style()->unpolish(s.dot);
+                    s.dot->style()->polish(s.dot);
+                }
+            }
+            if (s.geoLabel) {
+                s.geoLabel->setFullText(where);
+                s.geoLabel->setToolTip(tip.join(u'\n'));
+                s.geoLabel->setVisible(!where.isEmpty());
+                if (s.geoSep) s.geoSep->setVisible(!where.isEmpty() && !text.isEmpty());
+            }
         }
 
         void measure();
@@ -656,16 +710,18 @@ namespace Shadowlos::Journal {
     } // namespace
 
     QWidget *MakeBlockingBadge(QWidget *parent) {
-        // A row of fixed height that is there with or without the badge, so the status panel
-        // under it does not jump when the badge shows or hides.
+        // For the bottom bar: a dot and the verdict, then region · operator · network. A row of
+        // fixed height that is there with or without them, so the bar does not jump.
         auto *row = new QWidget(parent);
         row->setObjectName(QStringLiteral("slBlockingBadgeRow"));
         auto *layout = new QHBoxLayout(row);
         layout->setContentsMargins(0, 0, 0, 0);
-        layout->setSpacing(8);
-        // The page that runs this check by hand, left of the badge.
-        layout->addWidget(MakeImproveLink(row));
-        layout->addStretch(1);
+        layout->setSpacing(6);
+        auto *dot = new QLabel(row);
+        dot->setObjectName(QStringLiteral("slBlockingDot"));
+        dot->setFixedSize(8, 8);
+        dot->setVisible(false);
+        layout->addWidget(dot);
         auto *label = new BadgeLabel(row);
         label->setObjectName(QStringLiteral("slBlockingBadge"));
         label->setProperty("slRole", "badge");
@@ -674,7 +730,22 @@ namespace Shadowlos::Journal {
         label->setFullText({});
         label->setVisible(false);
         layout->addWidget(label);
+        auto *sep = new QFrame(row);
+        sep->setObjectName(QStringLiteral("slSep"));
+        sep->setFixedSize(1, 14);
+        sep->setVisible(false);
+        layout->addSpacing(4);
+        layout->addWidget(sep);
+        layout->addSpacing(4);
+        auto *where = new BadgeLabel(row);
+        where->setObjectName(QStringLiteral("slGeoLine"));
+        where->setProperty("slRole", "badge");
+        where->setVisible(false);
+        layout->addWidget(where);
         row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        st().dot = dot;
+        st().geoLabel = where;
+        st().geoSep = sep;
         st().label = label;
         st().seenConnects = ConnectCount();
         auto *timer = new QTimer(label);

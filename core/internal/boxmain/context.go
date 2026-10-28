@@ -6,7 +6,10 @@ import (
 	"os/user"
 	"strconv"
 
+	"ThroneCore/internal/dnsfallback"
+
 	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/dns"
 	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/log"
@@ -16,8 +19,15 @@ import (
 
 var disableColor bool
 
+// sing-box's DNS types, with dns-direct's DoH falling back when the PC forbids its destination.
+func dnsRegistry(role string) *dns.TransportRegistry {
+	registry := include.DNSTransportRegistry()
+	dnsfallback.Register(registry, role)
+	return registry
+}
+
 // Must stay per-box: boxes sharing one service.Registry each overwrite the previous box's MustRegister[OutboundManager].
-func newBoxContext() context.Context {
+func newBoxContext(role string) context.Context {
 	ctx := context.Background()
 	sudoUser := os.Getenv("SUDO_USER")
 	ownerUID, _ := strconv.Atoi(os.Getenv("SUDO_UID"))
@@ -37,6 +47,6 @@ func newBoxContext() context.Context {
 		ctx = filemanager.WithDefault(ctx, "", "", ownerUID, ownerGID)
 	}
 	ctx = service.ContextWith(ctx, deprecated.NewStderrManager(log.StdLogger()))
-	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), include.DNSTransportRegistry(), include.ServiceRegistry(), include.CertificateProviderRegistry())
+	ctx = box.Context(ctx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry(), dnsRegistry(role), include.ServiceRegistry(), include.CertificateProviderRegistry())
 	return ctx
 }

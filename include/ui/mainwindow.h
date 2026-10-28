@@ -104,6 +104,11 @@ public:
     qint64 GetCorePid();
     QString GetRunningConfigName();
 
+    // Shadowlos: the startup follow-up latency test (ShadowlosChrome) measures given servers,
+    // and never while another test holds the runner (that would raise its modal).
+    bool ShadowlosLatencyTestBusy();
+    void ShadowlosUrlTest(const QList<int> &profileIDs);
+
     // The two live VPN queries below block on an RPC; never call them from the UI thread.
     static QString liveVpnConnectOkText();
 

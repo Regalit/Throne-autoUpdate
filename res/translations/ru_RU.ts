@@ -9857,6 +9857,26 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Вид: %1</translation>
     </message>
     <message>
+        <source>View</source>
+        <translation>Вид</translation>
+    </message>
+    <message>
+        <source>%1 B</source>
+        <translation>%1 Б</translation>
+    </message>
+    <message>
+        <source>%1 KB</source>
+        <translation>%1 КБ</translation>
+    </message>
+    <message>
+        <source>%1 MB</source>
+        <translation>%1 МБ</translation>
+    </message>
+    <message>
+        <source>%1 GB</source>
+        <translation>%1 ГБ</translation>
+    </message>
+    <message>
         <source>all Throne settings</source>
         <translation>все настройки Throne</translation>
     </message>

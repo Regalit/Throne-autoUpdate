@@ -32,6 +32,8 @@
 #include <QFont>
 #include <QFontDatabase>
 #include <QFrame>
+#include <QKeyEvent>
+#include <QRegularExpression>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -422,6 +424,15 @@ namespace Shadowlos::ChromeImpl {
         QPointer<QLabel> m_label;
     };
 
+    // A two-line toggle name: the sub-line in rich text, so its size is set here (bigger when wide).
+    void setToggleText(QLabel *label, bool wide) {
+        const QString sub = label->property("slSub").toString();
+        if (sub.isEmpty()) return;
+        label->setText(QStringLiteral("%1<br><span style=\"color:#8A949B; font-size:%3px; font-weight:400\">%2</span>")
+                           .arg(label->property("slMain").toString().toHtmlEscaped(), sub.toHtmlEscaped())
+                           .arg(wide ? 13 : 11));
+    }
+
     QWidget *makeToggleRow(QWidget *parent, QCheckBox *box) {
         auto *row = new QWidget(parent);
         row->setObjectName(box->objectName() + QStringLiteral("_row"));
@@ -437,8 +448,9 @@ namespace Shadowlos::ChromeImpl {
         auto *label = new QLabel(row);
         if (bracket > 0 && text.endsWith(QLatin1Char(')'))) {
             label->setTextFormat(Qt::RichText);
-            label->setText(QStringLiteral("%1<br><span style=\"color:#8A949B; font-size:11px; font-weight:400\">%2</span>")
-                               .arg(text.left(bracket).toHtmlEscaped(), text.mid(bracket + 1).toHtmlEscaped()));
+            label->setProperty("slMain", text.left(bracket));
+            label->setProperty("slSub", text.mid(bracket + 1));
+            setToggleText(label, false);
         } else {
             label->setText(text);
         }
@@ -562,9 +574,20 @@ namespace Shadowlos::ChromeImpl {
         return c;
     }
 
+    // True while the main window is hidden (tray) or minimized: nothing needs repainting then.
+    // Unset before Install (the self-test's throwaway card), so it never gates that.
+    std::function<bool()> &uiHidden() {
+        static std::function<bool()> hidden;
+        return hidden;
+    }
+
+    bool hiddenNow() {
+        return uiHidden() && uiHidden()();
+    }
+
     void tickStopwatch() {
         Corner &c = corner();
-        if (c.stopwatch == nullptr || !c.since.isValid()) return;
+        if (c.stopwatch == nullptr || !c.since.isValid() || hiddenNow()) return;
         c.stopwatch->setText(Shadowlos::Chrome::StopwatchText(c.since.elapsed() / 1000));
     }
 
@@ -764,7 +787,7 @@ namespace Shadowlos::ChromeImpl {
             titleRow->addWidget(m_title, 1);
             m_titleRow = titleRow;
             text->addLayout(titleRow);
-            m_detail = new ElideLabel(this, "statusDetail", translate("Press the button to connect"));
+            m_detail = new ElideLabel(this, "statusDetail", translate("Add a config or select one server"));
             text->addWidget(m_detail);
             m_extra = new ElideLabel(this, "statusDetail");
             m_extra->hide();
@@ -810,8 +833,15 @@ namespace Shadowlos::ChromeImpl {
 
             m_timer = new QTimer(this);
             m_timer->setInterval(500);
-            QObject::connect(m_timer, &QTimer::timeout, this, [this] { refresh(); });
+            QObject::connect(m_timer, &QTimer::timeout, this, [this] {
+                if (!hiddenNow()) refresh();
+            });
             m_timer->start();
+
+            // A click on the status or its detail tests the running server, as upstream's
+            // status label did (MainWindow's event filter on label_running, url_test_current).
+            m_title->installEventFilter(this);
+            m_detail->installEventFilter(this);
         }
 
         QToolButton *logLink() const { return m_link; }
@@ -824,6 +854,11 @@ namespace Shadowlos::ChromeImpl {
         void setWide(bool wide) {
             if (wide == m_wide) return;
             m_wide = wide;
+            setProperty("slWide", wide);
+            for (QWidget *w : {static_cast<QWidget *>(this), static_cast<QWidget *>(m_title), static_cast<QWidget *>(m_detail),
+                               static_cast<QWidget *>(m_extra), static_cast<QWidget *>(m_link)}) {
+                repolish(w);
+            }
             applySizes();
             refresh();
         }
@@ -855,9 +890,9 @@ namespace Shadowlos::ChromeImpl {
 
             switch (st) {
                 case StartStopButton::State::Disabled:
-                    title = translate("Starting");
-                    detail = translate("Getting the core ready, a few seconds");
-                    total = -1;
+                    // Nothing to start: an empty group, a fresh install, or several rows selected.
+                    title = translate("No server");
+                    detail = translate("Add a config or select one server");
                     break;
                 case StartStopButton::State::Connecting:
                     title = translate("Connecting");
@@ -873,7 +908,7 @@ namespace Shadowlos::ChromeImpl {
                     title = translate("Connected");
                     QStringList parts;
                     if (profile && profile->outbound) parts << profile->outbound->DisplayName();
-                    if (profile && profile->latency > 0) parts << QStringLiteral("%1 ms").arg(profile->latency);
+                    if (profile && profile->latency > 0) parts << translate("%1 ms").arg(profile->latency);
                     detail = parts.join(QStringLiteral(" · "));
                     QStringList more;
                     const Corner &c = corner();
@@ -893,8 +928,8 @@ namespace Shadowlos::ChromeImpl {
                     break;
             }
             if (p.busy) {
-                // Connecting keeps its title; the test it runs is the detail.
-                if (st != StartStopButton::State::Connecting) title = p.title;
+                // Connecting and connected keep their title; the test is the detail.
+                if (st != StartStopButton::State::Connecting && st != StartStopButton::State::Running) title = p.title;
                 detail = p.detail;
                 done = p.done;
                 total = p.total;
@@ -903,16 +938,28 @@ namespace Shadowlos::ChromeImpl {
                 extra = p.note;
                 problem = p.noteProblem;
             }
+            // A click-to-test of the running server: upstream writes «Проверка» and then «Результат
+            // теста: N ms» on label_running for a few seconds; the detail line shows it.
+            const QString running = m_ui->label_running->text();
+            if (st == StartStopButton::State::Running && isCurrentTest(running)) {
+                static const QRegularExpression ms(QStringLiteral("(\\d+) ms$"));
+                detail = QString(running).replace(ms, translate("%1 ms").arg(QStringLiteral("\\1")));
+            }
             // Select mode (pick a profile for a chain): upstream's prompt, as it was.
-            if (const QString running = m_ui->label_running->text(); running.endsWith(QStringLiteral(" *"))) {
+            if (running.endsWith(QStringLiteral(" *"))) {
                 title = running;
                 detail = m_ui->label_running->toolTip();
+            }
+            const auto cursor = st == StartStopButton::State::Running ? Qt::PointingHandCursor : Qt::ArrowCursor;
+            if (m_title->cursor().shape() != cursor) {
+                m_title->setCursor(cursor);
+                m_detail->setCursor(cursor);
             }
 
             bool restart = p.restart;
             if (demoHas("on")) {
                 title = translate("Connected");
-                detail = QStringLiteral("Германия #2 · 48 ms");
+                detail = QStringLiteral("Германия #2 · ") + translate("%1 ms").arg(48);
                 extra = translate("Online %1").arg(onlineText(72 * 60)) + QStringLiteral(" · ") +
                         translate("traffic %1").arg(QStringLiteral("1.2 GB")) + QStringLiteral(" · ") +
                         translate("mode «%1»").arg(QStringLiteral("Удобный"));
@@ -977,10 +1024,26 @@ namespace Shadowlos::ChromeImpl {
             }
         }
 
+    protected:
+        bool eventFilter(QObject *watched, QEvent *event) override {
+            if ((watched == m_title || watched == m_detail) && event->type() == QEvent::MouseButtonPress) {
+                // Upstream's filter tests only on a left press while a profile runs.
+                if (QWidget *window = m_ui->label_running->window())
+                    return static_cast<QObject *>(window)->eventFilter(m_ui->label_running, event);
+            }
+            return QFrame::eventFilter(watched, event);
+        }
+
     private:
+        static bool isCurrentTest(const QString &text) {
+            const QString testing = QCoreApplication::translate("MainWindow", "Testing");
+            const QString result = QCoreApplication::translate("MainWindow", "Test Result");
+            return text == testing || text.startsWith(result + QStringLiteral(": "));
+        }
+
         void applySizes() {
-            // Fixed sizes: the mascot drawing will fit these.
-            const QSize mascot = m_minimal ? QSize(120, 120) : m_wide ? QSize(200, 128) : QSize(104, 104);
+            // Fixed sizes: the mascot drawing will fit these. Wide: the card grows, so does the area.
+            const QSize mascot = m_minimal ? QSize(120, 120) : m_wide ? QSize(300, 172) : QSize(104, 104);
             m_mascot->setFixedSize(mascot);
             m_title->setMinimumWidth(0);
         }
@@ -1044,20 +1107,37 @@ namespace Shadowlos::ChromeImpl {
             layout->addWidget(name);
             layout->addWidget(line);
             setAccessibleName(viewName(view));
+            // The menu moves focus to the item under its arrow keys; Enter or Space picks it.
+            setFocusPolicy(Qt::StrongFocus);
         }
 
         View view() const { return m_view; }
 
+        // The menu closes first: picking Минимальный resizes the window under it.
+        void choose() {
+            if (auto *menu = qobject_cast<QMenu *>(parentWidget())) menu->close();
+            const auto pick = m_pick;
+            const View v = m_view;
+            QTimer::singleShot(0, qApp, [pick, v] { pick(v); });
+        }
+
     protected:
         void mouseReleaseEvent(QMouseEvent *event) override {
-            if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint())) {
-                // The menu closes first: picking Минимальный resizes the window under it.
-                if (auto *menu = qobject_cast<QMenu *>(parentWidget())) menu->close();
-                const auto pick = m_pick;
-                const View v = m_view;
-                QTimer::singleShot(0, qApp, [pick, v] { pick(v); });
-            }
+            if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint())) choose();
             QFrame::mouseReleaseEvent(event);
+        }
+
+        void keyPressEvent(QKeyEvent *event) override {
+            switch (event->key()) {
+                case Qt::Key_Return:
+                case Qt::Key_Enter:
+                case Qt::Key_Space:
+                    choose();
+                    event->accept();
+                    return;
+                default:
+                    QFrame::keyPressEvent(event);
+            }
         }
 
     private:
@@ -1075,8 +1155,6 @@ namespace Shadowlos::ChromeImpl {
         QList<QPointer<ViewItem>> items;
         QList<QPointer<QToolButton>> pills;
         QSize designMin;
-        QSize fullSize;
-        bool fullMaximized = false;
         bool logOpen = false;
         bool applied = false;
         View view = View::Normal;
@@ -1116,15 +1194,31 @@ namespace Shadowlos::ChromeImpl {
             Shell &s = shell();
             if (m_central.isNull() || s.status.isNull()) return;
             if (s.view == View::Minimal) return;
-            int labelled = 0;
-            for (const auto &pill : s.pills) {
-                if (!pill.isNull()) labelled = std::max(labelled, labelledWidth(pill.data()));
+            // Measured while narrow: the wide fonts make the cards wider, which must not flip it back.
+            if (!s.status->wide() || m_needed == 0) {
+                int labelled = 0;
+                for (const auto &pill : s.pills) {
+                    if (!pill.isNull()) labelled = std::max(labelled, labelledWidth(pill.data()));
+                }
+                int needed = m_fixedWidth + 2 * labelled + kStatusWideMin;
+                for (const auto &card : m_cards) {
+                    if (!card.isNull() && !card->isHidden()) needed += card->sizeHint().width();
+                }
+                m_needed = needed;
             }
-            int needed = m_fixedWidth + 2 * labelled + kStatusWideMin;
-            for (const auto &card : m_cards) {
-                if (!card.isNull() && !card->isHidden()) needed += card->sizeHint().width();
+            const bool wide = m_central->width() >= m_needed;
+            if (m_central->property("slWide").toBool() != wide) {
+                // The top row's text grows with the window (shadowlos.qss, [slWide="true"]).
+                m_central->setProperty("slWide", wide);
+                for (const auto &pill : s.pills) {
+                    if (!pill.isNull()) repolish(pill);
+                }
+                for (QLabel *label : m_central->findChildren<QLabel *>()) {
+                    if (label->property("slRole").toString() != QLatin1String("toggleLabel")) continue;
+                    setToggleText(label, wide);
+                    repolish(label);
+                }
             }
-            const bool wide = m_central->width() >= needed;
             const auto style = wide ? Qt::ToolButtonTextBesideIcon : Qt::ToolButtonIconOnly;
             for (const auto &pill : s.pills) {
                 if (!pill.isNull() && pill->toolButtonStyle() != style) pill->setToolButtonStyle(style);
@@ -1164,6 +1258,7 @@ namespace Shadowlos::ChromeImpl {
     private:
         static constexpr int kStatusWideMin = 560;
         bool m_minPending = false;
+        int m_needed = 0;
 
         // As the sheet lays a labelled pill out: padding, icon, icon-text gap, text, padding.
         static int labelledWidth(const QToolButton *pill) {
@@ -1289,7 +1384,7 @@ namespace Shadowlos::Chrome {
 
     void DataViewChanged(DataViewHtmlGenerator *generator) {
         ChromeImpl::generator() = generator;
-        if (auto &status = ChromeImpl::shell().status) status->refresh();
+        if (auto &status = ChromeImpl::shell().status; status && !ChromeImpl::hiddenNow()) status->refresh();
     }
 
     QString StatusLine(const QString &text) {
@@ -1397,6 +1492,25 @@ namespace Shadowlos::Chrome {
         QTimer m_timer;
     };
 
+    // The full view's saved geometry, kept on screen; a default size when there is none.
+    void restoreFullGeometry(QMainWindow *window) {
+        const QByteArray saved = QByteArray::fromBase64(Configs::dataManager->settingsRepo->shadowlos_full_geometry.toLatin1());
+        if (saved.isEmpty() || !window->restoreGeometry(saved)) {
+            window->resize(1100, 720);
+        }
+        if (window->isMaximized() || window->screen() == nullptr) return;
+        const QRect area = window->screen()->availableGeometry();
+        QRect frame = window->frameGeometry();
+        const QSize extra = frame.size() - window->size();
+        const QSize fit = (area.size() - extra).boundedTo(window->size()).expandedTo(window->minimumSize());
+        if (fit != window->size()) window->resize(fit);
+        frame = window->frameGeometry();
+        QPoint at = frame.topLeft();
+        at.setX(std::clamp(at.x(), area.left(), std::max(area.left(), area.right() - frame.width() + 1)));
+        at.setY(std::clamp(at.y(), area.top(), std::max(area.top(), area.bottom() - frame.height() + 1)));
+        if (at != frame.topLeft()) window->move(at);
+    }
+
     // Shows one of the three views. save: remember it (a pick from the «Вид» list); the
     // dev screenshot switch does not.
     void applyView(ChromeImpl::View view, bool save) {
@@ -1416,10 +1530,12 @@ namespace Shadowlos::Chrome {
             settings->Save();
         }
         const bool mini = view == View::Minimal;
-        // Leaving a full view: its size comes back when the minimal view is left again.
-        if (mini && (first || before != View::Minimal)) {
-            s.fullMaximized = window->isMaximized();
-            if (!first && !window->isMaximized() && !window->isMinimized()) s.fullSize = window->size();
+        auto *settings = Configs::dataManager->settingsRepo.get();
+        // Leaving a full view: its geometry (size, place, maximized) comes back when the minimal
+        // view is left, also after a restart in the minimal view.
+        if (mini && !first && before != View::Minimal) {
+            settings->shadowlos_full_geometry = QString::fromLatin1(window->saveGeometry().toBase64());
+            settings->Save();
         }
         window->setProperty("slCompactWindow", mini);
 
@@ -1462,15 +1578,8 @@ namespace Shadowlos::Chrome {
         } else {
             const QSize hint = window->minimumSizeHint();
             window->setMinimumSize(qMax(s.designMin.width(), hint.width()), qMax(s.designMin.height(), hint.height()));
-            if (!first && before == View::Minimal) {
-                if (s.fullMaximized) {
-                    window->showMaximized();
-                } else {
-                    window->resize(s.fullSize.isValid() ? s.fullSize : QSize(1100, 720));
-                }
-            } else if (first && window->width() < 700) {
-                window->resize(1100, 720); // the last run ended in the minimal view
-            }
+            // Back from the minimal view, or the last run ended in it.
+            if ((!first && before == View::Minimal) || (first && window->width() < 700)) restoreFullGeometry(window);
         }
         if (auto w = wideWatch()) w->relayout();
         qDebug().noquote() << "[view]" << viewName(view);
@@ -1623,6 +1732,10 @@ namespace Shadowlos::Chrome {
         Shell &s = shell();
         s.window = window;
         s.ui = ui;
+        uiHidden() = [] {
+            QMainWindow *w = shell().window;
+            return w == nullptr || !w->isVisible() || w->isMinimized();
+        };
         s.designMin = window->minimumSize(); // the .ui's; MainWindow reads it later the same way
         s.view = savedView();
         if (Configs::dataManager->settingsRepo->shadowlos_view < 0) {
@@ -1644,6 +1757,8 @@ namespace Shadowlos::Chrome {
             auto *action = new QWidgetAction(viewMenu);
             auto *item = new ViewItem(viewMenu, v, [](View picked) { applyView(picked, true); });
             action->setDefaultWidget(item);
+            // Enter on the highlighted entry when the item itself does not have focus.
+            QObject::connect(action, &QAction::triggered, item, [item] { item->choose(); });
             viewMenu->addAction(action);
             s.items << item;
         }
@@ -1908,16 +2023,22 @@ namespace Shadowlos::Chrome {
             installStartupLatencyTest(window, ui);
             installLogPause(ui);
             if (demoHas("max")) {
-                if (QScreen *screen = window->screen()) {
-                    const QRect area = screen->availableGeometry();
-                    const QMargins frame = window->frameGeometry().size() == window->size()
-                                               ? QMargins(8, 31, 8, 8)
-                                               : QMargins(window->geometry().left() - window->frameGeometry().left(),
-                                                          window->geometry().top() - window->frameGeometry().top(),
-                                                          window->frameGeometry().right() - window->geometry().right(),
-                                                          window->frameGeometry().bottom() - window->geometry().bottom());
-                    window->setGeometry(area.marginsRemoved(frame));
-                }
+                // The primary screen's whole work area, once the test has put the window on screen
+                // (moving a minimized window to another screen spoils its restore).
+                auto *poll = new QTimer(window);
+                poll->setInterval(200);
+                QObject::connect(poll, &QTimer::timeout, window, [window, poll] {
+                    if (!window->isVisible() || window->isMinimized()) return;
+                    poll->stop();
+                    poll->deleteLater();
+                    QScreen *screen = QGuiApplication::primaryScreen();
+                    if (screen == nullptr) return;
+                    const QRect frame = window->frameGeometry(), inner = window->geometry();
+                    const QMargins edge(inner.left() - frame.left(), inner.top() - frame.top(),
+                                        frame.right() - inner.right(), frame.bottom() - inner.bottom());
+                    window->setGeometry(screen->availableGeometry().marginsRemoved(edge));
+                });
+                poll->start();
             } else if (demoHas("min")) {
                 QTimer::singleShot(800, window, [window] { window->resize(window->minimumSize()); });
             }

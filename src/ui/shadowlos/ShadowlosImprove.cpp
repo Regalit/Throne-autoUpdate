@@ -157,7 +157,7 @@ namespace Shadowlos::Journal {
                 infoLayout->addWidget(makeLabel(info, "improveCardTitle", QStringLiteral("Что мы отправляем")));
                 infoLayout->addWidget(makeLabel(info, "improveText", QStringLiteral(
                     "Мы проверяем, какие сайты открываются у вас без VPN, и отправляем журнал ошибок приложения. "
-                    "По этим данным мы собираем «Настройку под ваш регион» — для вашего региона и оператора. "
+                    "По этим данным мы собираем правила «Под ваш регион» — для вашего региона и оператора. "
                     "Личные данные не отправляем: ни имени, ни Telegram, ни IP-адреса.")));
                 root->addWidget(info);
 

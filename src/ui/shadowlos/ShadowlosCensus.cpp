@@ -385,9 +385,9 @@ namespace Shadowlos::Journal {
                 return {h.width() - fontMetrics().horizontalAdvance(text()) + fontMetrics().horizontalAdvance(full_) + 2, h.height()};
             }
 
-            // The bottom bar keeps the whole text: the window's minimum makes room for it.
+            // Shrinks to a 48 px floor and elides: a long region line never raises the window's minimum.
             QSize minimumSizeHint() const override {
-                return sizeHint();
+                return {qMin(sizeHint().width(), 48), sizeHint().height()};
             }
 
         protected:

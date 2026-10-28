@@ -1207,6 +1207,32 @@ QFrame#slBottomBar QToolButton[slRole="segment"] {
     padding: 3px 10px;
 }
 
+/* A wide window: the top row's text grows with the cards (ShadowlosChrome's WideWatch). */
+QWidget#slCentral[slWide="true"] QToolButton[slRole="pill"] {
+    font-size: 15px;
+    padding: 12px 16px 12px 12px;
+}
+
+QWidget#slCentral[slWide="true"] QLabel[slRole="toggleLabel"] {
+    font-size: 15px;
+}
+
+QFrame#slStatusPanel[slWide="true"] QLabel[slRole="statusTitle"] {
+    font-size: 22px;
+}
+
+QFrame#slStatusPanel[slWide="true"] QLabel[slRole="statusDetail"] {
+    font-size: 15px;
+}
+
+QFrame#slStatusPanel[slWide="true"] QToolButton[slRole="link"] {
+    font-size: 14px;
+}
+
+QFrame#slViewItem:focus {
+    background-color: #232A2E;
+}
+
 /* The traffic speed in the bottom bar (Продвинутый). */
 QFrame#slBottomBar QLabel[slRole="status"] {
     font-size: 11px;

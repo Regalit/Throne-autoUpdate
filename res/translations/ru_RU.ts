@@ -9797,10 +9797,6 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Определяю страны серверов</translation>
     </message>
     <message>
-        <source>Getting the core ready, a few seconds</source>
-        <translation>Готовлю ядро, несколько секунд</translation>
-    </message>
-    <message>
         <source>Hide log</source>
         <translation>Скрыть журнал</translation>
     </message>
@@ -9845,8 +9841,16 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Настройки изменены</translation>
     </message>
     <message>
-        <source>Starting</source>
-        <translation>Запускаюсь</translation>
+        <source>No server</source>
+        <translation>Нет сервера</translation>
+    </message>
+    <message>
+        <source>Add a config or select one server</source>
+        <translation>Добавьте конфиг или выберите один сервер</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 мс</translation>
     </message>
     <message>
         <source>View: %1</source>

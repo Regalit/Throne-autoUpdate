@@ -166,6 +166,7 @@ namespace Configs {
             {"hk_toggle",                  &hotkey_toggle_system_proxy},
             {"active_routing",             &active_routing},
             {"shadowlos_install_id",       &shadowlos_install_id},
+            {"shadowlos_full_geometry",    &shadowlos_full_geometry},
             {"mw_size",                    &mw_size},
             {"vpn_impl",                   &vpn_implementation},
             {"vpn_tun_ipv4_cidr",          &vpn_tun_ipv4_cidr},

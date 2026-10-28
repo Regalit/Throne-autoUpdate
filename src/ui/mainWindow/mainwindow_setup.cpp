@@ -1201,3 +1201,11 @@ MainWindow::~MainWindow() {
     delete ui;
 }
 
+// Shadowlos: hooks for ShadowlosChrome's startup follow-up test.
+bool MainWindow::ShadowlosLatencyTestBusy() {
+    return testRunner == nullptr || testRunner->isRunning();
+}
+
+void MainWindow::ShadowlosUrlTest(const QList<int> &profileIDs) {
+    if (testRunner != nullptr && !profileIDs.isEmpty()) testRunner->runUrlTests(profileIDs);
+}

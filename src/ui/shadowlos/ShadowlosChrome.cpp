@@ -722,7 +722,13 @@ namespace Shadowlos::ChromeImpl {
     QString shortSize(qint64 bytes) {
         constexpr qint64 k = 1024;
         if (bytes < k) return translate("%1 B").arg(bytes);
-        const auto amount = [](double v) { return v < 10 ? QString::number(v, 'f', 1) : QString::number(qRound64(v)); };
+        // A decimal comma where the units are Russian («1,2 ГБ»).
+        const bool comma = translate("%1 GB") != QLatin1String("%1 GB");
+        const auto amount = [comma](double v) {
+            QString n = v < 10 ? QString::number(v, 'f', 1) : QString::number(qRound64(v));
+            if (comma) n.replace(QLatin1Char('.'), QLatin1Char(','));
+            return n;
+        };
         if (bytes < k * k) return translate("%1 KB").arg(amount(double(bytes) / k));
         if (bytes < k * k * k) return translate("%1 MB").arg(amount(double(bytes) / (k * k)));
         return translate("%1 GB").arg(amount(double(bytes) / (k * k * k)));
@@ -1325,7 +1331,9 @@ namespace Shadowlos::ChromeImpl {
                 }
                 m_neededWide = std::max(m_neededWide, needed);
             }
-            const bool wide = m_central->width() >= std::max(m_needed, m_neededWide);
+            // A little hysteresis, so a width right at the threshold does not flip back and forth.
+            const int threshold = std::max(m_needed, m_neededWide);
+            const bool wide = m_central->width() >= (wasWide ? threshold - kHysteresis : threshold);
             if (wasWide != wide) {
                 // The top row's text grows with the window (shadowlos.qss, [slWide="true"]).
                 // The toggle names keep their narrow width as the minimum, so the bigger text
@@ -1357,6 +1365,9 @@ namespace Shadowlos::ChromeImpl {
             }
             s.status->setWide(wide);
         }
+
+        // Another view has other cards (and the bottom bar), so the wide need is measured anew.
+        void resetWide() { m_neededWide = 0; }
 
         // The window's minimum follows what the shown parts need (a view switch, a font change),
         // never below the .ui's floor outside the minimal view.
@@ -1393,6 +1404,7 @@ namespace Shadowlos::ChromeImpl {
         // side margins and the gap between its two columns.
         static constexpr int kRowGaps = 24 + 3 * 8;
         static constexpr int kActionsFrame = 32 + 8;
+        static constexpr int kHysteresis = 16;
         bool m_minPending = false;
         int m_needed = 0;
         int m_neededWide = 0;
@@ -1720,7 +1732,10 @@ namespace Shadowlos::Chrome {
             // Back from the minimal view, or the last run ended in it.
             if ((!first && before == View::Minimal) || (first && window->width() < 700)) restoreFullGeometry(window);
         }
-        if (auto w = wideWatch()) w->relayout();
+        if (auto w = wideWatch()) {
+            if (view != before) w->resetWide();
+            w->relayout();
+        }
         qDebug().noquote() << "[view]" << viewName(view);
     }
 
@@ -1837,12 +1852,14 @@ namespace Shadowlos::Chrome {
 
     // The startup test measures the servers the group has when it starts. The subscription
     // update runs at the same time and may add servers a second later (1.0.13-dev: three new
-    // ones at the top of the list, «Результат теста» empty). So once that test is done, servers
-    // of the current group that have never been measured get one more group test. Each server
-    // is asked for at most once, so one that cannot be measured does not loop.
+    // ones at the top of the list, «Результат теста» empty). So once that test is done, the
+    // servers added to that same group since then are measured, those alone. Everything the
+    // group held when the startup test began, or when a follow-up began, counts as asked for:
+    // a server whose result a stopped test cleared is not tested again behind the user's back.
+    // «Остановить тесты» ends the follow-up, and so do ten minutes.
     class UntestedFollowUp final : public QObject {
     public:
-        explicit UntestedFollowUp(Ui::MainWindow *ui) : QObject(ui->profilesTableView), m_ui(ui) {
+        UntestedFollowUp(MainWindow *window, Ui::MainWindow *ui) : QObject(ui->profilesTableView), m_window(window), m_ui(ui) {
             m_timer.setSingleShot(true);
             m_timer.setInterval(3000);
             QObject::connect(&m_timer, &QTimer::timeout, this, [this] { check(); });
@@ -1851,51 +1868,57 @@ namespace Shadowlos::Chrome {
                 QObject::connect(model, &QAbstractItemModel::rowsInserted, this, [this] { m_timer.start(); });
                 QObject::connect(model, &QAbstractItemModel::layoutChanged, this, [this] { m_timer.start(); });
             }
-            // The servers the startup test is measuring now count as asked for.
-            for (int id : untested()) m_asked.insert(id);
+            QObject::connect(ui->menu_stop_testing, &QAction::triggered, this, [this] {
+                qDebug().noquote() << "[startup] tests stopped: no follow-up test";
+                deleteLater();
+            });
+            if (const auto group = Configs::dataManager->groupsRepo->CurrentGroup()) {
+                m_gid = group->id;
+                for (int id : group->Profiles()) m_asked.insert(id);
+            }
             m_stop.setSingleShot(true);
             QObject::connect(&m_stop, &QTimer::timeout, this, [this] { deleteLater(); });
             m_stop.start(10 * 60 * 1000); // only around startup
         }
 
     private:
-        static QList<int> untested() {
-            QList<int> ids;
-            const auto group = Configs::dataManager->groupsRepo->CurrentGroup();
-            if (group == nullptr) return ids;
-            for (int id : group->Profiles()) {
-                const auto profile = Configs::dataManager->profilesRepo->GetProfile(id);
-                if (profile && profile->outbound && profile->latency == 0) ids << id;
-            }
-            return ids;
-        }
-
         void check() {
-            if (!Configs::dataManager->settingsRepo->core_running || !m_ui->actionUrl_Test_Group->isEnabled()) return;
-            // A test still running (the startup one): look again when it is over.
-            if (ChromeImpl::generator() != nullptr && ShadowlosDataViewPeek::read(*ChromeImpl::generator()).busy) {
+            if (m_window.isNull() || m_gid < 0) return;
+            const auto group = Configs::dataManager->groupsRepo->GetGroup(m_gid);
+            if (group == nullptr) return;
+            QList<int> fresh;
+            for (int id : group->Profiles()) {
+                if (m_asked.contains(id)) continue;
+                const auto profile = Configs::dataManager->profilesRepo->GetProfile(id);
+                if (profile && profile->outbound && profile->latency == 0) fresh << id;
+            }
+            if (fresh.isEmpty()) return;
+            // Not while a test holds the runner (it would answer with a modal), a panel is busy,
+            // the core is down, or a connection is being made or taken down: look again later.
+            const auto st = static_cast<StartStopButton *>(m_ui->toolButton_startstop)->state();
+            const bool busy = !Configs::dataManager->settingsRepo->core_running || m_window->ShadowlosLatencyTestBusy() ||
+                              (ChromeImpl::generator() != nullptr && ShadowlosDataViewPeek::read(*ChromeImpl::generator()).busy) ||
+                              st == StartStopButton::State::Connecting || st == StartStopButton::State::Disconnecting;
+            if (busy) {
                 m_timer.start();
                 return;
             }
-            bool fresh = false;
-            for (int id : untested()) {
-                if (m_asked.contains(id)) continue;
-                m_asked.insert(id);
-                fresh = true;
-            }
-            if (!fresh) return;
-            qDebug().noquote() << "[startup] servers added after the startup test: measuring the group again";
-            m_ui->actionUrl_Test_Group->trigger();
+            // From here on the whole group as it is now counts as asked for.
+            for (int id : group->Profiles()) m_asked.insert(id);
+            qDebug().noquote() << "[startup] measuring" << fresh.size() << "server(s) added after the startup test";
+            m_window->ShadowlosUrlTest(fresh);
         }
 
+        QPointer<MainWindow> m_window;
         Ui::MainWindow *m_ui;
+        int m_gid = -1;
         QTimer m_timer;
         QTimer m_stop;
         QSet<int> m_asked;
     };
 
     void installUntestedFollowUp(Ui::MainWindow *ui) {
-        new UntestedFollowUp(ui);
+        if (auto *window = qobject_cast<MainWindow *>(ui->profilesTableView->window())) new UntestedFollowUp(window, ui);
     }
 
     // Measures latency once at startup, as the "Measure latency" pill would, as soon as the

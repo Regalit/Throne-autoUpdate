@@ -101,7 +101,8 @@ namespace Shadowlos::Journal {
             int coreLines = 0;
             int coreSkipped = 0;
             struct Repeat {
-                QElapsedTimer since; // the first write in this window
+                QElapsedTimer since;    // the first write in this window
+                QElapsedTimer lastSeen; // the last repeat
                 int count = 0;       // lines not written since
                 QString line;
                 bool fail = false;
@@ -473,6 +474,7 @@ namespace Shadowlos::Journal {
             QMutexLocker lock(&s.mutex);
             if (!on) {
                 s.on = false;
+                s.repeats.clear();
                 s.file.close();
                 QFile::remove(path("journal.jsonl"));
                 QFile::remove(path("upload.json"));
@@ -874,7 +876,7 @@ namespace Shadowlos::Journal {
         // One line with how often a core line repeated in its window.
         void flushOneLocked(const State::Repeat &r) {
             const QString what = QStringLiteral("repeated %1 more times in %2 min: %3")
-                                     .arg(r.count).arg((r.since.elapsed() + 59999) / 60000).arg(r.line);
+                                     .arg(r.count).arg((r.since.elapsed() - r.lastSeen.elapsed() + 59999) / 60000).arg(r.line);
             writeLocked(r.core ? "core-go" : "app", r.core ? "ThroneCore" : "log", r.fail ? "fail" : "ok", {}, what);
         }
 
@@ -920,28 +922,31 @@ namespace Shadowlos::Journal {
                 s.coreLines = 0;
                 s.coreSkipped = 0;
             }
-            if (++s.coreLines > kCoreLinesPerMinute) {
-                ++s.coreSkipped;
-                continue;
-            }
+            // The connect's failure report wants the real error, a counted repeat included.
+            if (fail) s.lastFail = line.left(500);
             // GUI lines (subscription, config build) go under app, the core's under core-go.
             const bool core = coreRe.match(line).hasMatch();
             static const QRegularExpression digits(QStringLiteral(R"(\d+)"));
             const QString key = QString(line).replace(digits, QStringLiteral("#")).left(300);
             if (auto it = s.repeats.find(key); it != s.repeats.end() && it->since.elapsed() < kRepeatWindowMs) {
                 ++it->count;
+                it->lastSeen.start();
+                continue; // counted, not written: it does not use up the rate cap either
+            }
+            if (++s.coreLines > kCoreLinesPerMinute) {
+                ++s.coreSkipped;
                 continue;
             }
             if (s.repeats.size() >= kRepeatKeys && !s.repeats.contains(key)) flushRepeatsLocked(true);
             auto &r = s.repeats[key];
             if (r.count > 0) flushOneLocked(r);
             r.since.start();
+            r.lastSeen.start();
             r.count = 0;
-            r.line = line;
+            r.line = line.left(kMaxFieldChars);
             r.fail = fail;
             r.core = core;
             if (fail) {
-                s.lastFail = line.left(500);
                 writeLocked(core ? "core-go" : "app", core ? "ThroneCore" : "log", "fail", {}, line);
             } else {
                 writeLocked(core ? "core-go" : "app", core ? "ThroneCore" : "log", "ok", line);

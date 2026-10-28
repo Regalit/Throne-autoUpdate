@@ -4,6 +4,7 @@
 #include <QtGlobal>
 
 class QMainWindow;
+class DataViewHtmlGenerator;
 namespace Ui {
     class MainWindow;
 }
@@ -15,9 +16,10 @@ namespace Ui {
 //  - The "Shadowlos" theme (palette in ThemeManager, sheet in res/shadowlos/shadowlos.qss).
 //    It paints every window, dialog, menu and form, so nothing here has to touch
 //    the upstream .ui files.
-//  - Install(), which rebuilds the main window's top area into the design's cards:
-//    a menu card, then power / actions / debug / modes cards, the profile and log tabs,
-//    and a status card. It only re-parents widgets uic already created, so
+//  - Install(), which rebuilds the main window into the design's cards: a menu card
+//    (menus left, «Вид» and «Обновить» right), a row of power / quick actions / toggles /
+//    status card, the profile and log tabs, and a bottom bar (version, blocking badge,
+//    routing switch). Three views: Минимальный (power and status only), Обычный, Продвинутый. It only re-parents widgets uic already created, so
 //    mainwindow.ui stays upstream's and every existing connection keeps working.
 //
 // Kept in our own files so an upstream bump only has to re-apply a few one-line hooks
@@ -38,8 +40,8 @@ namespace Shadowlos::Chrome {
     // Rebuilds the main window. Call once, straight after ui->setupUi().
     void Install(QMainWindow *window, Ui::MainWindow *ui);
 
-    // Corner labels in the status card: the app version at its left end and, at its right
-    // end, how long the running profile has been connected (mm:ss, then h:mm:ss; hidden
+    // Corner labels: the app version at the left of the bottom bar and, at the right of the
+    // status card's title, how long the running profile has been connected (mm:ss, then h:mm:ss; hidden
     // while nothing runs). Call with true once a profile has started, false when it stops.
     // UI thread only.
     void ConnectStopwatch(bool connected);
@@ -50,4 +52,13 @@ namespace Shadowlos::Chrome {
 
     // The status card is a single line; the texts it shows are written for two.
     QString StatusLine(const QString &text);
+
+    // The data view's panels (tests, downloads, the restart notice) changed: the status card
+    // shows them in plain words. Called from MainWindow::UpdateDataView on the UI thread.
+    void DataViewChanged(DataViewHtmlGenerator *generator);
+
+    // Dev builds only: SHADOWLOS_UI_DEMO=on|busy|off, read at start, drives the status card,
+    // the power button and the bottom bar for screenshots without a connection. Always empty
+    // in prod.
+    QString UiDemo();
 }

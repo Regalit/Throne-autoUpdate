@@ -39,8 +39,9 @@ void MainWindow::applyTopBarMetrics() {
     // Shadowlos chrome sizes each menu button to its own label.
     if (property("slVariableWidthMenus").toBool()) {
         const QSize contentMin = minimumSizeHint();
-        setMinimumSize(qMax(designMinimumSize.width(), contentMin.width()),
-                       qMax(designMinimumSize.height(), contentMin.height()));
+        // The minimal view is smaller than the design's floor.
+        const QSize floor = property("slCompactWindow").toBool() ? QSize(0, 0) : designMinimumSize;
+        setMinimumSize(qMax(floor.width(), contentMin.width()), qMax(floor.height(), contentMin.height()));
         return;
     }
 
@@ -71,6 +72,7 @@ void MainWindow::UpdateDataView(bool force)
     auto html = dataViewHtmlGenerator_.buildHtml();
     runOnUiThread([=, this] {
         ui->data_view->setHtml(html);
+        Shadowlos::Chrome::DataViewChanged(&dataViewHtmlGenerator_); // Shadowlos: status card
     }, true);
     lastUpdatedMs.store(QDateTime::currentMSecsSinceEpoch());
 }

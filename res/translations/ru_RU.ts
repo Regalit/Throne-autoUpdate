@@ -9710,15 +9710,171 @@ Remove that endpoint from this routing profile as well?</source>
     </message>
     <message>
         <source>Measure latency</source>
-        <translation>Замерить время отклика</translation>
+        <translation>Замерить отклик</translation>
     </message>
     <message>
         <source>Update app</source>
         <translation>Обновить</translation>
     </message>
     <message>
-        <source>Simple view</source>
-        <translation>Упрощённый вид</translation>
+        <source>%1 h %2 min</source>
+        <translation>%1 ч %2 мин</translation>
+    </message>
+    <message>
+        <source>%1 min</source>
+        <translation>%1 мин</translation>
+    </message>
+    <message>
+        <source>%1 of %2</source>
+        <translation>%1 из %2</translation>
+    </message>
+    <message>
+        <source>Adds a server from the clipboard, a link, a file or a QR code.</source>
+        <translation>Добавляет сервер из буфера обмена, ссылки, файла или QR-кода.</translation>
+    </message>
+    <message>
+        <source>Advanced</source>
+        <translation>Продвинутый</translation>
+    </message>
+    <message>
+        <source>Checking addresses</source>
+        <translation>Проверяю адреса</translation>
+    </message>
+    <message>
+        <source>Checking addresses: %1</source>
+        <translation>Проверяю адреса: %1</translation>
+    </message>
+    <message>
+        <source>Checking servers</source>
+        <translation>Проверяю серверы</translation>
+    </message>
+    <message>
+        <source>Checking servers: %1</source>
+        <translation>Проверяю серверы: %1</translation>
+    </message>
+    <message>
+        <source>Checks the speed of every server in the list. Takes up to a minute.</source>
+        <translation>Проверяет скорость всех серверов из списка. Занимает до минуты.</translation>
+    </message>
+    <message>
+        <source>Checks which servers answer and how fast.</source>
+        <translation>Проверяет, какие серверы отвечают и как быстро.</translation>
+    </message>
+    <message>
+        <source>Connected</source>
+        <translation>Подключено</translation>
+    </message>
+    <message>
+        <source>Connecting to the server</source>
+        <translation>Подключаюсь к серверу</translation>
+    </message>
+    <message>
+        <source>Connecting</source>
+        <translation>Подключаюсь</translation>
+    </message>
+    <message>
+        <source>Detailed log</source>
+        <translation>Подробный журнал</translation>
+    </message>
+    <message>
+        <source>Disconnected</source>
+        <translation>Отключено</translation>
+    </message>
+    <message>
+        <source>Disconnecting</source>
+        <translation>Отключаюсь</translation>
+    </message>
+    <message>
+        <source>Downloading</source>
+        <translation>Скачиваю</translation>
+    </message>
+    <message>
+        <source>Downloads the latest server list from your subscription.</source>
+        <translation>Скачивает свежий список серверов из подписки.</translation>
+    </message>
+    <message>
+        <source>Finding server countries</source>
+        <translation>Определяю страны серверов</translation>
+    </message>
+    <message>
+        <source>Hide log</source>
+        <translation>Скрыть журнал</translation>
+    </message>
+    <message>
+        <source>Measuring latency</source>
+        <translation>Замеряю отклик</translation>
+    </message>
+    <message>
+        <source>Measuring latency: %1</source>
+        <translation>Замеряю отклик: %1</translation>
+    </message>
+    <message>
+        <source>Measuring speed</source>
+        <translation>Замеряю скорость</translation>
+    </message>
+    <message>
+        <source>Minimal</source>
+        <translation>Минимальный</translation>
+    </message>
+    <message>
+        <source>Normal</source>
+        <translation>Обычный</translation>
+    </message>
+    <message>
+        <source>Not now</source>
+        <translation>Не сейчас</translation>
+    </message>
+    <message>
+        <source>Online %1</source>
+        <translation>В сети %1</translation>
+    </message>
+    <message>
+        <source>Press the button to connect</source>
+        <translation>Нажмите кнопку, чтобы подключиться</translation>
+    </message>
+    <message>
+        <source>Restart</source>
+        <translation>Перезапустить</translation>
+    </message>
+    <message>
+        <source>Settings changed</source>
+        <translation>Настройки изменены</translation>
+    </message>
+    <message>
+        <source>No server</source>
+        <translation>Нет сервера</translation>
+    </message>
+    <message>
+        <source>Add a config or select one server</source>
+        <translation>Добавьте конфиг или выберите один сервер</translation>
+    </message>
+    <message>
+        <source>%1 ms</source>
+        <translation>%1 мс</translation>
+    </message>
+    <message>
+        <source>View: %1</source>
+        <translation>Вид: %1</translation>
+    </message>
+    <message>
+        <source>all Throne settings</source>
+        <translation>все настройки Throne</translation>
+    </message>
+    <message>
+        <source>button and status only</source>
+        <translation>только кнопка и статус</translation>
+    </message>
+    <message>
+        <source>mode «%1»</source>
+        <translation>режим «%1»</translation>
+    </message>
+    <message>
+        <source>servers and the main settings</source>
+        <translation>серверы и основные настройки</translation>
+    </message>
+    <message>
+        <source>traffic %1</source>
+        <translation>трафик %1</translation>
     </message>
 </context>
 <context>

@@ -32,7 +32,8 @@ namespace Shadowlos::Routing {
 
     namespace {
 
-        const QString RegionalName = QStringLiteral("Настройка под ваш регион");
+        // Until 1.0.13 «Настройка под ваш регион»; MakeSwitch renames a profile made before.
+        const QString RegionalName = QStringLiteral("Под ваш регион");
         constexpr qint64 kRefreshEverySecs = 24 * 60 * 60;
         constexpr qint64 kRetryAfterSecs = 30 * 60;
 
@@ -203,6 +204,13 @@ namespace Shadowlos::Routing {
     } // namespace
 
     QWidget *MakeSwitch(QWidget *parent) {
+        // The regional profile's old name, «Настройка под ваш регион», shortened.
+        if (const auto profile = route(settings()->shadowlos_regional_route); profile && profile->name != RegionalName) {
+            if (settings()->active_routing == profile->name) settings()->active_routing = RegionalName;
+            profile->name = RegionalName;
+            Configs::dataManager->routesRepo->Save(profile);
+            settings()->Save();
+        }
         auto *box = new QWidget(parent);
         box->setObjectName(QStringLiteral("slRouteSwitch"));
         auto *row = new QHBoxLayout(box);
@@ -213,8 +221,8 @@ namespace Shadowlos::Routing {
 
         const struct { int mode; QString text; QString tip; } items[] = {
             {Comfy, ComfyRouteProfileName(), translate("Russian sites directly, everything else through the VPN")},
-            {Regional, RegionalName, translate("Rules picked for your region and provider")},
             {AllVpn, Configs::RouteProfile::DefaultChainName(), translate("All traffic through the VPN")},
+            {Regional, RegionalName, translate("Rules picked for your region and provider")},
         };
         for (const auto &item : items) {
             auto *button = new QToolButton(box);

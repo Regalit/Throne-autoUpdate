@@ -86,6 +86,8 @@ public:
     QString buildHtml();
 
 private:
+    friend struct ShadowlosDataViewPeek; // Shadowlos: the status card reads the panels in plain words
+
     static QString getProgressBar(long long current, long long total);
 
     // Assumes mu_ is held.

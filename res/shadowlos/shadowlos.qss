@@ -20,10 +20,11 @@
  * widgets that pick a monospace font with setFont() keep it.
  *
  * Main-window objects tagged by ShadowlosChrome:
- *   QFrame#slMenuCard, QFrame#slCard, QFrame#slStatusPanel, QFrame#slBottomBar, QFrame#slMascot
- *   QToolButton[slRole="menu"|"pill"|"viewChip"|"link"], QToolButton#slFilterButton
+ *   QFrame#slMenuCard, QFrame#slCard, QFrame#slStatusPanel, QFrame#slBottomBar
+ *   QToolButton[slRole="menu"|"pill"|"viewWord"|"link"], QToolButton#slFilterButton
  *   QCheckBox[slRole="toggle"], QLabel[slRole="toggleLabel"|"status"|"corner"|"badge"|"updateStatus"|"updateStatusTag"]
  *   QLabel[slRole="statusTitle"|"statusDetail"|"statusAction"|"viewItemName"|"viewItemLine"], QFrame#slViewItem
+ *   QLabel[slRole="viewLineText"|"improveLabel"|"improveHint"]
  */
 
 /* ------------------------------------------------------------------ base */
@@ -116,12 +117,6 @@ QProgressBar#slStatusProgress::chunk {
     border-radius: 2px;
 }
 
-/* The mascot area: an empty placeholder of fixed size until the drawing comes. */
-QFrame#slMascot {
-    background: transparent;
-    border: 1px dashed #2E3438;
-    border-radius: 12px;
-}
 
 /* Thin separators in the bottom bar. */
 QFrame#slSep {
@@ -160,28 +155,45 @@ QLabel[slRole="viewItemLine"] {
     background: transparent;
 }
 
-/* «Вид: Минимальный» under the power button in the minimal view. */
-QToolButton[slRole="viewChip"] {
-    background-color: #111517;
-    border: 1px solid #2E3438;
-    border-radius: 10px;
+/* Минимальный: «Вид: Минимальный · Обычный · Продвинутый», one quiet centred line under the
+   cards; the current view in a light accent, a click on a name switches to it. */
+QLabel[slRole="viewLineText"] {
+    color: #6F7880;
+    font-size: 13px;
+    background: transparent;
+}
+
+QToolButton[slRole="viewWord"] {
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #8A949B;
+    font-size: 13px;
+    padding: 2px 4px;
+}
+
+QToolButton[slRole="viewWord"]:hover {
     color: #C7CDD1;
+}
+
+QToolButton[slRole="viewWord"][slCurrent="true"] {
+    color: #8CC4FF;
+    font-weight: 500;
+}
+
+/* Dev builds, bottom bar (Обычный): «Улучшение обхода» before its switch, and the hint while
+   it is off. Plain grey text, no background or frame. */
+QLabel[slRole="improveLabel"] {
+    color: #8A949B;
     font-size: 12px;
     font-weight: 500;
-    padding: 4px 28px 4px 10px;
+    background: transparent;
 }
 
-QToolButton[slRole="viewChip"]:hover {
-    background-color: #232A2E;
-}
-
-QToolButton[slRole="viewChip"]::menu-indicator {
-    image: url(:/shadowlos/icons/chevron-down.png);
-    subcontrol-origin: padding;
-    subcontrol-position: center right;
-    width: 14px;
-    height: 14px;
-    right: 8px;
+QLabel[slRole="improveHint"] {
+    color: #6F7880;
+    font-size: 12px;
+    background: transparent;
 }
 
 QLabel[slRole="status"] {

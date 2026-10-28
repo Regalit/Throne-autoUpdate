@@ -15,7 +15,7 @@ import (
 
 // A remote rule set that is not cached is downloaded while the core starts, and a
 // failure aborts the start. These pin how that download picks its route, using the
-// same Create the GUI's config goes through. The default route is a dead proxy,
+// strict start (createOnce, no rule-set fallback) the GUI's config goes through. The default route is a dead proxy,
 // standing in for an exit node that refuses the (Russian) mirror host.
 func rulesetConfig(t *testing.T, url string, ruleSetExtra map[string]any) []byte {
 	t.Helper()
@@ -79,7 +79,7 @@ func TestRemoteRuleSetDownload(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Chdir(t.TempDir()) // a fresh cache.db, so nothing is cached
-			inst, cancel, err := Create(rulesetConfig(t, url, tc.extra), nil)
+			inst, cancel, err := createOnce(rulesetConfig(t, url, tc.extra), nil)
 			if tc.wantErr == "" {
 				if err != nil {
 					t.Fatalf("core did not start: %v", err)

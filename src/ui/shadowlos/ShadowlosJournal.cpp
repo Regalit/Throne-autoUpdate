@@ -52,6 +52,10 @@ namespace Shadowlos::Journal {
         constexpr int kMaxFieldChars = 4000;
         constexpr qint64 kInfoWindowMs = 30 * 1000;
         constexpr int kCoreLinesPerMinute = 120;
+        // The same core line again within this time is counted, not written (one dead
+        // WireGuard endpoint wrote 2300 identical lines); the count follows as one line.
+        constexpr qint64 kRepeatWindowMs = 10 * 60 * 1000;
+        constexpr int kRepeatKeys = 200;
         constexpr int kFirstUploadMs = 20 * 1000;
         constexpr int kUploadEveryMs = 3 * 60 * 1000;
         constexpr int kNextPacketMs = 20 * 1000; // the server takes 4 uploads a minute per user
@@ -96,6 +100,15 @@ namespace Shadowlos::Journal {
             QElapsedTimer coreMinute;
             int coreLines = 0;
             int coreSkipped = 0;
+            struct Repeat {
+                QElapsedTimer since;    // the first write in this window
+                QElapsedTimer lastSeen; // the last repeat
+                int count = 0;       // lines not written since
+                QString line;
+                bool fail = false;
+                bool core = false;
+            };
+            QHash<QString, Repeat> repeats; // by the line with its numbers taken out
         };
 
         State &st() {
@@ -461,6 +474,7 @@ namespace Shadowlos::Journal {
             QMutexLocker lock(&s.mutex);
             if (!on) {
                 s.on = false;
+                s.repeats.clear();
                 s.file.close();
                 QFile::remove(path("journal.jsonl"));
                 QFile::remove(path("upload.json"));
@@ -858,6 +872,28 @@ namespace Shadowlos::Journal {
         return body;
     }
 
+    namespace {
+        // One line with how often a core line repeated in its window.
+        void flushOneLocked(const State::Repeat &r) {
+            const QString what = QStringLiteral("repeated %1 more times in %2 min: %3")
+                                     .arg(r.count).arg((r.since.elapsed() - r.lastSeen.elapsed() + 59999) / 60000).arg(r.line);
+            writeLocked(r.core ? "core-go" : "app", r.core ? "ThroneCore" : "log", r.fail ? "fail" : "ok", {}, what);
+        }
+
+        // Writes the counts of repeated core lines whose window is over ([all]: every one).
+        void flushRepeatsLocked(bool all) {
+            auto &s = st();
+            for (auto it = s.repeats.begin(); it != s.repeats.end();) {
+                if (!all && it->since.elapsed() < kRepeatWindowMs) {
+                    ++it;
+                    continue;
+                }
+                if (it->count > 0) flushOneLocked(*it);
+                it = s.repeats.erase(it);
+            }
+        }
+    } // namespace
+
     void CoreLog(const QString &text) {
         // Failures as sing-box and Throne print them: "ERROR[0012]", "[Fatal]", "[Core error]", "panic:".
         static const QRegularExpression failRe(QStringLiteral(
@@ -877,6 +913,7 @@ namespace Shadowlos::Journal {
             const bool fail = failRe.match(line).hasMatch();
             if (!fail && !window && !warnRe.match(line).hasMatch()) continue;
             if (!s.coreMinute.isValid() || s.coreMinute.elapsed() >= 60 * 1000) {
+                flushRepeatsLocked(false);
                 if (s.coreSkipped > 0) {
                     writeLocked("core-go", "rate-cap", "fail", {},
                                 QStringLiteral("%1 log lines skipped (over %2 a minute)").arg(s.coreSkipped).arg(kCoreLinesPerMinute));
@@ -885,14 +922,31 @@ namespace Shadowlos::Journal {
                 s.coreLines = 0;
                 s.coreSkipped = 0;
             }
+            // The connect's failure report wants the real error, a counted repeat included.
+            if (fail) s.lastFail = line.left(500);
+            // GUI lines (subscription, config build) go under app, the core's under core-go.
+            const bool core = coreRe.match(line).hasMatch();
+            static const QRegularExpression digits(QStringLiteral(R"(\d+)"));
+            const QString key = QString(line).replace(digits, QStringLiteral("#")).left(300);
+            if (auto it = s.repeats.find(key); it != s.repeats.end() && it->since.elapsed() < kRepeatWindowMs) {
+                ++it->count;
+                it->lastSeen.start();
+                continue; // counted, not written: it does not use up the rate cap either
+            }
             if (++s.coreLines > kCoreLinesPerMinute) {
                 ++s.coreSkipped;
                 continue;
             }
-            // GUI lines (subscription, config build) go under app, the core's under core-go.
-            const bool core = coreRe.match(line).hasMatch();
+            if (s.repeats.size() >= kRepeatKeys && !s.repeats.contains(key)) flushRepeatsLocked(true);
+            auto &r = s.repeats[key];
+            if (r.count > 0) flushOneLocked(r);
+            r.since.start();
+            r.lastSeen.start();
+            r.count = 0;
+            r.line = line.left(kMaxFieldChars);
+            r.fail = fail;
+            r.core = core;
             if (fail) {
-                s.lastFail = line.left(500);
                 writeLocked(core ? "core-go" : "app", core ? "ThroneCore" : "log", "fail", {}, line);
             } else {
                 writeLocked(core ? "core-go" : "app", core ? "ThroneCore" : "log", "ok", line);

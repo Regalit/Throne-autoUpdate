@@ -103,7 +103,11 @@ namespace Shadowlos::Journal {
         static const Rx userDir(QStringLiteral(R"(([\\/])Users([\\/])(?:[^\\/"'<>\r\n]{1,64}?(?=[\\/])|[^\\/\s"'<>]+))"), CI);
         static const Rx base64(QStringLiteral(R"([A-Za-z0-9+/_-]{32,}={0,2})"));
 
+        // WireGuard names its peer by public key, often cut short ("peer(bmXO...)").
+        static const Rx wgPeer(QStringLiteral(R"(\bpeer\([^)\s]{4,}\))"), CI);
+
         QString s = text;
+        s.replace(wgPeer, QStringLiteral("peer(<key>)"));
         s.replace(userDir, QStringLiteral("\\1Users\\2<user>"));
         s.replace(uri, QStringLiteral("\\1://<redacted>"));
         s.replace(jwt, QStringLiteral("<jwt>"));
@@ -237,6 +241,7 @@ namespace Shadowlos::Journal {
              "ShadowlosJournal.cpp 10.0.26200 v1.0.4-dev ThroneCore.exe geoip.dat throne.db QApplication.MainWindow"},
             {R"({"password":"x","server": "h"})", R"({"password":<redacted>,"server": <redacted>})"},
             {"hash_abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789 end", "hash_<hex> end"},
+            {"peer(bmXOC+F1) - failed to resolve endpoints", "peer(<key>) - failed to resolve endpoints"},
             {R"(C:\Users\Ivan\AppData\Local\x)", R"(C:\Users\<user>\AppData\Local\x)"},
             {R"(C:/Users/ivan.petrov/AppData and C:\Users\John Smith\Desktop)", R"(C:/Users/<user>/AppData and C:\Users\<user>\Desktop)"},
         };

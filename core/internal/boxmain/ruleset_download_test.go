@@ -3,9 +3,11 @@ package boxmain
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/sagernet/sing-box/common/srs"
@@ -93,9 +95,17 @@ func TestRemoteRuleSetDownload(t *testing.T) {
 				cancel()
 				t.Fatalf("core started, want an error containing %q", tc.wantErr)
 			}
-			if !strings.Contains(err.Error(), tc.wantErr) {
+			if !strings.Contains(err.Error(), tc.wantErr) && !windowsRefused(err, tc.wantErr) {
 				t.Fatalf("error = %v, want it to contain %q", err, tc.wantErr)
 			}
 		})
 	}
+}
+
+// Windows words a refused connect differently: WSAECONNREFUSED (10061), "actively refused it".
+func windowsRefused(err error, want string) bool {
+	if want != "connection refused" {
+		return false
+	}
+	return errors.Is(err, syscall.Errno(10061)) || strings.Contains(err.Error(), "actively refused")
 }

@@ -54,6 +54,7 @@ type chain struct {
 	calls     []string
 	fakes     map[string]*fakeTransport
 	clock     *clock
+	announced []string
 }
 
 // newChain builds primary > 8.8.8.8 > 9.9.9.9 > dns-local; withLocal false leaves dns-local out of the box.
@@ -74,6 +75,7 @@ func newChain(withLocal bool) *chain {
 		return local
 	}})
 	c.transport = newTransport(c.fakes["1.1.1.1:443"], nil, "test", members, newBlockList(c.clock.now))
+	c.transport.announce = func(_ context.Context, line string) { c.announced = append(c.announced, line) }
 	return c
 }
 
@@ -103,6 +105,9 @@ func TestIsAccessDenied(t *testing.T) {
 		{"eacces", &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.EACCES)}, true},
 		{"eperm", &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.EPERM)}, true},
 		{"refused", &net.OpError{Op: "dial", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)}, false},
+		// WSAECONNREFUSED and WSAECONNRESET: the server said no, the PC did not (ECONNREFUSED is not 10061 on Windows).
+		{"wsaeconnrefused", &net.OpError{Op: "dial", Err: os.NewSyscallError("connectex", syscall.Errno(10061))}, false},
+		{"wsaeconnreset", &net.OpError{Op: "read", Err: os.NewSyscallError("wsarecv", syscall.Errno(10054))}, false},
 		{"deadline", context.DeadlineExceeded, false},
 		{"timeout text", errors.New("dial tcp 1.1.1.1:443: i/o timeout"), false},
 	}
@@ -217,5 +222,61 @@ func TestApplies(t *testing.T) {
 	}
 	if got := strings.Join(alternatesFor("1.1.1.1"), ","); got != "8.8.8.8,9.9.9.9" {
 		t.Errorf("alternates for 1.1.1.1: %s", got)
+	}
+}
+
+func TestFallbackTimeoutMovesOn(t *testing.T) {
+	c := newChain(true)
+	c.fakes["1.1.1.1:443"].err = refusedDial("1.1.1.1")
+	c.fakes["8.8.8.8:443"].err = context.DeadlineExceeded // dropped silently
+	if err := c.exchange(t); err != nil {
+		t.Fatal(err)
+	}
+	c.expectCalls(t, "1.1.1.1:443", "8.8.8.8:443", "9.9.9.9:443")
+	// The silent one is remembered too.
+	if err := c.exchange(t); err != nil {
+		t.Fatal(err)
+	}
+	c.expectCalls(t, "9.9.9.9:443")
+
+	// Every DoH silent: the system resolver still gets its turn.
+	c = newChain(true)
+	c.fakes["1.1.1.1:443"].err = refusedDial("1.1.1.1")
+	c.fakes["8.8.8.8:443"].err = context.DeadlineExceeded
+	c.fakes["9.9.9.9:443"].err = context.DeadlineExceeded
+	if err := c.exchange(t); err != nil {
+		t.Fatal(err)
+	}
+	c.expectCalls(t, "1.1.1.1:443", "8.8.8.8:443", "9.9.9.9:443", LocalTag)
+}
+
+func TestSwitchIsLoggedOncePerChange(t *testing.T) {
+	c := newChain(true)
+	c.fakes["1.1.1.1:443"].err = refusedDial("1.1.1.1")
+	for range 3 {
+		if err := c.exchange(t); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := "dns-direct [test]: 1.1.1.1:443 blocked locally, using 8.8.8.8:443"
+	if len(c.announced) != 1 || c.announced[0] != want {
+		t.Fatalf("announced %q, want once %q", c.announced, want)
+	}
+
+	c.fakes["8.8.8.8:443"].err = refusedDial("8.8.8.8")
+	c.clock.t = c.clock.t.Add(BlockedFor + time.Second)
+	_ = c.exchange(t)
+	if len(c.announced) != 2 || !strings.HasSuffix(c.announced[1], "using 9.9.9.9:443") {
+		t.Fatalf("a new fallback server is announced again: %q", c.announced)
+	}
+
+	// The primary back, then blocked again: announced again.
+	c.fakes["1.1.1.1:443"].err = nil
+	c.clock.t = c.clock.t.Add(BlockedFor + time.Second)
+	_ = c.exchange(t)
+	c.fakes["1.1.1.1:443"].err = refusedDial("1.1.1.1")
+	_ = c.exchange(t)
+	if len(c.announced) != 3 {
+		t.Fatalf("a switch after the primary recovered is announced: %q", c.announced)
 	}
 }

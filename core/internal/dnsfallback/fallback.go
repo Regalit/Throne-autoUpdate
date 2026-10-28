@@ -38,6 +38,10 @@ const (
 // How long a destination that refused us stays skipped; a later lookup then tries it again.
 const BlockedFor = 10 * time.Minute
 
+// One fallback DoH that drops packets silently must not use up the whole lookup budget: the next server
+// (in the end the system resolver) still needs time to answer.
+const fallbackAttemptTimeout = 2 * time.Second
+
 // Tried in this order after the configured DoH, each only when the one before was refused locally.
 var alternateServers = []string{"8.8.8.8", "9.9.9.9"}
 
@@ -76,7 +80,9 @@ func Register(registry *dns.TransportRegistry, role string) {
 				alternate.Server = server
 				altTransport, altErr := transport.NewHTTPS(ctx, logger, tag, alternate)
 				if altErr != nil {
-					return nil, altErr
+					// A spare that cannot be built must not stop the box; the chain just goes without it.
+					logger.Warn(tag, ": fallback DNS ", server, " skipped: ", altErr)
+					continue
 				}
 				members = append(members, member{key: serverKey(server, 0), transport: altTransport, owned: true})
 			}
@@ -185,12 +191,23 @@ type fallbackTransport struct {
 	role    string
 	members []member
 	blocks  *blockList
+	// The fallback server last announced in the log; the switch line is written once per change.
+	announceAccess sync.Mutex
+	announced      string
+	// Logs the switch at warn: the dev journal keeps a warning as ok, it is not a failure. Swapped in tests.
+	announce func(ctx context.Context, line string)
 }
 
 var _ adapter.DNSTransport = (*fallbackTransport)(nil)
 
 func newTransport(primary adapter.DNSTransport, logger log.ContextLogger, role string, members []member, blocks *blockList) *fallbackTransport {
-	return &fallbackTransport{primary: primary, logger: logger, role: role, members: members, blocks: blocks}
+	t := &fallbackTransport{primary: primary, logger: logger, role: role, members: members, blocks: blocks}
+	t.announce = func(ctx context.Context, line string) {
+		if t.logger != nil {
+			t.logger.WarnContext(ctx, line)
+		}
+	}
+	return t
 }
 
 func (t *fallbackTransport) Type() string           { return t.primary.Type() }
@@ -253,27 +270,55 @@ func (t *fallbackTransport) candidates() []member {
 	return open
 }
 
+// Exchange tries the configured DoH, and moves on only when it is refused locally: a timeout there is not a
+// block, and the next server would be no likelier to answer. Once past it (refused now, or remembered as
+// refused), any failure of a fallback server moves on, up to the system resolver, and is remembered too.
 func (t *fallbackTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+	candidates := t.candidates()
+	primaryKey := t.members[0].key
 	var lastErr error
-	for i, m := range t.candidates() {
+	for i, m := range candidates {
 		if i > 0 && ctx.Err() != nil {
 			break
 		}
-		response, err := m.transport.Exchange(ctx, message)
+		isPrimary := m.key == primaryKey
+		last := i == len(candidates)-1
+		attemptCtx := ctx
+		if !isPrimary && !last {
+			var cancel context.CancelFunc
+			attemptCtx, cancel = context.WithTimeout(ctx, fallbackAttemptTimeout)
+			defer cancel()
+		}
+		response, err := m.transport.Exchange(attemptCtx, message)
 		if err == nil {
+			t.announceSwitch(ctx, primaryKey, m.key, isPrimary)
 			return response, nil
 		}
 		lastErr = err
-		if !IsAccessDenied(err) {
+		if isPrimary && !IsAccessDenied(err) {
 			break
 		}
 		if t.blocks.mark(m.key) && t.logger != nil {
-			t.logger.WarnContext(ctx, t.Tag(), " [", t.role, "]: ", m.key, " is blocked on this PC (",
-				err, "), trying the next DNS server; skipped for ", BlockedFor)
+			t.logger.DebugContext(ctx, t.Tag(), " [", t.role, "]: ", m.key, " failed (", err,
+				"), trying the next DNS server; skipped for ", BlockedFor)
 		}
 	}
 	if lastErr == nil {
 		lastErr = E.New("no DNS server available")
 	}
 	return nil, E.Cause(lastErr, t.Tag(), " [", t.role, "]")
+}
+
+// The primary answering again clears the memo, so a later switch is logged again.
+func (t *fallbackTransport) announceSwitch(ctx context.Context, blocked, using string, isPrimary bool) {
+	if isPrimary {
+		using = ""
+	}
+	t.announceAccess.Lock()
+	changed := t.announced != using
+	t.announced = using
+	t.announceAccess.Unlock()
+	if changed && using != "" {
+		t.announce(ctx, t.Tag()+" ["+t.role+"]: "+blocked+" blocked locally, using "+using)
+	}
 }

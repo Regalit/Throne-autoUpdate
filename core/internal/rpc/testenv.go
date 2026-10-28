@@ -77,7 +77,7 @@ func prepareTestEnv(current bool, needXray bool, xrayConfig string, xrayFullConf
 	}
 	cleanups = append(cleanups, func() { closeXrayInstances(fullXray) })
 
-	box, cancel, err := boxmain.Create([]byte(coreConfig), boxCtx.publish, func(options *option.Options) {
+	box, cancel, err := boxmain.CreateWithRole(boxmain.RoleTest, []byte(coreConfig), boxCtx.publish, func(options *option.Options) {
 		applyAutoRedirectMark(options, autoRedirectMark.Load())
 	})
 	if err != nil {

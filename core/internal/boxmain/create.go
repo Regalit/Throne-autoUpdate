@@ -24,10 +24,21 @@ func parseConfig(ctx context.Context, configContent []byte) (*option.Options, er
 	return &options, nil
 }
 
+// Roles tag a box's dns-direct errors in the log, so a journal line says which config failed.
+const (
+	RoleProfile = "profile"
+	RoleTest    = "test"
+)
+
 // onCreated runs between New and Start: the Xray sidecars start first and resolve through this box.
 func Create(configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*option.Options)) (*boxbox.Box, context.CancelFunc, error) {
+	return CreateWithRole(RoleProfile, configContent, onCreated, adjust...)
+}
+
+// CreateWithRole is Create for a box that is not the running profile (a latency or speed test).
+func CreateWithRole(role string, configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*option.Options)) (*boxbox.Box, context.CancelFunc, error) {
 	// Fresh context per call: concurrent boxes sharing one service.Registry clobber each other's OutboundManager.
-	ctx := newBoxContext()
+	ctx := newBoxContext(role)
 	options, err := parseConfig(ctx, configContent)
 	if err != nil {
 		return nil, nil, err

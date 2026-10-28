@@ -56,6 +56,7 @@
 #include <QTabWidget>
 #include <QTableView>
 #include <QTextBrowser>
+#include <QSet>
 #include <QTimer>
 #include <algorithm>
 #include <QToolButton>
@@ -180,8 +181,8 @@ namespace Shadowlos::ChromeImpl {
 
     // ---------------------------------------------------------- power button
 
-    // The design's connect button: a ring and a disc, green while ready to connect and blue
-    // while connected, cross-fading between the two. Takes over StartStopButton's painting
+    // The design's connect button: a ring and a disc, grey while off, blue while connecting
+    // and green while connected, cross-fading between them. Takes over StartStopButton's painting
     // only; state, tooltips and animations stay the base class's.
     class PowerButton final : public StartStopButton {
     public:
@@ -189,7 +190,7 @@ namespace Shadowlos::ChromeImpl {
             setAttribute(Qt::WA_Hover, true);
             setFixedSize(64, 64);
             m_tintAnim = new QVariantAnimation(this);
-            m_tintAnim->setDuration(1000);
+            m_tintAnim->setDuration(500);
             m_tintAnim->setEasingCurve(QEasingCurve::InOutSine);
             QObject::connect(m_tintAnim, &QVariantAnimation::valueChanged, this, [this](const QVariant &v) {
                 m_tint = v.toReal();
@@ -223,28 +224,27 @@ namespace Shadowlos::ChromeImpl {
             const bool disabled = st == State::Disabled;
             const bool hovered = underMouse() && isEnabled();
 
-            // 0 = green (ready to connect), 1 = blue (connected). Connecting already heads
-            // for blue and disconnecting for green, so the colour moves with the spinner.
-            const qreal target = running || st == State::Connecting ? 1.0 : 0.0;
-            if (target != m_tintTarget) {
-                const bool first = m_tintTarget < 0;
-                m_tintTarget = target;
+            // As the design: grey while off (ready to connect), blue while connecting or
+            // disconnecting (with the spinner), green only while connected. The colours
+            // cross-fade from wherever the last fade got to.
+            const Tone target = running ? Tone::Green : busy ? Tone::Blue : Tone::Grey;
+            if (target != m_toneTarget || m_first) {
+                m_from = m_first ? tone(target) : current();
+                m_to = tone(target);
+                m_toneTarget = target;
                 m_tintAnim->stop();
-                if (first) {
-                    m_tint = target;
-                } else {
-                    m_tintAnim->setStartValue(m_tint);
-                    m_tintAnim->setEndValue(target);
+                m_tint = m_first ? 1.0 : 0.0;
+                if (!m_first) {
+                    // Into blue quickly, so a press shows at once; out of it more softly.
+                    m_tintAnim->setDuration(target == Tone::Blue ? 120 : 250);
+                    m_tintAnim->setStartValue(0.0);
+                    m_tintAnim->setEndValue(1.0);
                     m_tintAnim->start();
                 }
+                m_first = false;
             }
-            const qreal t = m_tint;
-            const auto mix = [t](quint32 green, quint32 blue) {
-                const QColor a = hex(green), b = hex(blue);
-                return QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * t,
-                                        a.greenF() + (b.greenF() - a.greenF()) * t,
-                                        a.blueF() + (b.blueF() - a.blueF()) * t);
-            };
+            const Palette now = current();
+            const auto pick = [&now, hovered](int i) { return i == 2 && hovered ? now.c[5] : now.c[i]; };
 
             const qreal side = qMin(width(), height()) - 2.0;
             const QPointF c = QRectF(rect()).center();
@@ -263,9 +263,9 @@ namespace Shadowlos::ChromeImpl {
                 ring.setColorAt(1, hex(0x1A2023));
                 outline = hex(0x2E3438);
             } else {
-                ring.setColorAt(0, mix(0x2E6B1F, 0x0072CC));
-                ring.setColorAt(1, mix(0x1F4A16, 0x1A374D));
-                outline = hovered ? mix(0xA6E88A, 0x66BBFF) : mix(0x86D75E, 0x33A5FF);
+                ring.setColorAt(0, pick(0));
+                ring.setColorAt(1, pick(1));
+                outline = pick(2);
             }
             p.setPen(QPen(outline, 1.33));
             p.setBrush(ring);
@@ -275,8 +275,8 @@ namespace Shadowlos::ChromeImpl {
             const qreal inset = side * 3.5 / 64.0;
             const QRectF inner = outer.adjusted(inset, inset, -inset, -inset);
             QLinearGradient disc(inner.topLeft(), inner.bottomLeft());
-            disc.setColorAt(0, disabled ? hex(0x0B0D0F) : mix(0x86D75E, 0x33A5FF));
-            disc.setColorAt(1, disabled ? hex(0x111517) : mix(0x5DB83A, 0x008FFF));
+            disc.setColorAt(0, disabled ? hex(0x0B0D0F) : pick(3));
+            disc.setColorAt(1, disabled ? hex(0x111517) : pick(4));
             p.setPen(Qt::NoPen);
             p.setBrush(disc);
             p.drawEllipse(inner);
@@ -320,9 +320,37 @@ namespace Shadowlos::ChromeImpl {
         }
 
     private:
+        enum class Tone { Grey, Blue, Green };
+        // Ring top, ring bottom, outline, disc top, disc bottom, outline under the mouse.
+        struct Palette {
+            QColor c[6];
+        };
+
+        static Palette tone(Tone t) {
+            switch (t) {
+                case Tone::Green: return {{hex(0x2E6B1F), hex(0x1F4A16), hex(0x86D75E), hex(0x86D75E), hex(0x5DB83A), hex(0xA6E88A)}};
+                case Tone::Blue: return {{hex(0x0072CC), hex(0x1A374D), hex(0x33A5FF), hex(0x33A5FF), hex(0x008FFF), hex(0x66BBFF)}};
+                default: return {{hex(0x3A4248), hex(0x23292D), hex(0x5E676E), hex(0x5E676E), hex(0x474D53), hex(0x8A949B)}};
+            }
+        }
+
+        Palette current() const {
+            Palette p;
+            const qreal t = m_tint;
+            for (int i = 0; i < 6; ++i) {
+                const QColor &a = m_from.c[i], &b = m_to.c[i];
+                p.c[i] = QColor::fromRgbF(a.redF() + (b.redF() - a.redF()) * t, a.greenF() + (b.greenF() - a.greenF()) * t,
+                                          a.blueF() + (b.blueF() - a.blueF()) * t);
+            }
+            return p;
+        }
+
         QVariantAnimation *m_tintAnim = nullptr;
-        qreal m_tint = 0.0;
-        qreal m_tintTarget = -1.0;
+        qreal m_tint = 1.0;
+        bool m_first = true;
+        Tone m_toneTarget = Tone::Grey;
+        Palette m_from = tone(Tone::Grey);
+        Palette m_to = tone(Tone::Grey);
     };
 
     // --------------------------------------------------------- profile table
@@ -485,6 +513,15 @@ namespace Shadowlos::ChromeImpl {
 
     // Icon-only width of a pill: 8px padding, 24px icon, 12px padding.
     constexpr int kCompactPillWidth = 44;
+    // The quick actions' fixed height, labelled or not, in any window.
+    constexpr int kPillHeight = 44;
+    // The labelled quick actions' text in a wide window (shadowlos.qss, [slWide="true"]).
+    constexpr int kWidePillFontPx = 15;
+    // The top row's one height (more only if a card's content needs it, e.g. a fourth toggle).
+    constexpr int kTopRowHeight = 152;
+    // The power card: the 64px button (96px in Минимальный) and its margins.
+    constexpr int kPowerCardWidth = 112;
+    constexpr int kPowerCardWidthMini = 144;
 
     void stylePill(QToolButton *button, const char *iconName) {
         button->setStyleSheet(QString()); // drops the .ui's per-button sheet
@@ -665,8 +702,14 @@ namespace Shadowlos::ChromeImpl {
         }
 
     private:
+        // A line of « · » parts loses whole parts from its end first; only a first part that
+        // does not fit alone is cut with «…».
         void elide() {
-            const QString shown = fontMetrics().elidedText(m_full, Qt::ElideRight, qMax(0, width()));
+            const int room = qMax(0, width());
+            static const QString sep = QStringLiteral(" · ");
+            QStringList parts = m_full.split(sep);
+            while (parts.size() > 1 && fontMetrics().horizontalAdvance(parts.join(sep)) > room) parts.removeLast();
+            const QString shown = fontMetrics().elidedText(parts.join(sep), Qt::ElideRight, room);
             if (shown != text()) QLabel::setText(shown);
             setToolTip(shown != m_full ? m_full : QString());
         }
@@ -674,6 +717,16 @@ namespace Shadowlos::ChromeImpl {
         QString m_full;
         QString m_floor;
     };
+
+    // A traffic amount as people say it: «619 МБ», «1.2 ГБ».
+    QString shortSize(qint64 bytes) {
+        constexpr qint64 k = 1024;
+        if (bytes < k) return translate("%1 B").arg(bytes);
+        const auto amount = [](double v) { return v < 10 ? QString::number(v, 'f', 1) : QString::number(qRound64(v)); };
+        if (bytes < k * k) return translate("%1 KB").arg(amount(double(bytes) / k));
+        if (bytes < k * k * k) return translate("%1 MB").arg(amount(double(bytes) / (k * k)));
+        return translate("%1 GB").arg(amount(double(bytes) / (k * k * k)));
+    }
 
     // What the data view shows, in plain words: a busy panel (a test or a download) with its
     // progress, the restart notice, and a note (VPN endpoint, auto selector).
@@ -825,9 +878,21 @@ namespace Shadowlos::ChromeImpl {
             text->addStretch(1);
             row->addLayout(text, 1);
 
+            // The mascot area at the card's right edge, a fixed size; in the minimal view a quiet
+            // «Вид» link sits over it, top right.
+            auto *side = new QVBoxLayout();
+            side->setSpacing(4);
+            side->setContentsMargins(0, 0, 0, 0);
+            m_viewSlot = new QHBoxLayout();
+            m_viewSlot->setContentsMargins(0, 0, 0, 0);
+            m_viewSlot->addStretch(1);
+            side->addLayout(m_viewSlot);
+            side->addStretch(1);
             m_mascot = new QFrame(this);
             m_mascot->setObjectName(QStringLiteral("slMascot"));
-            row->addWidget(m_mascot, 0, Qt::AlignVCenter);
+            side->addWidget(m_mascot, 0, Qt::AlignRight);
+            side->addStretch(1);
+            row->addLayout(side);
             setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
             applySizes();
 
@@ -842,9 +907,26 @@ namespace Shadowlos::ChromeImpl {
             // status label did (MainWindow's event filter on label_running, url_test_current).
             m_title->installEventFilter(this);
             m_detail->installEventFilter(this);
+            // The card follows the button's state at once, not on its next tick: the button
+            // sets a new tooltip on every state change (StartStopButton::applyState).
+            if (QWidget *power = ui->toolButton_startstop) power->installEventFilter(this);
+            // The card and the stopwatch pause while the window is hidden or minimized; when it
+            // comes back they catch up at once, so it never shows a state from before.
+            if (QWidget *top = parent->window()) top->installEventFilter(this);
         }
 
         QToolButton *logLink() const { return m_link; }
+
+        // The minimal view's «Вид ⌄», top right over the mascot area.
+        void setViewLink(QToolButton *link) { m_viewSlot->addWidget(link); }
+
+        // The narrow layout's minimum, also while wide: the bigger wide fonts and mascot must
+        // never set the window's minimum width (the window is to shrink back past them).
+        QSize minimumSizeHint() const override {
+            if (!m_wide) m_narrowMin = QFrame::minimumSizeHint();
+            if (m_narrowMin.isValid()) return {m_narrowMin.width(), QFrame::minimumSizeHint().height()};
+            return QFrame::minimumSizeHint();
+        }
 
         // The connect stopwatch (the corner label) at the title row's right end.
         void setStopwatch(QLabel *stopwatch) { m_titleRow->addWidget(stopwatch, 0, Qt::AlignVCenter); }
@@ -853,6 +935,7 @@ namespace Shadowlos::ChromeImpl {
 
         void setWide(bool wide) {
             if (wide == m_wide) return;
+            if (wide) m_narrowMin = QFrame::minimumSizeHint();
             m_wide = wide;
             setProperty("slWide", wide);
             for (QWidget *w : {static_cast<QWidget *>(this), static_cast<QWidget *>(m_title), static_cast<QWidget *>(m_detail),
@@ -915,7 +998,7 @@ namespace Shadowlos::ChromeImpl {
                     if (c.since.isValid()) more << translate("Online %1").arg(onlineText(c.since.elapsed() / 1000));
                     if (profile) {
                         const qint64 bytes = profile->traffic_downlink + profile->traffic_uplink;
-                        if (bytes > 0) more << translate("traffic %1").arg(ReadableSize(bytes));
+                        if (bytes > 0) more << translate("traffic %1").arg(shortSize(bytes));
                     }
                     if (const auto route = Configs::dataManager->routesRepo->GetRouteProfile(settings->current_route_id))
                         more << translate("mode «%1»").arg(route->name);
@@ -949,6 +1032,17 @@ namespace Shadowlos::ChromeImpl {
             if (running.endsWith(QStringLiteral(" *"))) {
                 title = running;
                 detail = m_ui->label_running->toolTip();
+            }
+            // The stopwatch follows the same state as the button and the title: a run that began
+            // without the start hook (or a stop without the stop hook) still shows right.
+            // Only this card's own stopwatch (the self-test swaps in a throwaway one).
+            if (const Corner &c = corner(); !demoHas("on") && c.stopwatch != nullptr && c.stopwatch->parentWidget() == this) {
+                if (st == StartStopButton::State::Running && !c.since.isValid()) Shadowlos::Chrome::ConnectStopwatch(true);
+                else if ((st == StartStopButton::State::Idle || st == StartStopButton::State::Disabled) && c.since.isValid())
+                    Shadowlos::Chrome::ConnectStopwatch(false);
+                // Shown only with «Подключено», never next to «Подключаюсь».
+                const bool show = st == StartStopButton::State::Running && c.since.isValid();
+                if (c.stopwatch->isVisibleTo(this) != show) c.stopwatch->setVisible(show);
             }
             const auto cursor = st == StartStopButton::State::Running ? Qt::PointingHandCursor : Qt::ArrowCursor;
             if (m_title->cursor().shape() != cursor) {
@@ -1026,6 +1120,21 @@ namespace Shadowlos::ChromeImpl {
 
     protected:
         bool eventFilter(QObject *watched, QEvent *event) override {
+            if (watched == window() && watched != this &&
+                (event->type() == QEvent::WindowStateChange || event->type() == QEvent::Show)) {
+                QTimer::singleShot(0, this, [this] {
+                    if (hiddenNow()) return;
+                    tickStopwatch();
+                    refresh();
+                });
+                return false;
+            }
+            if (watched == m_ui->toolButton_startstop && event->type() == QEvent::ToolTipChange) {
+                QTimer::singleShot(0, this, [this] {
+                    if (!hiddenNow()) refresh();
+                });
+                return false;
+            }
             if ((watched == m_title || watched == m_detail) && event->type() == QEvent::MouseButtonPress) {
                 // Upstream's filter tests only on a left press while a profile runs.
                 if (QWidget *window = m_ui->label_running->window())
@@ -1043,7 +1152,8 @@ namespace Shadowlos::ChromeImpl {
 
         void applySizes() {
             // Fixed sizes: the mascot drawing will fit these. Wide: the card grows, so does the area.
-            const QSize mascot = m_minimal ? QSize(120, 120) : m_wide ? QSize(300, 172) : QSize(104, 104);
+            // The top row has one fixed height (kTopRowHeight), so the area fits under it.
+            const QSize mascot = m_minimal ? QSize(104, 104) : m_wide ? QSize(220, 124) : QSize(104, 104);
             m_mascot->setFixedSize(mascot);
             m_title->setMinimumWidth(0);
         }
@@ -1057,6 +1167,8 @@ namespace Shadowlos::ChromeImpl {
         QProgressBar *m_progress = nullptr;
         QToolButton *m_link = nullptr;
         QFrame *m_mascot = nullptr;
+        QHBoxLayout *m_viewSlot = nullptr;
+        mutable QSize m_narrowMin;
         QTimer *m_timer = nullptr;
         bool m_wide = false;
         bool m_minimal = false;
@@ -1184,9 +1296,7 @@ namespace Shadowlos::ChromeImpl {
     // mascot area and the extra detail line.
     class WideWatch final : public QObject {
     public:
-        WideWatch(QWidget *central, const QList<QWidget *> &cards, int fixedWidth)
-            : QObject(central), m_central(central), m_fixedWidth(fixedWidth) {
-            for (QWidget *card : cards) m_cards << card;
+        explicit WideWatch(QWidget *central) : QObject(central), m_central(central) {
             central->installEventFilter(this);
         }
 
@@ -1194,21 +1304,43 @@ namespace Shadowlos::ChromeImpl {
             Shell &s = shell();
             if (m_central.isNull() || s.status.isNull()) return;
             if (s.view == View::Minimal) return;
-            // Measured while narrow: the wide fonts make the cards wider, which must not flip it back.
-            if (!s.status->wide() || m_needed == 0) {
+            const bool wasWide = m_central->property("slWide").toBool();
+            if (!wasWide) {
+                // Measured while narrow: what the labelled row needs with the wide fonts.
                 int labelled = 0;
                 for (const auto &pill : s.pills) {
-                    if (!pill.isNull()) labelled = std::max(labelled, labelledWidth(pill.data()));
+                    if (!pill.isNull()) labelled = std::max(labelled, wideLabelledWidth(pill.data()));
                 }
-                int needed = m_fixedWidth + 2 * labelled + kStatusWideMin;
-                for (const auto &card : m_cards) {
-                    if (!card.isNull() && !card->isHidden()) needed += card->sizeHint().width();
+                int needed = kRowGaps + kActionsFrame + 2 * labelled + kStatusWideMin;
+                for (QWidget *card : {s.powerCard.data(), s.modesCard.data()}) {
+                    if (card != nullptr && !card->isHidden()) needed += card->sizeHint().width();
                 }
                 m_needed = needed;
+            } else {
+                // While wide, what the wide cards really ask for; kept, so the next switch to
+                // wide waits for that width too (no flapping between the two).
+                int needed = kRowGaps + kStatusWideMin;
+                for (QWidget *card : {s.powerCard.data(), s.actionsCard.data(), s.modesCard.data()}) {
+                    if (card != nullptr && !card->isHidden()) needed += card->sizeHint().width();
+                }
+                m_neededWide = std::max(m_neededWide, needed);
             }
-            const bool wide = m_central->width() >= m_needed;
-            if (m_central->property("slWide").toBool() != wide) {
+            const bool wide = m_central->width() >= std::max(m_needed, m_neededWide);
+            if (wasWide != wide) {
                 // The top row's text grows with the window (shadowlos.qss, [slWide="true"]).
+                // The toggle names keep their narrow width as the minimum, so the bigger text
+                // never sets the window's minimum width.
+                for (QLabel *label : m_central->findChildren<QLabel *>()) {
+                    if (label->property("slRole").toString() != QLatin1String("toggleLabel")) continue;
+                    label->setMinimumWidth(wide ? label->minimumSizeHint().width() : 0);
+                }
+                // Narrow: the two cards are exactly as wide as their content. Wide: no wider than
+                // that (Maximum), and their minimum is still the narrow one, so the window's
+                // minimum width never follows the labels or the bigger text.
+                const auto policy = wide ? QSizePolicy::Maximum : QSizePolicy::Fixed;
+                for (QWidget *card : {s.actionsCard.data(), s.modesCard.data()}) {
+                    if (card != nullptr) card->setSizePolicy(policy, QSizePolicy::Preferred);
+                }
                 m_central->setProperty("slWide", wide);
                 for (const auto &pill : s.pills) {
                     if (!pill.isNull()) repolish(pill);
@@ -1256,18 +1388,24 @@ namespace Shadowlos::ChromeImpl {
         }
 
     private:
-        static constexpr int kStatusWideMin = 560;
+        static constexpr int kStatusWideMin = 460; // the text and the wide mascot area
+        // Root margins and the gaps between the row's four cards; the quick actions card's
+        // side margins and the gap between its two columns.
+        static constexpr int kRowGaps = 24 + 3 * 8;
+        static constexpr int kActionsFrame = 32 + 8;
         bool m_minPending = false;
         int m_needed = 0;
+        int m_neededWide = 0;
 
-        // As the sheet lays a labelled pill out: padding, icon, icon-text gap, text, padding.
-        static int labelledWidth(const QToolButton *pill) {
-            return 8 + pill->iconSize().width() + 6 + pill->fontMetrics().horizontalAdvance(pill->text()) + 12 + 4;
+        // As the sheet lays a labelled pill out in a wide window (15px text, 12/16px padding):
+        // padding, icon, icon-text gap, text, padding.
+        static int wideLabelledWidth(const QToolButton *pill) {
+            QFont font = pill->font();
+            font.setPixelSize(kWidePillFontPx);
+            return 12 + pill->iconSize().width() + 6 + QFontMetrics(font).horizontalAdvance(pill->text()) + 16 + 4;
         }
 
         QPointer<QWidget> m_central;
-        QList<QPointer<QWidget>> m_cards;
-        int m_fixedWidth;
     };
 
     QPointer<WideWatch> &wideWatch() {
@@ -1546,9 +1684,10 @@ namespace Shadowlos::Chrome {
         if (s.filler) s.filler->setVisible(mini);
         if (s.chip) s.chip->setVisible(mini);
         ui->toolButton_startstop->setFixedSize(mini ? 96 : 64, mini ? 96 : 64);
+        if (s.powerCard) s.powerCard->setFixedWidth(mini ? kPowerCardWidthMini : kPowerCardWidth);
         const QString label = translate("View: %1").arg(viewName(view));
         if (s.viewButton) s.viewButton->setText(label);
-        if (s.chip) s.chip->setText(label);
+        if (s.chip) s.chip->setToolTip(label);
         for (const auto &item : s.items) {
             if (item.isNull()) continue;
             item->setProperty("slCurrent", item->view() == view);
@@ -1696,6 +1835,69 @@ namespace Shadowlos::Chrome {
         showForLog(tabs->currentIndex());
     }
 
+    // The startup test measures the servers the group has when it starts. The subscription
+    // update runs at the same time and may add servers a second later (1.0.13-dev: three new
+    // ones at the top of the list, «Результат теста» empty). So once that test is done, servers
+    // of the current group that have never been measured get one more group test. Each server
+    // is asked for at most once, so one that cannot be measured does not loop.
+    class UntestedFollowUp final : public QObject {
+    public:
+        explicit UntestedFollowUp(Ui::MainWindow *ui) : QObject(ui->profilesTableView), m_ui(ui) {
+            m_timer.setSingleShot(true);
+            m_timer.setInterval(3000);
+            QObject::connect(&m_timer, &QTimer::timeout, this, [this] { check(); });
+            if (auto *model = ui->profilesTableView->model()) {
+                QObject::connect(model, &QAbstractItemModel::modelReset, this, [this] { m_timer.start(); });
+                QObject::connect(model, &QAbstractItemModel::rowsInserted, this, [this] { m_timer.start(); });
+                QObject::connect(model, &QAbstractItemModel::layoutChanged, this, [this] { m_timer.start(); });
+            }
+            // The servers the startup test is measuring now count as asked for.
+            for (int id : untested()) m_asked.insert(id);
+            m_stop.setSingleShot(true);
+            QObject::connect(&m_stop, &QTimer::timeout, this, [this] { deleteLater(); });
+            m_stop.start(10 * 60 * 1000); // only around startup
+        }
+
+    private:
+        static QList<int> untested() {
+            QList<int> ids;
+            const auto group = Configs::dataManager->groupsRepo->CurrentGroup();
+            if (group == nullptr) return ids;
+            for (int id : group->Profiles()) {
+                const auto profile = Configs::dataManager->profilesRepo->GetProfile(id);
+                if (profile && profile->outbound && profile->latency == 0) ids << id;
+            }
+            return ids;
+        }
+
+        void check() {
+            if (!Configs::dataManager->settingsRepo->core_running || !m_ui->actionUrl_Test_Group->isEnabled()) return;
+            // A test still running (the startup one): look again when it is over.
+            if (ChromeImpl::generator() != nullptr && ShadowlosDataViewPeek::read(*ChromeImpl::generator()).busy) {
+                m_timer.start();
+                return;
+            }
+            bool fresh = false;
+            for (int id : untested()) {
+                if (m_asked.contains(id)) continue;
+                m_asked.insert(id);
+                fresh = true;
+            }
+            if (!fresh) return;
+            qDebug().noquote() << "[startup] servers added after the startup test: measuring the group again";
+            m_ui->actionUrl_Test_Group->trigger();
+        }
+
+        Ui::MainWindow *m_ui;
+        QTimer m_timer;
+        QTimer m_stop;
+        QSet<int> m_asked;
+    };
+
+    void installUntestedFollowUp(Ui::MainWindow *ui) {
+        new UntestedFollowUp(ui);
+    }
+
     // Measures latency once at startup, as the "Measure latency" pill would, as soon as the
     // core is up and the current group has servers (on a first run the subscription has to
     // arrive first). Gives up after two minutes.
@@ -1715,7 +1917,10 @@ namespace Shadowlos::Chrome {
             timer->stop();
             timer->deleteLater();
             // A moment for the core to finish starting before it is asked to dial out.
-            QTimer::singleShot(1500, ui->actionUrl_Test_Group, &QAction::trigger);
+            QTimer::singleShot(1500, ui->actionUrl_Test_Group, [ui] {
+                ui->actionUrl_Test_Group->trigger();
+                installUntestedFollowUp(ui);
+            });
         });
         timer->start();
     }
@@ -1796,29 +2001,28 @@ namespace Shadowlos::Chrome {
         // Read by MainWindow::applyTopBarMetrics: the design sizes these to their labels.
         window->setProperty("slVariableWidthMenus", true);
 
-        auto *actionsRow = new QHBoxLayout();
+        // The top row: one fixed height in every window size (it never takes the list's room),
+        // the cards side by side. Power, quick actions and toggles keep their own widths; the
+        // status card takes the rest.
+        auto *topRow = new QWidget(central);
+        topRow->setObjectName(QStringLiteral("slTopRow"));
+        topRow->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        topRow->setMinimumHeight(kTopRowHeight);
+        auto *actionsRow = new QHBoxLayout(topRow);
+        actionsRow->setContentsMargins(0, 0, 0, 0);
         actionsRow->setSpacing(8);
 
-        // Power card. The new button replaces uic's StartStopButton before anything connects
-        // to it; MainWindow only ever reaches it through ui->toolButton_startstop. In the
-        // minimal view the «Вид» chip sits under it.
+        // Power card: the button alone, centred both ways, in a card of fixed width (set per
+        // view). The new button replaces uic's StartStopButton before anything connects to it;
+        // MainWindow only ever reaches it through ui->toolButton_startstop.
         auto *powerCard = makeCard(central, "slCard");
         s.powerCard = powerCard;
-        // No explicit minimum: it would override the size hint and squeeze the chip.
-        powerCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-        auto *powerLayout = new QVBoxLayout(powerCard);
-        powerLayout->setContentsMargins(16, 16, 16, 16);
-        powerLayout->setSpacing(12);
-        powerLayout->addSpacerItem(new QSpacerItem(80, 0, QSizePolicy::Fixed, QSizePolicy::Expanding));
+        powerCard->setFixedWidth(kPowerCardWidth);
+        auto *powerLayout = new QGridLayout(powerCard);
+        powerLayout->setContentsMargins(0, 0, 0, 0);
         auto *power = new PowerButton(powerCard);
         power->setObjectName(QStringLiteral("toolButton_startstop"));
-        powerLayout->addWidget(power, 0, Qt::AlignHCenter);
-        s.chip = makeViewButton(powerCard, "slViewChip", viewMenu);
-        s.chip->setProperty("slRole", "viewChip");
-        repolish(s.chip);
-        s.chip->hide();
-        powerLayout->addWidget(s.chip, 0, Qt::AlignHCenter);
-        powerLayout->addStretch(1);
+        powerLayout->addWidget(power, 0, 0, Qt::AlignCenter);
         if (StartStopButton *old = ui->toolButton_startstop) {
             ui->horizontalLayout_2->removeWidget(old);
             delete old;
@@ -1826,13 +2030,18 @@ namespace Shadowlos::Chrome {
         ui->toolButton_startstop = power;
         actionsRow->addWidget(powerCard);
 
-        // Quick actions: always a 2x2 grid; icons only in a narrow window (WideWatch).
+        // Quick actions: always a 2x2 grid of fixed-height buttons, centred in the card's height;
+        // icons only in a narrow window (WideWatch). The card is no wider than its buttons
+        // need; while wide its minimum stays the icon-only grid (WideWatch), so the labels
+        // never set the window's minimum width.
         auto *actionsCard = makeCard(central, "slCard");
         s.actionsCard = actionsCard;
         actionsCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
         auto *actionsLayout = new QGridLayout(actionsCard);
-        actionsLayout->setContentsMargins(16, 12, 16, 12);
+        actionsLayout->setContentsMargins(16, 0, 16, 0);
         actionsLayout->setSpacing(8);
+        actionsLayout->setRowStretch(0, 1);
+        actionsLayout->setRowStretch(3, 1);
 
         auto *add = makePill(actionsCard, "slAddConfig", translate("Add config"), "add-config");
         add->setPopupMode(QToolButton::InstantPopup);
@@ -1855,12 +2064,13 @@ namespace Shadowlos::Chrome {
         auto *latency = makeActionPill(actionsCard, "slLatency", translate("Measure latency"), "latency",
                                        ui->actionUrl_Test_Group);
         setPillTip(latency, latency->text(), translate("Checks which servers answer and how fast."));
-        actionsLayout->addWidget(add, 0, 0);
-        actionsLayout->addWidget(ui->toolButton_update_subs, 0, 1);
-        actionsLayout->addWidget(speedtest, 1, 0);
-        actionsLayout->addWidget(latency, 1, 1);
+        actionsLayout->addWidget(add, 1, 0);
+        actionsLayout->addWidget(ui->toolButton_update_subs, 1, 1);
+        actionsLayout->addWidget(speedtest, 2, 0);
+        actionsLayout->addWidget(latency, 2, 1);
         for (QToolButton *pill : {add, ui->toolButton_update_subs, speedtest, latency}) {
             pill->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+            pill->setFixedHeight(kPillHeight);
             s.pills << pill;
         }
         actionsRow->addWidget(actionsCard);
@@ -1881,6 +2091,7 @@ namespace Shadowlos::Chrome {
         // Toggles card: the modes, and in dev builds the journal consent as «Улучшение обхода».
         auto *modesCard = makeCard(central, "slCard");
         s.modesCard = modesCard;
+        // As wide as its rows; while wide its minimum stays the narrow one (WideWatch).
         modesCard->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
         auto *modesLayout = new QHBoxLayout(modesCard);
         modesLayout->setContentsMargins(16, 8, 16, 8);
@@ -1894,7 +2105,7 @@ namespace Shadowlos::Chrome {
         }
 #if SHADOWLOS_DEV
         if (QAction *consent = Shadowlos::Journal::ConsentAction()) {
-            auto *box = new QCheckBox(QStringLiteral("Улучшение обхода (отправлять отчёты о блокировках)"), modesCard);
+            auto *box = new QCheckBox(QStringLiteral("Улучшение обхода (отчёты о блокировках)"), modesCard);
             box->setObjectName(QStringLiteral("slImproveToggle"));
             box->setToolTip(consent->text());
             box->setChecked(consent->isChecked());
@@ -1920,7 +2131,17 @@ namespace Shadowlos::Chrome {
         s.status = status;
         QObject::connect(status->logLink(), &QToolButton::clicked, window, [ui] { openLog(ui); });
         actionsRow->addWidget(status, 1);
-        root->addLayout(actionsRow);
+        // Минимальный: a quiet «Вид ⌄» at the status card's top right; the power card keeps
+        // only the button.
+        s.chip = makeViewButton(status, "slViewChip", viewMenu);
+        s.chip->setProperty("slRole", "viewChip");
+        s.chip->setText(translate("View"));
+        s.chip->setToolTip(translate("View: %1").arg(viewName(s.view)));
+        s.chip->setAccessibleName(translate("View"));
+        repolish(s.chip);
+        s.chip->hide();
+        status->setViewLink(s.chip);
+        root->addWidget(topRow);
 
         // Profile tabs over the Logs / Connections / Graph tabs, as before.
         ui->verticalLayout_3->removeWidget(ui->splitter);
@@ -1974,10 +2195,7 @@ namespace Shadowlos::Chrome {
         barLayout->addWidget(ui->label_speed);
         root->addWidget(bottomBar);
 
-        // Besides the pills' labels and the cards measured live (power, toggles): root margins,
-        // the gaps between the four row items, the quick actions card's margins and grid gap.
-        constexpr int kRowFixedWidth = 24 + 3 * 8 + 32 + 8;
-        wideWatch() = new WideWatch(central, {powerCard, modesCard}, kRowFixedWidth);
+        wideWatch() = new WideWatch(central);
 
         // Every widget uic made has been moved into `central`; this deletes the empty old
         // container and its layouts, so drop the pointers to them.

@@ -1,8 +1,6 @@
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
-#if SHADOWLOS_DEV
-
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -144,6 +142,9 @@ namespace Shadowlos::Journal {
         });
         return s;
     }
+
+#if SHADOWLOS_DEV
+    // Dev only from here: the journal line scrub and the self-test.
 
     // Decode, scrub every string, encode again in the journal's key order: scrubbing the raw
     // text could cut an escaped quote in half and leave a line that no longer parses.
@@ -311,6 +312,8 @@ namespace Shadowlos::Journal {
         check(QStringLiteral("network key"), keyProblems.isEmpty(), keyProblems.isEmpty() ? QStringLiteral("ok") : keyProblems);
         const QString censusProblems = CensusSelfTest();
         check(QStringLiteral("census"), censusProblems.isEmpty(), censusProblems.isEmpty() ? QStringLiteral("ok") : censusProblems);
+        const QString telemetryProblems = TelemetrySelfTest();
+        check(QStringLiteral("telemetry summary"), telemetryProblems.isEmpty(), telemetryProblems.isEmpty() ? QStringLiteral("ok") : telemetryProblems);
         const QString quotaProblems = ManualQuotaSelfTest();
         check(QStringLiteral("manual report quota"), quotaProblems.isEmpty(), quotaProblems.isEmpty() ? QStringLiteral("ok") : quotaProblems);
         const QString stopwatchProblems = Shadowlos::Chrome::StopwatchSelfTest();
@@ -322,6 +325,6 @@ namespace Shadowlos::Journal {
         return failed == 0 ? 0 : 1;
     }
 
-} // namespace Shadowlos::Journal
-
 #endif // SHADOWLOS_DEV
+
+} // namespace Shadowlos::Journal

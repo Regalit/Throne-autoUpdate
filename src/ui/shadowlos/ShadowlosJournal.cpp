@@ -75,14 +75,6 @@ namespace Shadowlos::Journal {
             return QCoreApplication::translate("ShadowlosJournal", text);
         }
 
-        Configs::SettingsRepo *settings() {
-            return Configs::dataManager->settingsRepo.get();
-        }
-
-        bool consentOn() {
-            return settings()->shadowlos_send_journal != 0;
-        }
-
         // The journal is written from the UI thread, the log thread and request threads,
         // so everything here is behind the one mutex.
         struct State {
@@ -93,8 +85,6 @@ namespace Shadowlos::Journal {
             qint64 sid = 0;
             qint64 seq = 0;
             QElapsedTimer connectClock; // since the last connect start
-            bool connecting = false;
-            int connects = 0; // ConnectStart calls this run (geo drops a whereami answer that spans one)
             QString lastFail; // the last error line since the connect started
             QElapsedTimer upClock;
             QElapsedTimer coreMinute;
@@ -452,11 +442,8 @@ namespace Shadowlos::Journal {
         // connect is being brought up. A pending crash report goes first.
         void tick() {
             auto &u = up();
-            if (u.busy || !consentOn() || QDateTime::currentSecsSinceEpoch() < u.holdUntil) return;
-            {
-                QMutexLocker lock(&st().mutex);
-                if (st().connecting) return;
-            }
+            if (u.busy || !ConsentOn() || QDateTime::currentSecsSinceEpoch() < u.holdUntil) return;
+            if (Connecting()) return;
             QString token;
             if (!ApiToken(&token)) return;
             if (const QStringList crashes = crashFiles(); !crashes.isEmpty()) {
@@ -466,32 +453,32 @@ namespace Shadowlos::Journal {
             sendJournal();
         }
 
-        // Off clears the journal, the queue and any crash report; seq keeps counting.
-        void setConsent(bool on) {
-            settings()->shadowlos_send_journal = on ? 1 : 0;
-            settings()->Save();
-            auto &s = st();
-            QMutexLocker lock(&s.mutex);
-            if (!on) {
-                s.on = false;
-                s.repeats.clear();
-                s.file.close();
-                QFile::remove(path("journal.jsonl"));
-                QFile::remove(path("upload.json"));
-                for (const auto &file : crashFiles()) QFile::remove(s.dir + u'/' + file);
-                saveStateLocked();
-                up().holdUntil = 0;
-                up().fails = 0;
-                LOG_INFO(QStringLiteral("[journal] sending turned off; journal, queue and crash report cleared"));
-                return;
-            }
-            s.file.setFileName(path("journal.jsonl"));
-            s.on = s.file.open(QIODevice::Append);
-            writeLocked("app", "settings", "ok", QStringLiteral("journal on"));
-            LOG_INFO(QStringLiteral("[journal] sending turned on"));
-        }
+    } // namespace
 
-        QPointer<QAction> consentAction;
+    // Off clears the journal, the queue and any crash report; seq keeps counting.
+    void JournalConsentChanged(bool on) {
+        auto &s = st();
+        QMutexLocker lock(&s.mutex);
+        if (!on) {
+            s.on = false;
+            s.repeats.clear();
+            s.file.close();
+            QFile::remove(path("journal.jsonl"));
+            QFile::remove(path("upload.json"));
+            for (const auto &file : crashFiles()) QFile::remove(s.dir + u'/' + file);
+            saveStateLocked();
+            up().holdUntil = 0;
+            up().fails = 0;
+            LOG_INFO(QStringLiteral("[journal] sending turned off; journal, queue and crash report cleared"));
+            return;
+        }
+        s.file.setFileName(path("journal.jsonl"));
+        s.on = s.file.open(QIODevice::Append);
+        writeLocked("app", "settings", "ok", QStringLiteral("journal on"));
+        LOG_INFO(QStringLiteral("[journal] sending turned on"));
+    }
+
+    namespace {
 
         // ── the manual report quota (pure rules, then the file) ───────────────
 
@@ -684,7 +671,7 @@ namespace Shadowlos::Journal {
             }
         }
         const qint64 previousSid = s.sid++;
-        if (!consentOn()) {
+        if (!ConsentOn()) {
             saveStateLocked();
             return;
         }
@@ -700,13 +687,9 @@ namespace Shadowlos::Journal {
         LOG_INFO(QStringLiteral("[journal] session %1%2").arg(s.sid).arg(crashCause.isEmpty() ? "" : ", crash report queued"));
     }
 
-    void Install(QWidget *window, QMenu *tools, QAbstractButton *tun, QAbstractButton *systemProxy) {
-        auto *action = new QAction(translate("Send the error journal to the developers"), tools);
-        action->setCheckable(true);
-        action->setChecked(consentOn());
-        QObject::connect(action, &QAction::toggled, window, [](bool on) { setConsent(on); });
-        tools->addAction(action);
-        consentAction = action;
+    void InstallJournal(QWidget *window, QMenu *tools, QAction *consent, QAbstractButton *tun, QAbstractButton *systemProxy) {
+        consent->setText(translate("Send the error journal to the developers"));
+        tools->addAction(consent);
 
         qApp->installEventFilter(new UiTracker(window));
 
@@ -740,12 +723,6 @@ namespace Shadowlos::Journal {
         QObject::connect(u.timer, &QTimer::timeout, window, [] { tick(); });
         u.timer->start();
         QTimer::singleShot(kFirstUploadMs, u.timer, [] { tick(); });
-
-        InstallGeo(window);
-    }
-
-    QAction *ConsentAction() {
-        return consentAction;
     }
 
     // Free text (journal-format.md: manual is not the journal format): one header line, then
@@ -759,7 +736,7 @@ namespace Shadowlos::Journal {
     }
 
     void SendManualReport(std::function<void(ManualResult, int, qint64)> done) {
-        if (!consentOn()) {
+        if (!ConsentOn()) {
             done(ManualResult::Off, 0, 0);
             return;
         }
@@ -833,18 +810,6 @@ namespace Shadowlos::Journal {
     void Event(const char *layer, const char *step, const char *outcome, const QString &d, const QString &err, qint64 ms) {
         QMutexLocker lock(&st().mutex);
         writeLocked(layer, step, outcome, d, err, ms);
-    }
-
-    int ConnectCount() {
-        QMutexLocker lock(&st().mutex);
-        return st().connects;
-    }
-
-    // From the profile_start/profile_stop hooks: a core crash goes through profile_stop too,
-    // which settings->started_id does not follow.
-    bool TunnelActive() {
-        QMutexLocker lock(&st().mutex);
-        return st().connecting || st().upClock.isValid();
     }
 
     void NetEvent(const QString &d, const QJsonObject &geo) {
@@ -954,25 +919,20 @@ namespace Shadowlos::Journal {
         }
     }
 
-    void ConnectStart(const QString &server, bool automatic) {
+    void JournalConnectStart(const QString &server, bool automatic) {
         auto &s = st();
         QMutexLocker lock(&s.mutex);
-        s.connecting = true;
-        ++s.connects;
         s.connectClock.start();
         s.lastFail.clear();
         writeLocked("app", "server-pick", "ok", automatic ? QStringLiteral("auto") : server);
         writeLocked("app", "state", "ok", QStringLiteral("connecting"));
         writeLocked("app", "connect", "start", server);
-        // The net line comes from the UI thread; this runs on a worker.
-        if (qApp) QMetaObject::invokeMethod(qApp, [] { GeoConnectStart(); }, Qt::QueuedConnection);
     }
 
-    void ConnectEnd(bool ok) {
+    void JournalConnectEnd(bool ok) {
         auto &s = st();
         QMutexLocker lock(&s.mutex);
         const qint64 ms = s.connectClock.isValid() ? s.connectClock.elapsed() : -1;
-        s.connecting = false;
         if (ok) {
             s.upClock.start();
             writeLocked("app", "connect", "ok", {}, {}, ms);
@@ -985,7 +945,7 @@ namespace Shadowlos::Journal {
         }
     }
 
-    void Disconnect(bool crash, bool manual) {
+    void JournalDisconnect(bool crash, bool manual) {
         auto &s = st();
         QMutexLocker lock(&s.mutex);
         const qint64 ms = s.upClock.isValid() ? s.upClock.elapsed() : -1;

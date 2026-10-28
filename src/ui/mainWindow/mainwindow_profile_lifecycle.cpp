@@ -467,7 +467,7 @@ void MainWindow::profile_start(int _id) {
             mu_stopping.unlock();
         }
         MW_show_log(">>>>>>>> " + tr("Starting profile %1").arg(ent->outbound->DisplayTypeAndName()));
-        Shadowlos::Journal::ConnectStart(ent->outbound->DisplayTypeAndName(), _id < 0); // Shadowlos: dev journal
+        Shadowlos::Journal::ConnectStart(ent->outbound->DisplayTypeAndName(), _id < 0); // Shadowlos: connect state (geo, census, summary); dev journal
         bool dnsTimedOut = false;
         bool started = profile_start_stage2(restartPrompt, builtResult, usesSystemDirectDns() ? &dnsTimedOut : nullptr);
         if (!started && dnsTimedOut) {
@@ -483,7 +483,7 @@ void MainWindow::profile_start(int _id) {
         if (!started) {
             MW_show_log("<<<<<<<< " + tr("Failed to start profile %1").arg(ent->outbound->DisplayTypeAndName()));
         }
-        Shadowlos::Journal::ConnectEnd(started); // Shadowlos: dev journal
+        Shadowlos::Journal::ConnectEnd(started); // Shadowlos: connect state (geo, census, summary); dev journal
         mu_starting.unlock();
         runOnUiThread([=, this] {
             if (restartPrompt) restartPrompt->dismiss();
@@ -558,7 +558,7 @@ void MainWindow::profile_stop(bool crash, bool block, bool manual) {
         if (!profile_stop_stage2(restartPrompt)) {
             MW_show_log("<<<<<<<< " + tr("Failed to stop, please restart the program."));
         }
-        Shadowlos::Journal::Disconnect(crash, manual); // Shadowlos: dev journal
+        Shadowlos::Journal::Disconnect(crash, manual); // Shadowlos: connect state (geo, census, summary); dev journal
 
         if (manual) Configs::dataManager->settingsRepo->UpdateStartedId(Configs::NoProfileId);
         // Cleared here too: a restart prompt armed before the UI-thread teardown would have no id to start.

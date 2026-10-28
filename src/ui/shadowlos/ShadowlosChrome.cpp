@@ -1328,7 +1328,6 @@ namespace Shadowlos::ChromeImpl {
         return line;
     }
 
-#if SHADOWLOS_DEV
     // The bottom bar's «Улучшение обхода» switch: small, a muted blue when on. A plain button
     // (not checkable) whose click flips the setting, so UI Automation can invoke it; it paints
     // the setting's state.
@@ -1377,19 +1376,16 @@ namespace Shadowlos::ChromeImpl {
     private:
         bool m_on = false;
     };
-#endif
 
-    // The bottom bar's left part for the view and the improve setting. Обычный (dev):
+    // The bottom bar's left part for the view and the improve setting. Обычный:
     // «Улучшение обхода [switch]», then the blocking badge and region when it is on, or a grey
     // hint when it is off. Продвинутый: the badge and region when it is on (the switch is in
-    // its toggles card). Prod has none of it: only the version.
+    // its toggles card). The same in prod and dev builds.
     void syncImprove() {
         Shell &s = shell();
         bool on = false;
-#if SHADOWLOS_DEV
         if (QAction *consent = Shadowlos::Journal::ConsentAction()) on = consent->isChecked();
         if (auto *sw = dynamic_cast<QuietSwitch *>(s.improveSwitch.data())) sw->setOn(on);
-#endif
         const bool normal = s.view == View::Normal;
         const bool advanced = s.view == View::Advanced;
         const auto show = [](QWidget *w, bool visible) {
@@ -2159,14 +2155,15 @@ namespace Shadowlos::Chrome {
         QObject::connect(debugAction, &QAction::triggered, ui->toolButton_debug, &QToolButton::click);
         ui->menuTools->addSeparator();
         ui->menuTools->addAction(debugAction);
-        // Dev builds: the error journal's consent action goes under it (a no-op in prod).
+        // The «Улучшение обхода» consent, geo, the census and the daily summary (both builds);
+        // dev builds also put the error journal's consent action under it.
         Shadowlos::Journal::Install(window, ui->menuTools, ui->checkBox_VPN, ui->checkBox_SystemProxy);
         // Dev builds: «Улучшение обхода блокировок» at the end of Утилиты (the menu bar is
         // there in Обычный and Продвинутый). Nothing in prod.
         Shadowlos::Journal::InstallImprovePage(window, ui->menuTools);
 
         // Toggles card: «Все приложения» and «Только браузеры» (and System DNS when enabled in
-        // settings). Продвинутый also has the journal consent as «Улучшение обхода» (dev builds);
+        // settings). Продвинутый also has the consent as «Улучшение обхода»;
         // Обычный has it in the bottom bar.
         auto *modesCard = makeCard(central, "slCard");
         s.modesCard = modesCard;
@@ -2181,7 +2178,6 @@ namespace Shadowlos::Chrome {
             ui->verticalLayout_4->removeWidget(box);
             toggles->addWidget(makeToggleRow(modesCard, box));
         }
-#if SHADOWLOS_DEV
         if (QAction *consent = Shadowlos::Journal::ConsentAction()) {
             auto *box = new QCheckBox(QStringLiteral("Улучшение обхода (отправлять отчёты о блокировках)"), modesCard);
             box->setObjectName(QStringLiteral("slImproveToggle"));
@@ -2196,7 +2192,6 @@ namespace Shadowlos::Chrome {
             s.improveRow = makeToggleRow(modesCard, box);
             toggles->addWidget(s.improveRow);
         }
-#endif
         toggles->addStretch(1);
         modesLayout->addLayout(toggles);
         for (QLabel *label : modesCard->findChildren<QLabel *>()) {
@@ -2229,7 +2224,7 @@ namespace Shadowlos::Chrome {
         s.filler = filler;
         root->addWidget(filler, 1);
 
-        // Bottom bar, left: the version; dev builds add «Улучшение обхода [switch]» and, while it
+        // Bottom bar, left: the version, «Улучшение обхода [switch]» and, while it
         // is on, the blocking badge and region · provider · network (or a hint while it is off).
         // Right: the routing switch and, in Продвинутый, the traffic speed.
         auto *bottomBar = makeCard(central, "slBottomBar");
@@ -2250,9 +2245,8 @@ namespace Shadowlos::Chrome {
         s.improveSep = separator();
         s.improveSep->hide();
         barLayout->addWidget(s.improveSep);
-#if SHADOWLOS_DEV
         if (QAction *consent = Shadowlos::Journal::ConsentAction()) {
-            // The same setting as the journal consent (Утилиты) and Продвинутый's toggle.
+            // The same setting as Продвинутый's toggle (and, in dev, the journal consent in Утилиты).
             auto *label = new QLabel(QStringLiteral("Улучшение обхода"), bottomBar);
             label->setObjectName(QStringLiteral("slImproveLabel"));
             label->setProperty("slRole", "improveLabel");
@@ -2279,7 +2273,6 @@ namespace Shadowlos::Chrome {
             s.badgeSep->hide();
             barLayout->addWidget(s.badgeSep);
         }
-#endif
         if (QWidget *badge = Shadowlos::Journal::MakeBlockingBadge(bottomBar)) {
             badge->hide();
             barLayout->addWidget(badge, 0, Qt::AlignVCenter);

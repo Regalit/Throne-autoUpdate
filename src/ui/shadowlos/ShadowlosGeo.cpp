@@ -10,8 +10,6 @@
 
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
-#if SHADOWLOS_DEV
-
 #include "include/database/DatabaseManager.h"
 #include "include/database/SettingsRepo.h"
 #include "include/global/Logger.hpp"
@@ -41,6 +39,9 @@
 // on Windows, and no city is kept anywhere (shadowlos 2feb9c58: it narrows a person down).
 // No IP is ever kept: the server's answer has none, and every value goes through SanitizeGeo
 // before it is used.
+//
+// Both builds: the bottom bar's region line and the census need it. Asked only while the
+// «Улучшение обхода» switch is on. The net lines go to the dev journal (no-ops in prod).
 namespace Shadowlos::Journal {
 
     namespace {
@@ -51,7 +52,7 @@ namespace Shadowlos::Journal {
         constexpr qint64 kRetrySecs = 5 * 60;
         constexpr auto kWhereamiPath = "/api/mobile/whereami";
         // The server refuses whereami without it (handlers/whereami.go whereamiApps).
-        constexpr auto kAppHeader = "shadowlos-throne-dev";
+        constexpr auto kAppHeader = SHADOWLOS_DEV ? "shadowlos-throne-dev" : "shadowlos-throne";
 
         // ── sanitizing ───────────────────────────────────────────────────────
 
@@ -256,7 +257,7 @@ namespace Shadowlos::Journal {
         // socket, so nothing is asked while connected in TUN mode.
         bool mayFetch() {
             if (!g().nam || g().busy || g().net.key.isEmpty()) return false;
-            if (settings()->shadowlos_send_journal == 0) return false;
+            if (!ConsentOn()) return false;
             if (settings()->spmode_vpn && TunnelActive()) return false;
             QString token;
             return ApiToken(&token);
@@ -478,5 +479,3 @@ namespace Shadowlos::Journal {
     }
 
 } // namespace Shadowlos::Journal
-
-#endif // SHADOWLOS_DEV

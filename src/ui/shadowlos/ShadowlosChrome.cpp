@@ -2163,6 +2163,11 @@ namespace Shadowlos::Chrome {
         // Dev builds: «Улучшение обхода блокировок» at the end of Утилиты (the menu bar is
         // there in Обычный and Продвинутый). Nothing in prod.
         Shadowlos::Journal::InstallImprovePage(window, ui->menuTools);
+        // «Политика конфиденциальности» in Программа, above Перезапуск/Выход (both builds).
+        auto *policyAction = new QAction(QStringLiteral("Политика конфиденциальности"), ui->menu_program);
+        QObject::connect(policyAction, &QAction::triggered, window, [window] { Shadowlos::Journal::ShowPrivacyPolicy(window); });
+        ui->menu_program->insertAction(ui->actionRestart_Proxy, policyAction);
+        ui->menu_program->insertSeparator(ui->actionRestart_Proxy);
 
         // Toggles card: «Все приложения» and «Только браузеры» (and System DNS when enabled in
         // settings). Продвинутый also has the consent as «Улучшение обхода»;

@@ -62,6 +62,10 @@ namespace Shadowlos::Journal {
     // The decision rules (when to ask, what counts as consent); "" when all hold.
     QString ConsentSelfTest();
 
+    // The privacy policy (bundled text, no network) in a read-only dialog, modal over parent's
+    // window. From the consent window's link and the «Программа» menu; answers nothing.
+    void ShowPrivacyPolicy(QWidget *parent);
+
     // For the consent window: the user's own IP, masked (never sent, logged or stored; "" when
     // the server did not tell it), region · provider ("" unknown), and the census verdict
     // ("" unknown) with its dot level (ok, warn, bad, none). UI thread.

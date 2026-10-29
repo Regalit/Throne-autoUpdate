@@ -47,5 +47,7 @@
         <file alias="fonts/PTRootUI-VF.ttf">shadowlos/fonts/PTRootUI-VF.ttf</file>
         <!-- The running deer (mascot/moose.webp as a GIF: our static Qt has qgif, not qwebp). -->
         <file alias="mascot/moose.gif">shadowlos/mascot/moose.gif</file>
+        <!-- The privacy policy (team/privacy-policy-ru.md, word for word): ShadowlosConsent.cpp. -->
+        <file alias="privacy-policy-ru.md">shadowlos/privacy-policy-ru.md</file>
     </qresource>
 </RCC>

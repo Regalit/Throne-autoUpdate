@@ -7,14 +7,17 @@
 #include <QAction>
 #include <QDialog>
 #include <QEvent>
+#include <QFile>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPointer>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QScreen>
 #include <QStyle>
+#include <QTextBrowser>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -89,6 +92,8 @@ namespace Shadowlos::Journal {
             QPushButton#slConsentYes { background: #2f8cff; color: #ffffff; }
             QPushButton#slConsentYes:hover { background: #4198ff; }
             QLabel#slConsentNote { color: #7d8590; font-size: 12px; }
+            QPushButton#slConsentPolicy { color: #7d8590; font-size: 12px; border: none; background: transparent; padding: 0; text-decoration: underline; }
+            QPushButton#slConsentPolicy:hover { color: #a3abb5; }
         )";
 
         // consent-text.html, the box under «Какие данные мы собираем».
@@ -116,6 +121,113 @@ namespace Shadowlos::Journal {
             html += QStringLiteral("<p style=\"color:#8a929c;font-size:12.5px;margin:0\">Данные отправляются анонимно, раз в день.</p></div>");
             return html;
         }
+
+        // ── the privacy policy ───────────────────────────────────────────────
+
+        // The bundled text (res/shadowlos/privacy-policy-ru.md); "" if missing.
+        QString policyText() {
+            QFile f(QStringLiteral(":/shadowlos/privacy-policy-ru.md"));
+            if (!f.open(QIODevice::ReadOnly)) return {};
+            return QString::fromUtf8(f.readAll());
+        }
+
+        // The policy's markdown as simple rich text: "#", "##", "- " lists, **bold**, paragraphs.
+        QString policyHtml(const QString &markdown) {
+            static const QRegularExpression bold(QStringLiteral("\\*\\*(.+?)\\*\\*"));
+            const auto inlineHtml = [](const QString &text) {
+                QString t = text.toHtmlEscaped();
+                t.replace(bold, QStringLiteral("<span style=\"color:#e8eaed;font-weight:600\">\\1</span>"));
+                return t;
+            };
+            QString html = QStringLiteral("<div style=\"font-size:13.5px;color:#b4bcc6\">");
+            bool inList = false;
+            const auto closeList = [&html, &inList] {
+                if (inList) html += QStringLiteral("</ul>");
+                inList = false;
+            };
+            for (QString line : markdown.split(QLatin1Char('\n'))) {
+                line = line.trimmed();
+                if (line.isEmpty()) {
+                    closeList();
+                } else if (line.startsWith(QLatin1String("## "))) {
+                    closeList();
+                    html += QStringLiteral("<p style=\"color:#e8eaed;font-size:15px;font-weight:600;margin:16px 0 6px 0\">%1</p>")
+                                .arg(inlineHtml(line.mid(3)));
+                } else if (line.startsWith(QLatin1String("# "))) {
+                    closeList();
+                    html += QStringLiteral("<p style=\"color:#e8eaed;font-size:19px;font-weight:600;margin:0 0 10px 0\">%1</p>")
+                                .arg(inlineHtml(line.mid(2)));
+                } else if (line.startsWith(QLatin1String("- "))) {
+                    if (!inList) html += QStringLiteral("<ul style=\"margin:0 0 8px 0;-qt-list-indent:1\">");
+                    inList = true;
+                    html += QStringLiteral("<li style=\"margin-bottom:4px\">%1</li>").arg(inlineHtml(line.mid(2)));
+                } else {
+                    closeList();
+                    html += QStringLiteral("<p style=\"margin:0 0 8px 0\">%1</p>").arg(inlineHtml(line));
+                }
+            }
+            closeList();
+            return html + QStringLiteral("</div>");
+        }
+
+        const char *kPolicySheet = R"(
+            QFrame#slPolicyCard { background: #1c2128; border: 1px solid #2c3440; border-radius: 16px; }
+            QTextBrowser#slPolicyText { background: transparent; border: none; color: #b4bcc6; }
+            QPushButton#slPolicyClose { border: none; border-radius: 10px; padding: 10px 26px; font-weight: 600; font-size: 14px; background: #262d36; color: #cfd3d8; }
+            QPushButton#slPolicyClose:hover { background: #2e3640; }
+        )";
+
+        // Read-only and scrollable; «Закрыть» (or Esc) closes it. Window-modal over its parent.
+        class PolicyDialog : public QDialog {
+        public:
+            explicit PolicyDialog(QWidget *parent) : QDialog(parent, Qt::Dialog | Qt::FramelessWindowHint) {
+                setAttribute(Qt::WA_TranslucentBackground, true);
+                setAttribute(Qt::WA_DeleteOnClose, true);
+                setWindowModality(Qt::WindowModal);
+                setWindowTitle(QStringLiteral("Политика конфиденциальности"));
+                setStyleSheet(QLatin1String(kPolicySheet));
+                auto *outer = new QVBoxLayout(this);
+                outer->setContentsMargins(0, 0, 0, 0);
+                auto *card = new QFrame(this);
+                card->setObjectName(QStringLiteral("slPolicyCard"));
+                outer->addWidget(card);
+                auto *v = new QVBoxLayout(card);
+                v->setContentsMargins(26, 22, 18, 18);
+                v->setSpacing(12);
+                auto *text = new QTextBrowser(card);
+                text->setObjectName(QStringLiteral("slPolicyText"));
+                text->setAccessibleName(windowTitle());
+                text->setOpenLinks(false);
+                text->setOpenExternalLinks(false);
+                text->setFrameShape(QFrame::NoFrame);
+                text->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+                text->setHtml(policyHtml(policyText()));
+                v->addWidget(text, 1);
+                auto *close = new QPushButton(QStringLiteral("Закрыть"), card);
+                close->setObjectName(QStringLiteral("slPolicyClose"));
+                close->setCursor(Qt::PointingHandCursor);
+                close->setDefault(false);
+                close->setAutoDefault(false);
+                auto *row = new QHBoxLayout();
+                row->setContentsMargins(0, 0, 8, 0);
+                row->addStretch(1);
+                row->addWidget(close);
+                v->addLayout(row);
+                connect(close, &QPushButton::clicked, this, &QDialog::reject);
+            }
+
+            // 560x600 at most, centred over the parent's window, kept on its screen.
+            void place() {
+                QWidget *w = parentWidget() != nullptr ? parentWidget()->window() : nullptr;
+                const QScreen *screen = w != nullptr ? w->screen() : QGuiApplication::primaryScreen();
+                const QRect area = screen != nullptr ? screen->availableGeometry() : QRect(0, 0, 1280, 800);
+                QRect r(0, 0, qMin(560, area.width() - 32), qMin(600, area.height() - 32));
+                r.moveCenter(w != nullptr ? w->frameGeometry().center() : area.center());
+                r.moveLeft(qBound(area.left(), r.left(), qMax(area.left(), area.right() - r.width())));
+                r.moveTop(qBound(area.top(), r.top(), qMax(area.top(), area.bottom() - r.height())));
+                setGeometry(r);
+            }
+        };
 
         // Dims the main window while the window is open, and follows its size.
         class Dim : public QWidget {
@@ -243,6 +355,16 @@ namespace Shadowlos::Journal {
                 note->setObjectName(QStringLiteral("slConsentNote"));
                 note->setAlignment(Qt::AlignHCenter);
                 v->addWidget(note);
+                // The policy: opens on top and answers nothing (not one of the guarded buttons).
+                v->addSpacing(6);
+                auto *policy = new QPushButton(QStringLiteral("Политика конфиденциальности"), card);
+                policy->setObjectName(QStringLiteral("slConsentPolicy"));
+                policy->setCursor(Qt::PointingHandCursor);
+                policy->setDefault(false);
+                policy->setAutoDefault(false);
+                policy->setFocusPolicy(Qt::TabFocus);
+                v->addWidget(policy, 0, Qt::AlignHCenter);
+                connect(policy, &QPushButton::clicked, this, [this] { ShowPrivacyPolicy(this); });
                 connect(no, &QPushButton::clicked, this, [this] { finish(false); });
                 connect(yes, &QPushButton::clicked, this, [this] { finish(true); });
                 // Focus on the card, not on a button.
@@ -430,6 +552,15 @@ namespace Shadowlos::Journal {
         return !st().dialog.isNull();
     }
 
+    void ShowPrivacyPolicy(QWidget *parent) {
+        auto *dialog = new PolicyDialog(parent);
+        dialog->place();
+        // Like the consent window: never take the keyboard from another app.
+        if (QGuiApplication::applicationState() != Qt::ApplicationActive) dialog->setAttribute(Qt::WA_ShowWithoutActivating, true);
+        dialog->show();
+        LOG_INFO(QStringLiteral("[consent] privacy policy shown"));
+    }
+
     QString ConsentSelfTest() {
         QStringList bad;
         const auto expect = [&bad](const char *name, bool ok) {
@@ -464,6 +595,12 @@ namespace Shadowlos::Journal {
         expect("nothing after «Нет»", !consentCounts(kNo, 0) && !consentCounts(kNo, 1));
         expect("«Да» with the switch on counts", consentCounts(kYes, 1));
         expect("«Да», then the switch off: nothing", !consentCounts(kYes, 0));
+        // The privacy policy is bundled and renders as headings, lists and bold.
+        const QString policy = policyText();
+        expect("privacy policy bundled", policy.startsWith(QStringLiteral("# Политика конфиденциальности")));
+        const QString html = policyHtml(policy);
+        expect("privacy policy renders", html.contains(QStringLiteral("<li")) && !html.contains(QStringLiteral("**")) &&
+                                             !html.contains(QStringLiteral("## ")));
         return bad.join(QStringLiteral("; "));
     }
 

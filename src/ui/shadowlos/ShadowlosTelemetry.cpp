@@ -4,6 +4,7 @@
 #include "include/database/SettingsRepo.h"
 #include "include/global/Logger.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
+#include "include/database/entities/Profile.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -12,6 +13,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
+#include <QMap>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMenu>
@@ -76,8 +79,227 @@ namespace Shadowlos::Journal {
 
     } // namespace
 
+    // ── the summary's error counts (shadowlos-server team/telemetry-errors-contract.md) ──
+    //
+    // Per UTC day, in <config dir>/telemetry-errors.json, never in the journal: crashes of the
+    // app, other abnormal ends (the core died, a kill, a run that did not exit cleanly), and
+    // failed connects as (class, kind, country) counts. No host, IP, server name or id, and no
+    // error text is kept: the core's error is reduced to its class at once. Counted only while
+    // «Улучшение обхода» is on.
+
+    namespace {
+
+        constexpr int kMaxConnectRows = 100;
+        constexpr int kMaxErrorCount = 10000;
+        constexpr int kErrorDaysKept = 15; // the contract's day window (today and 14 back)
+
+        const QRegularExpression &kindRe() {
+            static const QRegularExpression re(QStringLiteral("^[a-z0-9_]{1,24}$"));
+            return re;
+        }
+
+        const QRegularExpression &countryRe() {
+            static const QRegularExpression re(QStringLiteral("^[A-Z]{2}$"));
+            return re;
+        }
+
+        const QStringList &connectClasses() {
+            static const QStringList l{"dns", "tcp", "tls", "handshake", "no_rx", "timeout", "other"};
+            return l;
+        }
+
+        // The core's answer to a start, reduced to a class. No answer in time is a timeout.
+        QString connectClass(bool rpcOK, const QString &error) {
+            if (!rpcOK) return QStringLiteral("timeout");
+            const QString e = error.toLower();
+            const auto has = [&e](std::initializer_list<const char *> words) {
+                for (const char *w : words) {
+                    if (e.contains(QLatin1String(w))) return true;
+                }
+                return false;
+            };
+            if (has({"no such host", "lookup ", "dns", "resolve"})) return QStringLiteral("dns");
+            if (has({"x509", "certificate", "tls", "reality"})) return QStringLiteral("tls");
+            if (has({"handshake"})) return QStringLiteral("handshake");
+            if (has({"connection refused", "actively refused", "connection reset", "unreachable", "connectex", "dial tcp"}))
+                return QStringLiteral("tcp");
+            if (has({"timeout", "timed out", "deadline exceeded"})) return QStringLiteral("timeout");
+            return QStringLiteral("other");
+        }
+
+        // The protocol / transport label: the profile type, then its transport (or reality),
+        // e.g. vless_reality, vless_xhttp, hysteria2, ss, trojan_ws.
+        QString kindLabel(const QString &type, const QString &transport, bool reality) {
+            static const QRegularExpression notWord(QStringLiteral("[^a-z0-9]"));
+            QString base = type.toLower().remove(notWord);
+            if (base == QStringLiteral("xrayvless")) base = QStringLiteral("vless");
+            else if (base == QStringLiteral("xrayvmess")) base = QStringLiteral("vmess");
+            else if (base == QStringLiteral("xraytrojan")) base = QStringLiteral("trojan");
+            else if (base == QStringLiteral("shadowsocks")) base = QStringLiteral("ss");
+            else if (base == QStringLiteral("wireguard")) base = QStringLiteral("wg");
+            QString t = transport.toLower().remove(notWord);
+            if (t == QStringLiteral("websocket")) t = QStringLiteral("ws");
+            if (t.isEmpty() && reality) t = QStringLiteral("reality");
+            if (base.isEmpty()) base = QStringLiteral("other");
+            QString kind = t.isEmpty() ? base : base + u'_' + t;
+            kind = kind.left(24);
+            while (kind.endsWith(u'_')) kind.chop(1);
+            return kindRe().match(kind).hasMatch() ? kind : QStringLiteral("other");
+        }
+
+        struct DayErrors {
+            int crashes = 0;
+            int abnormal = 0;
+            QMap<QString, int> connect; // "class|kind|country" -> count
+            int total() const {
+                int n = crashes + abnormal;
+                for (const int c : connect) n += c;
+                return n;
+            }
+        };
+
+        // The errors block for one day; empty when every count is zero (then it is left out).
+        QJsonObject errorsBlock(const DayErrors &d) {
+            QJsonObject out;
+            if (d.crashes > 0) out.insert(QStringLiteral("crashes"), qMin(d.crashes, kMaxErrorCount));
+            if (d.abnormal > 0) out.insert(QStringLiteral("abnormal_exits"), qMin(d.abnormal, kMaxErrorCount));
+            QList<QPair<QString, int>> rows;
+            for (auto it = d.connect.cbegin(); it != d.connect.cend(); ++it) {
+                if (it.value() > 0) rows << qMakePair(it.key(), it.value());
+            }
+            // The most frequent first, at most 100.
+            std::stable_sort(rows.begin(), rows.end(), [](const auto &a, const auto &b) { return a.second > b.second; });
+            QJsonArray connect;
+            for (const auto &[key, count] : rows) {
+                if (connect.size() >= kMaxConnectRows) break;
+                const QStringList parts = key.split(u'|');
+                if (parts.size() != 3 || !connectClasses().contains(parts[0]) || !kindRe().match(parts[1]).hasMatch()) continue;
+                QJsonObject row{{"class", parts[0]}, {"kind", parts[1]}, {"count", qMin(count, kMaxErrorCount)}};
+                if (countryRe().match(parts[2]).hasMatch()) row.insert(QStringLiteral("country"), parts[2]);
+                connect.append(row);
+            }
+            if (!connect.isEmpty()) out.insert(QStringLiteral("connect"), connect);
+            return out;
+        }
+
+        struct Errs {
+            QMutex mutex;
+            QString file;
+            QMap<QString, DayErrors> days; // by UTC day
+            QString kind = QStringLiteral("other"); // the profile being started
+            QString country;
+            QString cls; // the class of the last start's error, "" for none
+        };
+
+        Errs &errs() {
+            static Errs e;
+            return e;
+        }
+
+        QString utcDayNow() {
+            return QDateTime::currentDateTimeUtc().date().toString(Qt::ISODate);
+        }
+
+        void loadErrorsLocked() {
+            auto &e = errs();
+            QFile f(e.file);
+            if (!f.open(QIODevice::ReadOnly)) return;
+            const QJsonObject days = QJsonDocument::fromJson(f.readAll()).object().value(QStringLiteral("days")).toObject();
+            for (auto it = days.begin(); it != days.end(); ++it) {
+                const QJsonObject o = it.value().toObject();
+                DayErrors d;
+                d.crashes = o.value(QStringLiteral("crashes")).toInt();
+                d.abnormal = o.value(QStringLiteral("abnormal_exits")).toInt();
+                const QJsonObject c = o.value(QStringLiteral("connect")).toObject();
+                for (auto ci = c.begin(); ci != c.end(); ++ci) d.connect.insert(ci.key(), ci.value().toInt());
+                e.days.insert(it.key(), d);
+            }
+        }
+
+        void saveErrorsLocked() {
+            auto &e = errs();
+            if (e.file.isEmpty()) return;
+            while (e.days.size() > kErrorDaysKept) e.days.erase(e.days.begin()); // the oldest day first
+            QJsonObject days;
+            for (auto it = e.days.cbegin(); it != e.days.cend(); ++it) {
+                QJsonObject c;
+                for (auto ci = it->connect.cbegin(); ci != it->connect.cend(); ++ci) c.insert(ci.key(), ci.value());
+                days.insert(it.key(), QJsonObject{{"crashes", it->crashes}, {"abnormal_exits", it->abnormal}, {"connect", c}});
+            }
+            QSaveFile f(e.file);
+            if (!f.open(QIODevice::WriteOnly)) return;
+            f.write(QJsonDocument(QJsonObject{{"days", days}}).toJson(QJsonDocument::Compact));
+            f.commit();
+        }
+
+        enum class ErrorKind { Crash, Abnormal, Connect };
+
+        // Thread-safe. Nothing is counted while the switch is off.
+        void countError(ErrorKind kind, const QString &cls = {}) {
+            if (!ConsentOn()) return;
+            auto &e = errs();
+            QMutexLocker lock(&e.mutex);
+            DayErrors &d = e.days[utcDayNow()];
+            switch (kind) {
+                case ErrorKind::Crash: d.crashes = qMin(d.crashes + 1, kMaxErrorCount); break;
+                case ErrorKind::Abnormal: d.abnormal = qMin(d.abnormal + 1, kMaxErrorCount); break;
+                case ErrorKind::Connect: {
+                    const QString key = cls + u'|' + e.kind + u'|' + e.country;
+                    // A new row only while there is room for it; known rows keep counting.
+                    if (!d.connect.contains(key) && d.connect.size() >= 4 * kMaxConnectRows) return;
+                    d.connect[key] = qMin(d.connect.value(key) + 1, kMaxErrorCount);
+                    break;
+                }
+            }
+            saveErrorsLocked();
+        }
+
+        // The errors block of [day] (empty: leave it out) and its total.
+        QJsonObject errorsFor(const QString &day, int *total = nullptr) {
+            auto &e = errs();
+            QMutexLocker lock(&e.mutex);
+            const DayErrors d = e.days.value(day);
+            if (total != nullptr) *total = d.total();
+            return errorsBlock(d);
+        }
+
+        // A run that did not end cleanly: a crash when the crash handler left a report after the
+        // run began, else an abnormal exit (killed, power loss).
+        void countPreviousRun() {
+            if (!Logging::PreviousSessionCrashed()) return;
+            const QFileInfo previousLog(Logging::PreviousSessionLogPath());
+            const QDateTime began = previousLog.exists() ? previousLog.birthTime() : QDateTime();
+            const auto reports = QDir(Logging::CrashDir()).entryInfoList(QDir::Files, QDir::Time);
+            const bool crash = !reports.isEmpty() && (!began.isValid() || reports.first().lastModified() >= began);
+            countError(crash ? ErrorKind::Crash : ErrorKind::Abnormal);
+        }
+
+    } // namespace
+
+    void ConnectProfile(const std::shared_ptr<Configs::Profile> &ent) {
+        QString kind = QStringLiteral("other"), country;
+        if (ent && ent->outbound) {
+            const auto security = ent->outbound->GetSecurity();
+            kind = kindLabel(ent->type, security.transport, security.label == QObject::tr("Reality"));
+            if (countryRe().match(ent->test_country).hasMatch()) country = ent->test_country;
+        }
+        auto &e = errs();
+        QMutexLocker lock(&e.mutex);
+        e.kind = kind;
+        e.country = country;
+        e.cls.clear();
+    }
+
+    void ConnectResult(bool rpcOK, const QString &error) {
+        if (rpcOK && error.isEmpty()) return;
+        const QString cls = connectClass(rpcOK, error); // the text goes no further
+        auto &e = errs();
+        QMutexLocker lock(&e.mutex);
+        e.cls = cls;
+    }
+
     bool ConsentOn() {
-        return settings()->shadowlos_send_journal != 0;
+        return settings()->shadowlos_consent == 1 && settings()->shadowlos_send_journal != 0;
     }
 
     QAction *ConsentAction() {
@@ -106,6 +328,14 @@ namespace Shadowlos::Journal {
             conn().connecting = false;
             if (ok) conn().up = true;
         }
+        if (!ok) {
+            QString cls;
+            {
+                QMutexLocker lock(&errs().mutex);
+                cls = errs().cls.isEmpty() ? QStringLiteral("other") : errs().cls;
+            }
+            countError(ErrorKind::Connect, cls);
+        }
 #if SHADOWLOS_DEV
         JournalConnectEnd(ok);
 #endif
@@ -116,6 +346,8 @@ namespace Shadowlos::Journal {
             QMutexLocker lock(&conn().mutex);
             conn().up = false;
         }
+        // The core died under a running profile (Process.cpp); a «Reset» of the core is manual.
+        if (crash && !manual) countError(ErrorKind::Abnormal);
 #if SHADOWLOS_DEV
         JournalDisconnect(crash, manual);
 #else
@@ -147,6 +379,8 @@ namespace Shadowlos::Journal {
         action->setChecked(ConsentOn());
         QObject::connect(action, &QAction::toggled, window, [](bool on) {
             settings()->shadowlos_send_journal = on ? 1 : 0;
+            // Turning it on is consent, whatever the window was answered before.
+            if (on) settings()->shadowlos_consent = 1;
             settings()->Save();
 #if SHADOWLOS_DEV
             JournalConsentChanged(on);
@@ -155,6 +389,7 @@ namespace Shadowlos::Journal {
             if (on) scheduleSoon(30 * 1000);
         });
         consentAction = action;
+        InstallConsent(window, action);
 #if SHADOWLOS_DEV
         InstallJournal(window, tools, action, tun, systemProxy);
 #else
@@ -163,6 +398,12 @@ namespace Shadowlos::Journal {
         Q_UNUSED(systemProxy)
 #endif
         InstallGeo(window);
+        {
+            QMutexLocker lock(&errs().mutex);
+            errs().file = QDir::current().absoluteFilePath(QStringLiteral("telemetry-errors.json"));
+            loadErrorsLocked();
+        }
+        countPreviousRun();
         InstallTelemetry(window);
     }
 
@@ -377,7 +618,7 @@ namespace Shadowlos::Journal {
         // take it. Unknown keys anywhere are a 400 there, so they are checked too.
         QString contractProblem(const QJsonObject &b, const QString &authInstall, const QDate &today) {
             static const QSet<QString> top{"schema", "app_id", "app_version", "install", "day", "android_major", "os_major",
-                                           "kind", "net", "listed", "unlisted", "probe"};
+                                           "kind", "net", "listed", "unlisted", "probe", "errors"};
             static const QSet<QString> failKeys{"timeout", "reset", "refused", "tls", "blockpage", "captcha", "http403", "http451"};
             static const QSet<QString> blockings{"none", "regular", "whitelist", "noInternet", "unknown"};
             static const QSet<QString> netTypes{"wifi", "cell", "ethernet", "other"};
@@ -428,6 +669,36 @@ namespace Shadowlos::Journal {
                 }
             }
             if (b.contains(QStringLiteral("unlisted"))) return QStringLiteral("unlisted is never sent");
+            if (b.contains(QStringLiteral("errors"))) {
+                const QJsonObject e = b.value(QStringLiteral("errors")).toObject();
+                if (e.isEmpty()) return QStringLiteral("empty errors");
+                for (const QString &k : e.keys()) {
+                    if (k != QStringLiteral("crashes") && k != QStringLiteral("abnormal_exits") && k != QStringLiteral("connect"))
+                        return QStringLiteral("bad errors key ") + k;
+                }
+                for (const char *k : {"crashes", "abnormal_exits"}) {
+                    if (e.contains(QLatin1String(k)) && (e.value(QLatin1String(k)).toInt(-1) < 1 || e.value(QLatin1String(k)).toInt() > 10000))
+                        return QStringLiteral("bad errors count");
+                }
+                const QJsonArray rows = e.value(QStringLiteral("connect")).toArray();
+                if (rows.size() > 100 || (e.contains(QStringLiteral("connect")) && rows.isEmpty())) return QStringLiteral("bad connect rows");
+                QSet<QString> keys;
+                for (const QJsonValue &v : rows) {
+                    const QJsonObject r = v.toObject();
+                    for (const QString &k : r.keys()) {
+                        if (k != QStringLiteral("class") && k != QStringLiteral("kind") && k != QStringLiteral("country") && k != QStringLiteral("count"))
+                            return QStringLiteral("bad connect key ") + k;
+                    }
+                    const QString cls = r.value(QStringLiteral("class")).toString(), kind = r.value(QStringLiteral("kind")).toString();
+                    const int count = r.value(QStringLiteral("count")).toInt(-1);
+                    if (!connectClasses().contains(cls) || !kindRe().match(kind).hasMatch() || count < 1 || count > 10000 ||
+                        (r.contains(QStringLiteral("country")) && !countryRe().match(r.value(QStringLiteral("country")).toString()).hasMatch()))
+                        return QStringLiteral("bad connect row");
+                    const QString key = cls + u'|' + kind + u'|' + r.value(QStringLiteral("country")).toString();
+                    if (keys.contains(key)) return QStringLiteral("duplicate connect row");
+                    keys.insert(key);
+                }
+            }
             if (QJsonDocument(b).toJson(QJsonDocument::Compact).size() > kMaxBodyBytes) return QStringLiteral("too large");
             return {};
         }
@@ -472,6 +743,10 @@ namespace Shadowlos::Journal {
             QString startDay;        // the day [startAt] is for
             qint64 startAt = 0;      // a day's first attempt not before this (secs since epoch)
             QJsonObject pending;     // today's finished body, kept so a failed POST only POSTs again
+            QJsonObject sentBody;    // the last body the server took (without errors), for an errors refresh
+            int sentErrors = 0;      // the error total last sent for sentBody's day
+            qint64 lastPostAt = 0;   // when sentBody last went
+            QString errorsOffDay;    // a 400 came with errors this UTC day: no errors block until tomorrow
         };
 
         Tele &tele() {
@@ -502,6 +777,10 @@ namespace Shadowlos::Journal {
             t.startDay = o.value(QStringLiteral("start_day")).toString();
             t.startAt = o.value(QStringLiteral("start_at")).toInteger();
             t.pending = o.value(QStringLiteral("pending")).toObject();
+            t.sentBody = o.value(QStringLiteral("sent_body")).toObject();
+            t.sentErrors = o.value(QStringLiteral("sent_errors")).toInt();
+            t.lastPostAt = o.value(QStringLiteral("last_post_at")).toInteger();
+            t.errorsOffDay = o.value(QStringLiteral("errors_off_day")).toString();
         }
 
         void save() {
@@ -516,8 +795,12 @@ namespace Shadowlos::Journal {
                           {"fails", t.fails},
                           {"fails_day", t.failsDay},
                           {"start_day", t.startDay},
-                          {"start_at", t.startAt}};
+                          {"start_at", t.startAt},
+                          {"sent_errors", t.sentErrors},
+                          {"last_post_at", t.lastPostAt},
+                          {"errors_off_day", t.errorsOffDay}};
             if (!t.pending.isEmpty()) o.insert(QStringLiteral("pending"), t.pending);
+            if (!t.sentBody.isEmpty()) o.insert(QStringLiteral("sent_body"), t.sentBody);
             f.write(QJsonDocument(o).toJson(QJsonDocument::Compact));
             f.commit();
         }
@@ -581,7 +864,31 @@ namespace Shadowlos::Journal {
             save();
         }
 
-        void post(const QJsonObject &body, const QString &token) {
+        enum class Purpose { Daily, Refresh };
+
+        // [body] with the current errors block of its day, unless a 400 refused errors today
+        // or the block would break the contract.
+        QJsonObject withErrors(QJsonObject body, int *total) {
+            body.remove(QStringLiteral("errors"));
+            *total = 0;
+            if (tele().errorsOffDay == utcToday().toString(Qt::ISODate)) return body;
+            const QJsonObject e = errorsFor(body.value(QStringLiteral("day")).toString(), total);
+            if (e.isEmpty()) return body;
+            QJsonObject with = body;
+            with.insert(QStringLiteral("errors"), e);
+            if (!contractProblem(with, InstallId().toLower(), utcToday()).isEmpty()) {
+                *total = 0;
+                return body;
+            }
+            return with;
+        }
+
+        // [body] is kept without errors; the block is added here, fresh. Daily: today's summary.
+        // Refresh: the last sent body again, because its day's error counts grew since.
+        void post(const QJsonObject &body, const QString &token, Purpose purpose) {
+            int errorTotal = 0;
+            const QJsonObject sent = withErrors(body, &errorTotal);
+            const bool hasErrors = sent.contains(QStringLiteral("errors"));
             auto *nam = new QNetworkAccessManager(tele().owner);
             nam->setProxy(QNetworkProxy::NoProxy);
             QNetworkRequest request(QUrl(QLatin1String(ApiBase) + QLatin1String(kTelemetryPath)));
@@ -590,19 +897,52 @@ namespace Shadowlos::Journal {
             request.setRawHeader("X-Sl-Install-Id", InstallId().toUtf8());
             request.setRawHeader("X-Sl-Platform", "windows");
             request.setTransferTimeout(30 * 1000);
-            const int rows = int(body.value(QStringLiteral("listed")).toArray().size());
-            auto *reply = nam->post(request, QJsonDocument(body).toJson(QJsonDocument::Compact));
-            QObject::connect(reply, &QNetworkReply::finished, nam, [reply, nam, rows] {
+            const int rows = int(sent.value(QStringLiteral("listed")).toArray().size());
+            auto *reply = nam->post(request, QJsonDocument(sent).toJson(QJsonDocument::Compact));
+            QObject::connect(reply, &QNetworkReply::finished, nam, [reply, nam, rows, body, token, purpose, hasErrors, errorTotal] {
                 reply->deleteLater();
                 nam->deleteLater();
+                auto &t = tele();
                 const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                 const qint64 retryAfter = reply->rawHeader("Retry-After").trimmed().toLongLong();
                 const QString answer = status ? QStringLiteral("HTTP %1").arg(status) : reply->errorString();
-                LOG_INFO(QStringLiteral("[telemetry] daily summary (%1 sites): %2").arg(rows).arg(answer));
+                LOG_INFO(QStringLiteral("[telemetry] %1 summary (%2 sites%3): %4")
+                             .arg(purpose == Purpose::Daily ? "daily" : "errors refresh of the")
+                             .arg(rows)
+                             .arg(hasErrors ? QStringLiteral(", %1 errors").arg(errorTotal) : QString())
+                             .arg(answer));
                 Event("api", "call", status == 200 ? "ok" : "fail",
                       QStringLiteral("POST %1 %2").arg(QLatin1String(kTelemetryPath), status ? QString::number(status) : QStringLiteral("error")),
                       status == 200 ? QString() : answer);
-                if (status == 200) finish(End::Sent);
+                const auto taken = [&t, &body, errorTotal] {
+                    t.sentBody = body;
+                    t.sentErrors = errorTotal;
+                    t.lastPostAt = nowSecs();
+                };
+                if (status == 400 && hasErrors) {
+                    // The server does not take the errors block (yet): once more today without
+                    // it, so the site summary is never lost.
+                    t.errorsOffDay = utcToday().toString(Qt::ISODate);
+                    save();
+                    if (purpose == Purpose::Daily) {
+                        post(body, token, purpose);
+                    } else {
+                        t.busy = false;
+                    }
+                    return;
+                }
+                if (purpose == Purpose::Refresh) {
+                    t.busy = false;
+                    if (status == 200 || status == 400 || status == 403 || status == 413) taken(); // done with these counts
+                    if (status == 429 || status == 503) finish(End::ServerHold, retryAfter);
+                    else if (status != 200 && status != 400 && status != 403 && status != 413) finish(End::Failed);
+                    else save();
+                    return;
+                }
+                if (status == 200) {
+                    taken();
+                    finish(End::Sent);
+                }
                 else if (status == 429 || status == 503) finish(End::ServerHold, retryAfter);
                 // Refused as it is (bad body, unknown app, too large): not again today.
                 else if (status == 400 || status == 403 || status == 413) finish(End::Sent);
@@ -735,6 +1075,20 @@ namespace Shadowlos::Journal {
             return FreshNetworkKey(&type) != net || (ConnectCount() != epoch && settings()->spmode_vpn) || !OffVpnNow();
         }
 
+        // Whether the last sent body should go again for its day's grown error counts: a past
+        // day (within the contract's 14) at once, today at most every 4 hours.
+        bool refreshDue(const QString &today) {
+            auto &t = tele();
+            if (t.sentBody.isEmpty() || t.errorsOffDay == today) return false;
+            const QString day = t.sentBody.value(QStringLiteral("day")).toString();
+            const QDate d = QDate::fromString(day, Qt::ISODate);
+            if (!d.isValid() || d.daysTo(utcToday()) > 14) return false;
+            int total = 0;
+            errorsFor(day, &total);
+            if (total <= t.sentErrors) return false;
+            return day != today || nowSecs() - t.lastPostAt >= 4 * 60 * 60;
+        }
+
         // A new UTC day: the backoff starts over (a server hold stands), yesterday's unsent body
         // goes, and the day's first attempt gets its random delay.
         void rollDay(const QString &today) {
@@ -764,9 +1118,11 @@ namespace Shadowlos::Journal {
         void look() {
             auto &t = tele();
             const QString today = utcToday().toString(Qt::ISODate);
-            if (t.busy || !ConsentOn() || t.sentDay == today) return;
+            if (t.busy || !ConsentOn()) return;
             rollDay(today);
-            if (nowSecs() < t.holdUntil || nowSecs() < t.startAt) return;
+            if (nowSecs() < t.holdUntil) return;
+            const bool refresh = refreshDue(today);
+            if (!refresh && (t.sentDay == today || nowSecs() < t.startAt)) return;
             QString token;
             if (!ApiToken(&token)) return;
             QString netType;
@@ -775,10 +1131,18 @@ namespace Shadowlos::Journal {
             // The upload goes on the direct road too: the server reads region and provider from it.
             if (!checked || net.isEmpty() || !OffVpnNow()) return;
 
+            // The last sent day's error counts grew: the same body again with them (the server
+            // keeps the last upload per install and day, so the site rows stay).
+            if (refresh) {
+                t.busy = true;
+                post(t.sentBody, token, Purpose::Refresh);
+                return;
+            }
+
             // Today's pass is done and only its upload failed: send the same body again.
             if (!t.pending.isEmpty()) {
                 t.busy = true;
-                post(t.pending, token);
+                post(t.pending, token, Purpose::Daily);
                 return;
             }
 
@@ -838,7 +1202,7 @@ namespace Shadowlos::Journal {
                     // Kept until the server takes it, so a failed POST does not probe again.
                     tele().pending = body;
                     save();
-                    post(body, token);
+                    post(body, token, Purpose::Daily);
                 });
             });
         }
@@ -943,6 +1307,7 @@ namespace Shadowlos::Journal {
         const QString auth = QStringLiteral("0a1b2c3d-4e5f-4a6b-9c7d-8e9f0a1b2c3d");
         QList<QPair<QString, Outcome>> rows{{QStringLiteral("ozon"), {false, QStringLiteral("captcha")}},
                                             {QStringLiteral("sber"), {true, {}}}};
+        const auto rows0 = [&rows] { return rows; };
         const QJsonObject body = buildBody(install, today.toString(Qt::ISODate), QStringLiteral("wifi"), QStringLiteral("regular"), rows);
         const QString problem = contractProblem(body, auth, today);
         if (!problem.isEmpty()) bad << QStringLiteral("good body refused: ") + problem;
@@ -955,6 +1320,58 @@ namespace Shadowlos::Journal {
         QJsonObject extra = body;
         extra.insert(QStringLiteral("city"), QStringLiteral("x"));
         expect("unknown key refused", !contractProblem(extra, auth, today).isEmpty());
+
+        // The errors block: classes, labels, limits, omission.
+        expect("class: no answer is a timeout", connectClass(false, {}) == "timeout");
+        expect("class: dns", connectClass(true, "dial tcp: lookup x.example: no such host") == "dns");
+        expect("class: tls", connectClass(true, "x509: certificate signed by unknown authority") == "tls");
+        expect("class: handshake", connectClass(true, "handshake failed: EOF") == "handshake");
+        expect("class: tcp", connectClass(true, "dial tcp 203.0.113.7:443: connectex: connection refused") == "tcp");
+        expect("class: timeout", connectClass(true, "context deadline exceeded") == "timeout");
+        expect("class: other", connectClass(true, "start service: initialize rule-set") == "other");
+        expect("kind vless reality", kindLabel("xrayvless", "", true) == "vless_reality");
+        expect("kind vless xhttp", kindLabel("vless", "XHTTP", true) == "vless_xhttp");
+        expect("kind trojan ws", kindLabel("trojan", "WebSocket", false) == "trojan_ws");
+        expect("kind ss", kindLabel("shadowsocks", "", false) == "ss");
+        expect("kind hysteria2", kindLabel("hysteria2", "", false) == "hysteria2");
+        expect("kind never a name", kindLabel("", "", false) == "other" && kindRe().match(kindLabel("A Very-Long Custom Type Name!!", "gRPC", false)).hasMatch());
+        {
+            DayErrors none;
+            none.connect.insert("tls|vless_reality|NL", 0);
+            expect("all zero: no block", errorsBlock(none).isEmpty());
+            DayErrors d;
+            d.crashes = 1;
+            d.connect.insert("tls|vless_reality|NL", 7);
+            d.connect.insert("no_rx|hysteria2|", 3);
+            d.connect.insert("tcp|ss|", 0);
+            const QJsonObject e = errorsBlock(d);
+            const QJsonArray rows = e.value("connect").toArray();
+            expect("block: crashes, no zero abnormal, two rows", e.value("crashes").toInt() == 1 && !e.contains("abnormal_exits") && rows.size() == 2);
+            expect("block: most frequent first, country omitted when unknown",
+                   rows.size() == 2 && rows[0].toObject().value("count").toInt() == 7 && rows[0].toObject().value("country") == "NL" &&
+                       !rows[1].toObject().contains("country"));
+            DayErrors many;
+            for (int i = 0; i < 150; ++i) many.connect.insert(QStringLiteral("other|k%1|").arg(i), i + 1);
+            many.abnormal = 20000;
+            const QJsonObject m = errorsBlock(many);
+            expect("block: at most 100 rows, counts capped", m.value("connect").toArray().size() == 100 &&
+                                                                m.value("connect").toArray()[0].toObject().value("count").toInt() == 150 &&
+                                                                m.value("abnormal_exits").toInt() == 10000);
+            QJsonObject withE = buildBody(install, today.toString(Qt::ISODate), "wifi", "regular", rows0());
+            withE.insert("errors", e);
+            const QString pe = contractProblem(withE, auth, today);
+            if (!pe.isEmpty()) bad << QStringLiteral("errors body refused: ") + pe;
+            QJsonObject badRow = withE;
+            QJsonObject eb = e;
+            eb.insert("connect", QJsonArray{QJsonObject{{"class", "tls"}, {"kind", "vless"}, {"count", 0}}});
+            badRow.insert("errors", eb);
+            expect("zero count refused", !contractProblem(badRow, auth, today).isEmpty());
+            eb.insert("connect", QJsonArray{QJsonObject{{"class", "tls"}, {"kind", "vless"}, {"count", 1}, {"host", "x"}}});
+            badRow.insert("errors", eb);
+            expect("host in a row refused", !contractProblem(badRow, auth, today).isEmpty());
+            badRow.insert("errors", QJsonObject{});
+            expect("empty errors block refused", !contractProblem(badRow, auth, today).isEmpty());
+        }
 
         // The backoff and the day's delay.
         expect("backoff 30/60/120/240 min, then 6 h",

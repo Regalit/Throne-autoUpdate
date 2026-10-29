@@ -705,7 +705,7 @@ namespace Shadowlos::Journal {
                 s.trigger = QStringLiteral("refresh");
             }
             // Nothing goes out on its own while «Улучшение обхода» is off.
-            if (s.due && !s.measuring && ConsentOn() && !teardownWaiting(now)) measure();
+            if (s.due && !s.measuring && (ConsentOn() || ConsentPreview()) && !teardownWaiting(now)) measure();
             render();
         }
 
@@ -786,6 +786,21 @@ namespace Shadowlos::Journal {
         if (e == nullptr || !e->last) return false;
         *out = describe(e->census, e->measuredAt);
         return true;
+    }
+
+    QString GeoRegionProvider() {
+        const QJsonObject geo = LatestGeo();
+        QStringList parts;
+        for (const QString &p : {geoRegion(geo), geoOperator(geo)}) {
+            if (!p.isEmpty()) parts << p;
+        }
+        return parts.join(QStringLiteral(" · "));
+    }
+
+    QString CensusVerdictNow(QString *level) {
+        const auto shown = st().keeper.shown(st().net);
+        if (level != nullptr) *level = QLatin1String(dotLevel(shown));
+        return note(shown);
     }
 
     QString CensusBlockingWord(bool *measured) {

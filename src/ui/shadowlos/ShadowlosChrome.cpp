@@ -1865,6 +1865,8 @@ namespace Shadowlos::Chrome {
             setToggleText(toggle, false);
         }
         syncImprove();
+        // The consent window, once, in Обычный or Продвинутый only.
+        Shadowlos::Journal::ConsentViewChanged(view != View::Minimal);
         // Traffic speed only in Продвинутый.
         ui->label_speed->ensurePolished();
         ui->label_speed->setMinimumWidth(ui->label_speed->fontMetrics().horizontalAdvance(

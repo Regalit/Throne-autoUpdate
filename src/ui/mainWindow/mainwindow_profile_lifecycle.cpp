@@ -317,6 +317,7 @@ void MainWindow::profile_start(int _id) {
         }
         bool rpcOK;
         const QString error = defaultClient->Start(&rpcOK, req);
+        Shadowlos::Journal::ConnectResult(rpcOK, error); // Shadowlos: summary error class (no text kept)
         // Queued ahead of every dialog below, so none of them can be shown over the prompt.
         runOnUiThread([restartPrompt] { if (restartPrompt) restartPrompt->dismiss(); });
         if (!rpcOK) {
@@ -467,6 +468,7 @@ void MainWindow::profile_start(int _id) {
             mu_stopping.unlock();
         }
         MW_show_log(">>>>>>>> " + tr("Starting profile %1").arg(ent->outbound->DisplayTypeAndName()));
+        Shadowlos::Journal::ConnectProfile(ent); // Shadowlos: summary error counts (protocol label, server country)
         Shadowlos::Journal::ConnectStart(ent->outbound->DisplayTypeAndName(), _id < 0); // Shadowlos: connect state (geo, census, summary); dev journal
         bool dnsTimedOut = false;
         bool started = profile_start_stage2(restartPrompt, builtResult, usesSystemDirectDns() ? &dnsTimedOut : nullptr);

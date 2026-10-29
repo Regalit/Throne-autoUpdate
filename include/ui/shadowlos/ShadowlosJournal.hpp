@@ -8,12 +8,17 @@
 #include <QStringList>
 
 #include <functional>
+#include <memory>
 
 class QAbstractButton;
 class QAction;
 class QMenu;
 class QObject;
 class QWidget;
+
+namespace Configs {
+    class Profile;
+}
 
 // Two layers, one namespace.
 //
@@ -36,14 +41,47 @@ namespace Shadowlos::Journal {
     void Install(QWidget *window, QMenu *tools, QAbstractButton *tun, QAbstractButton *systemProxy);
 
     // The «Улучшение обхода» consent: the bottom-bar switch and Продвинутый's toggle flip this
-    // action; nullptr before Install.
+    // action; nullptr before Install. ConsentOn: the user said «Да» in the consent window (or
+    // turned the switch on since) and the switch is on. Nothing is collected or sent otherwise.
     QAction *ConsentAction();
     bool ConsentOn();
+
+    // ── the consent window (ShadowlosConsent.cpp) ──
+
+    // Called from Install with the consent action.
+    void InstallConsent(QWidget *window, QAction *consent);
+
+    // The view now shown (at start and on every change): the window is asked for only in
+    // Обычный or Продвинутый, never in Минимальный.
+    void ConsentViewChanged(bool fullView);
+
+    // The consent window is open: geo and the census may look so it can show what the user gets
+    // (nothing is sent before an answer).
+    bool ConsentPreview();
+
+    // The decision rules (when to ask, what counts as consent); "" when all hold.
+    QString ConsentSelfTest();
+
+    // For the consent window: the user's own IP, masked (never sent, logged or stored; "" when
+    // the server did not tell it), region · provider ("" unknown), and the census verdict
+    // ("" unknown) with its dot level (ok, warn, bad, none). UI thread.
+    QString LocalIpMasked();
+    QString GeoRegionProvider();
+    QString CensusVerdictNow(QString *level);
+
+    // A whereami look now if one is due and allowed. UI thread.
+    void GeoKick();
 
     // profile_start / profile_stop. Thread-safe.
     void ConnectStart(const QString &server, bool automatic);
     void ConnectEnd(bool ok);
     void Disconnect(bool crash, bool manual);
+
+    // For the summary's error counts: the profile a connect starts (its protocol label and
+    // server country, nothing else is kept), and the core's answer to it (only its class is
+    // kept: dns, tcp, tls, handshake, timeout, other). Worker thread.
+    void ConnectProfile(const std::shared_ptr<Configs::Profile> &ent);
+    void ConnectResult(bool rpcOK, const QString &error);
 
     // How many connects have started this run, and whether one is being brought up or is up
     // (false again after a stop or a core crash). Thread-safe.

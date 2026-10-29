@@ -18,6 +18,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QHostAddress>
 #include <QHash>
 #include <QJsonDocument>
 #include <QMutex>
@@ -102,6 +103,7 @@ namespace Shadowlos::Journal {
             int checks = 0; // looks taken at the network (the 15 s check, a connect's)
             bool busy = false;
             QString pendingLine; // a net line waiting for the answer in flight ("" none)
+            QString ip; // the user's own IP if whereami tells it: memory only, shown masked, never sent or logged
         };
 
         Geo &g() {
@@ -257,7 +259,8 @@ namespace Shadowlos::Journal {
         // socket, so nothing is asked while connected in TUN mode.
         bool mayFetch() {
             if (!g().nam || g().busy || g().net.key.isEmpty()) return false;
-            if (!ConsentOn()) return false;
+            // The consent window may look before the answer: it shows what the user gets.
+            if (!ConsentOn() && !ConsentPreview()) return false;
             if (settings()->spmode_vpn && TunnelActive()) return false;
             QString token;
             return ApiToken(&token);
@@ -298,6 +301,8 @@ namespace Shadowlos::Journal {
                     }
                     geo = SanitizeGeo(geo);
                     geo.remove(QStringLiteral("net_type"));
+                    // Only an address that parses; it stays in memory and goes nowhere.
+                    if (const QHostAddress ip(answer.value(QStringLiteral("ip")).toString()); !ip.isNull()) s.ip = ip.toString();
                     entry.geo = geo;
                     entry.nextAt = now + kFreshSecs;
                 } else {
@@ -441,6 +446,24 @@ namespace Shadowlos::Journal {
         }
 #endif
         return false;
+    }
+
+    // 185.•••.•••.42; for IPv6 the first and the last group.
+    QString LocalIpMasked() {
+        const QString ip = g().ip;
+        if (ip.isEmpty()) return {};
+        const QString dots = QStringLiteral("•••");
+        if (ip.contains(u'.') && !ip.contains(u':')) {
+            const QStringList p = ip.split(u'.');
+            if (p.size() == 4) return p[0] + u'.' + dots + u'.' + dots + u'.' + p[3];
+        }
+        const QStringList p = ip.split(u':', Qt::SkipEmptyParts);
+        if (p.size() >= 2) return p.first() + u':' + dots + u':' + p.last();
+        return dots;
+    }
+
+    void GeoKick() {
+        if (fetchDue() && mayFetch()) fetch();
     }
 
     QJsonObject LatestGeo() {

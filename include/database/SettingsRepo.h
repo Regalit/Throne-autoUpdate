@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Database.h"
-#include "NkrVersion.h"
 #include "include/global/Const.hpp"
 #include "include/sys/UrlScheme.hpp"
 #include <QMutexLocker>
@@ -15,10 +14,6 @@
 #endif
 
 namespace Configs {
-
-    // «Улучшение обхода» (the anonymous daily summary; in dev also the error journal) on a fresh
-    // install of a PROD build: 1 on, 0 off. Ivan decides; flip it here. Dev builds are always on.
-    inline constexpr int kShadowlosImproveDefaultProd = 1;
 
     // Loopback/broadcast are deliberately absent: routing them into the tun breaks the sing-box <-> Xray bridges and local DNS.
     inline QStringList defaultTunPrivateRanges() {
@@ -90,7 +85,9 @@ namespace Configs {
         int shadowlos_simple_view = 1; // before 1.0.13: the simple server list (on) or the full one; migrated to shadowlos_view
         int shadowlos_view = -1; // main window view: 0 minimal, 1 normal, 2 advanced; -1 = take it from shadowlos_simple_view
         QString shadowlos_full_geometry; // saveGeometry() of the full view, kept while the minimal view is shown (base64)
-        int shadowlos_send_journal = SHADOWLOS_DEV ? 1 : kShadowlosImproveDefaultProd; // «Улучшение обхода»: the anonymous daily summary (both builds) and, in dev, the error journal
+        int shadowlos_send_journal = 0; // «Улучшение обхода» switch: the anonymous daily summary (both builds) and, in dev, the error journal; counts only once shadowlos_consent is 1
+        int shadowlos_consent = 0; // the consent window's answer: 0 never answered, 1 «Да» (or the switch turned on since), 2 «Нет»
+        QString shadowlos_consent_version; // the app version the consent window was last answered for
         QString mux_protocol = "smux";
         bool mux_padding = false;
         int mux_concurrency = 8;

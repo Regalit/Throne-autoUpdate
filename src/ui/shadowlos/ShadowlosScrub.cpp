@@ -312,6 +312,8 @@ namespace Shadowlos::Journal {
         check(QStringLiteral("network key"), keyProblems.isEmpty(), keyProblems.isEmpty() ? QStringLiteral("ok") : keyProblems);
         const QString censusProblems = CensusSelfTest();
         check(QStringLiteral("census"), censusProblems.isEmpty(), censusProblems.isEmpty() ? QStringLiteral("ok") : censusProblems);
+        const QString consentProblems = ConsentSelfTest();
+        check(QStringLiteral("consent window rules"), consentProblems.isEmpty(), consentProblems.isEmpty() ? QStringLiteral("ok") : consentProblems);
         const QString telemetryProblems = TelemetrySelfTest();
         check(QStringLiteral("telemetry summary"), telemetryProblems.isEmpty(), telemetryProblems.isEmpty() ? QStringLiteral("ok") : telemetryProblems);
         const QString quotaProblems = ManualQuotaSelfTest();

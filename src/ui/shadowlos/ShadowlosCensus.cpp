@@ -513,6 +513,8 @@ namespace Shadowlos::Journal {
                     tip << QStringLiteral("Последняя проверка: ") + fullLabel(*e->last) + QStringLiteral("; показан прошлый результат (") + ago(e->keptAt) + u')';
                 }
             }
+            // The user's own IP, masked, display only (never stored, logged or sent).
+            if (const QString ip = LocalIpMasked(); !ip.isEmpty()) tip << QStringLiteral("Ваш IP: ") + ip;
             const QString region = geoRegion(geo), op = geoOperator(geo);
             if (!region.isEmpty() || !op.isEmpty()) {
                 tip << QStringLiteral("Регион: ") + (region.isEmpty() ? QStringLiteral("?") : region) +

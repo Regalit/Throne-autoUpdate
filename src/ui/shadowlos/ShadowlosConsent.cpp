@@ -8,6 +8,7 @@
 #include <QDialog>
 #include <QEvent>
 #include <QFrame>
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPointer>
@@ -355,6 +356,9 @@ namespace Shadowlos::Journal {
             s.dialog = dialog;
             LOG_INFO(QStringLiteral("[consent] window shown"));
             dialog->place();
+            // Never take the keyboard from another app: an Enter typed there must not land on
+            // «Да, разрешить» (the default button). It gets focus when the user comes to it.
+            if (QGuiApplication::applicationState() != Qt::ApplicationActive) dialog->setAttribute(Qt::WA_ShowWithoutActivating, true);
             dialog->show();
             // Whereami now, so the IP and region rows fill in while the user reads.
             GeoKick();

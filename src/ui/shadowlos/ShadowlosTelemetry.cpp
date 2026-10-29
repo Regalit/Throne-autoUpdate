@@ -23,6 +23,7 @@
 #include <QNetworkRequest>
 #include <QOperatingSystemVersion>
 #include <QPointer>
+#include <QRandomGenerator>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
@@ -172,10 +173,14 @@ namespace Shadowlos::Journal {
         constexpr auto kTelemetryPath = "/api/mobile/telemetry";
         constexpr auto kProbesPath = "/api/mobile/telemetry/probes.json";
         constexpr auto kAppId = SHADOWLOS_DEV ? "shadowlos-throne-dev" : "shadowlos-throne";
-        constexpr int kFirstLookMs = 90 * 1000;
+        constexpr int kFirstLookMs = 90 * 1000;       // a look 90 s after start (the day's delay still applies)
         constexpr int kLookEveryMs = 10 * 60 * 1000;
-        constexpr qint64 kRetrySecs = 30 * 60;
-        constexpr qint64 kHoldSecs = 60 * 60;
+        constexpr qint64 kBackoffFirstSecs = 30 * 60; // 30, 60, 120, 240 min, then 6 h
+        constexpr qint64 kBackoffMaxSecs = 6 * 60 * 60;
+        constexpr qint64 kServerHoldSecs = 60 * 60;   // a 429/503 without Retry-After
+        constexpr qint64 kStaleHoldSecs = 5 * 60;     // the network or the tunnel changed during a pass
+        constexpr qint64 kDayDelayMaxSecs = 60 * 60;  // the random delay before a day's first attempt
+        constexpr int kParallelProbes = 4;
         constexpr int kWaitCensusLooks = 3; // looks without a verdict before «unknown» is sent
         constexpr int kMaxSites = 200;      // the server's listed limit
         constexpr int kMaxBodyBytes = 16 * 1024;
@@ -432,6 +437,21 @@ namespace Shadowlos::Journal {
             return !uuidV4Re().match(install).hasMatch() || !since.isValid() || since > today || since.daysTo(today) >= 7;
         }
 
+        // The wait after [fails] failures in a row this UTC day: 30, 60, 120, 240 min, then 6 h.
+        qint64 backoffSecs(int fails) {
+            if (fails <= 0) return 0;
+            qint64 secs = kBackoffFirstSecs;
+            for (int i = 1; i < fails && secs < kBackoffMaxSecs; ++i) secs *= 2;
+            return qMin(secs, kBackoffMaxSecs);
+        }
+
+        // The delay before a day's first attempt: none for the very first summary of a fresh
+        // install, else [roll] (0..1) of up to an hour, to spread the midnight-UTC spike.
+        qint64 dayDelaySecs(bool freshInstall, double roll) {
+            if (freshInstall) return 0;
+            return qint64(qBound(0.0, roll, 1.0) * double(kDayDelayMaxSecs));
+        }
+
         // ── state (UI thread) ────────────────────────────────────────────────
 
         struct Tele {
@@ -444,8 +464,14 @@ namespace Shadowlos::Journal {
             // From the file:
             QString install;
             QDate installSince;
-            QString sentDay;
-            qint64 holdUntil = 0;  // secs since epoch
+            QString sentDay;         // the UTC day whose summary is done
+            qint64 holdUntil = 0;    // secs since epoch
+            bool serverHold = false; // holdUntil came from a server 429/503
+            int fails = 0;           // failures in a row on [failsDay]
+            QString failsDay;
+            QString startDay;        // the day [startAt] is for
+            qint64 startAt = 0;      // a day's first attempt not before this (secs since epoch)
+            QJsonObject pending;     // today's finished body, kept so a failed POST only POSTs again
         };
 
         Tele &tele() {
@@ -470,17 +496,29 @@ namespace Shadowlos::Journal {
             t.installSince = QDate::fromString(o.value(QStringLiteral("install_since")).toString(), Qt::ISODate);
             t.sentDay = o.value(QStringLiteral("sent_day")).toString();
             t.holdUntil = o.value(QStringLiteral("hold_until")).toInteger();
+            t.serverHold = o.value(QStringLiteral("server_hold")).toBool();
+            t.fails = o.value(QStringLiteral("fails")).toInt();
+            t.failsDay = o.value(QStringLiteral("fails_day")).toString();
+            t.startDay = o.value(QStringLiteral("start_day")).toString();
+            t.startAt = o.value(QStringLiteral("start_at")).toInteger();
+            t.pending = o.value(QStringLiteral("pending")).toObject();
         }
 
         void save() {
             auto &t = tele();
             QSaveFile f(t.file);
             if (!f.open(QIODevice::WriteOnly)) return;
-            f.write(QJsonDocument(QJsonObject{{"install", t.install},
-                                              {"install_since", t.installSince.toString(Qt::ISODate)},
-                                              {"sent_day", t.sentDay},
-                                              {"hold_until", t.holdUntil}})
-                        .toJson(QJsonDocument::Compact));
+            QJsonObject o{{"install", t.install},
+                          {"install_since", t.installSince.toString(Qt::ISODate)},
+                          {"sent_day", t.sentDay},
+                          {"hold_until", t.holdUntil},
+                          {"server_hold", t.serverHold},
+                          {"fails", t.fails},
+                          {"fails_day", t.failsDay},
+                          {"start_day", t.startDay},
+                          {"start_at", t.startAt}};
+            if (!t.pending.isEmpty()) o.insert(QStringLiteral("pending"), t.pending);
+            f.write(QJsonDocument(o).toJson(QJsonDocument::Compact));
             f.commit();
         }
 
@@ -498,23 +536,49 @@ namespace Shadowlos::Journal {
             return t.install;
         }
 
-        void hold(qint64 secs) {
-            tele().holdUntil = nowSecs() + std::clamp<qint64>(secs, 60, 24 * 3600);
-            save();
-        }
-
         void look();
 
-        void finish(bool ok, qint64 retrySecs = kRetrySecs) {
+        enum class End {
+            Sent,       // 200, or refused as it is (400/403/413, a body that breaks the contract): done today
+            Failed,     // network, 5xx, 401, no site list, no token: exponential backoff
+            ServerHold, // 429/503: the server's Retry-After
+            Stale,      // the network or the tunnel changed during the pass: soon again
+            Cancelled,  // the switch went off: nothing held
+        };
+
+        void finish(End end, qint64 serverSecs = 0) {
             auto &t = tele();
             t.busy = false;
-            if (ok) {
-                t.sentDay = utcToday().toString(Qt::ISODate);
-                t.holdUntil = 0;
-                save();
-            } else {
-                hold(retrySecs);
+            const QString today = utcToday().toString(Qt::ISODate);
+            switch (end) {
+                case End::Sent:
+                    t.sentDay = today;
+                    t.holdUntil = 0;
+                    t.serverHold = false;
+                    t.fails = 0;
+                    t.pending = {};
+                    break;
+                case End::Failed:
+                    if (t.failsDay != today) {
+                        t.failsDay = today;
+                        t.fails = 0;
+                    }
+                    ++t.fails;
+                    t.holdUntil = nowSecs() + backoffSecs(t.fails);
+                    t.serverHold = false;
+                    break;
+                case End::ServerHold:
+                    t.holdUntil = nowSecs() + std::clamp<qint64>(serverSecs > 0 ? serverSecs : kServerHoldSecs, 60, 24 * 3600);
+                    t.serverHold = true;
+                    break;
+                case End::Stale:
+                    t.holdUntil = nowSecs() + kStaleHoldSecs;
+                    t.serverHold = false;
+                    break;
+                case End::Cancelled:
+                    return;
             }
+            save();
         }
 
         void post(const QJsonObject &body, const QString &token) {
@@ -538,34 +602,51 @@ namespace Shadowlos::Journal {
                 Event("api", "call", status == 200 ? "ok" : "fail",
                       QStringLiteral("POST %1 %2").arg(QLatin1String(kTelemetryPath), status ? QString::number(status) : QStringLiteral("error")),
                       status == 200 ? QString() : answer);
-                if (status == 200) finish(true);
-                else if (status == 429 || status == 503) finish(false, retryAfter > 0 ? retryAfter : kHoldSecs);
+                if (status == 200) finish(End::Sent);
+                else if (status == 429 || status == 503) finish(End::ServerHold, retryAfter);
                 // Refused as it is (bad body, unknown app, too large): not again today.
-                else if (status == 400 || status == 403 || status == 413) finish(true);
-                else if (status == 401) finish(false, kHoldSecs);
-                else finish(false);
+                else if (status == 400 || status == 403 || status == 413) finish(End::Sent);
+                else finish(End::Failed);
             });
         }
 
-        // One probe pass over the site list, straight from the user's network.
+        // One probe pass over the site list, straight from the user's network, a few sites at a
+        // time. The switch is checked before each probe: off stops the pass (in-flight probes
+        // are aborted) and it ends as cancelled.
         class Pass : public QObject {
         public:
-            using Done = std::function<void(const QList<QPair<QString, Outcome>> &)>;
+            using Done = std::function<void(const QList<QPair<QString, Outcome>> &, bool cancelled)>;
 
             Pass(QObject *parent, std::vector<Site> sites, Done done)
                 : QObject(parent), sites_(std::move(sites)), done_(std::move(done)) {
                 nam_ = new QNetworkAccessManager(this);
                 nam_->setProxy(QNetworkProxy::NoProxy);
                 results_.resize(int(sites_.size()));
-                pending_ = int(sites_.size());
-                if (pending_ == 0) {
-                    QTimer::singleShot(0, this, [this] { complete(); });
-                    return;
-                }
-                for (int i = 0; i < int(sites_.size()); ++i) start(i);
+                QTimer::singleShot(0, this, [this] { next(); });
             }
 
         private:
+            // Starts probes up to the parallel limit; completes when none is left.
+            void next() {
+                if (finished_) return;
+                if (!ConsentOn()) {
+                    cancel();
+                    return;
+                }
+                while (running_ < kParallelProbes && next_ < int(sites_.size())) start(next_++);
+                if (running_ == 0 && next_ >= int(sites_.size())) complete(false);
+            }
+
+            void cancel() {
+                finished_ = true;
+                for (auto *reply : nam_->findChildren<QNetworkReply *>()) {
+                    reply->disconnect(this);
+                    reply->abort();
+                }
+                LOG_INFO(QStringLiteral("[telemetry] probe pass stopped: the switch was turned off"));
+                complete(true);
+            }
+
             void start(int i) {
                 const Site &site = sites_[size_t(i)];
                 QNetworkRequest request(site.url);
@@ -583,6 +664,7 @@ namespace Shadowlos::Journal {
                 request.setTransferTimeout(site.timeoutMs);
                 auto answer = std::make_shared<Answer>();
                 auto done = std::make_shared<bool>(false);
+                ++running_;
                 auto *reply = nam_->get(request);
                 const bool verify = site.verifyTls;
                 const int maxBody = site.maxBody;
@@ -596,7 +678,7 @@ namespace Shadowlos::Journal {
                     answer->headers = reply->rawHeaderPairs();
                 };
                 const auto conclude = [this, i, reply, answer, done, capture](bool enough) {
-                    if (*done) return;
+                    if (*done || finished_) return;
                     *done = true;
                     capture();
                     if (!enough) answer->error = reply->error();
@@ -604,7 +686,9 @@ namespace Shadowlos::Journal {
                     reply->disconnect(this);
                     reply->abort();
                     reply->deleteLater();
-                    if (--pending_ == 0) complete();
+                    --running_;
+                    // The next probe from the event loop, never inside this reply's own signal.
+                    QTimer::singleShot(0, this, [this] { next(); });
                 };
                 QObject::connect(reply, &QNetworkReply::readyRead, this, [reply, answer, maxBody, conclude] {
                     answer->body += reply->read(qMax<qint64>(0, maxBody - answer->body.size()));
@@ -624,21 +708,26 @@ namespace Shadowlos::Journal {
                 });
             }
 
-            void complete() {
+            void complete(bool cancelled) {
+                finished_ = true;
                 QList<QPair<QString, Outcome>> rows;
-                for (const auto &r : results_) {
-                    if (!r.first.isEmpty()) rows << r;
+                if (!cancelled) {
+                    for (const auto &r : results_) {
+                        if (!r.first.isEmpty()) rows << r;
+                    }
                 }
                 const auto done = std::move(done_);
                 deleteLater();
-                done(rows);
+                done(rows, cancelled);
             }
 
             std::vector<Site> sites_;
             Done done_;
             QNetworkAccessManager *nam_ = nullptr;
             QList<QPair<QString, Outcome>> results_;
-            int pending_ = 0;
+            int next_ = 0;
+            int running_ = 0;
+            bool finished_ = false;
         };
 
         bool staleNow(const QByteArray &net, int epoch) {
@@ -646,18 +735,53 @@ namespace Shadowlos::Journal {
             return FreshNetworkKey(&type) != net || (ConnectCount() != epoch && settings()->spmode_vpn) || !OffVpnNow();
         }
 
+        // A new UTC day: the backoff starts over (a server hold stands), yesterday's unsent body
+        // goes, and the day's first attempt gets its random delay.
+        void rollDay(const QString &today) {
+            auto &t = tele();
+            bool changed = false;
+            if (t.failsDay != today) {
+                t.failsDay = today;
+                t.fails = 0;
+                if (!t.serverHold) t.holdUntil = 0;
+                changed = true;
+            }
+            if (!t.pending.isEmpty() && t.pending.value(QStringLiteral("day")).toString() != today) {
+                t.pending = {};
+                changed = true;
+            }
+            if (t.startDay != today) {
+                const bool fresh = t.sentDay.isEmpty() && t.install.isEmpty();
+                t.startDay = today;
+                t.startAt = nowSecs() + dayDelaySecs(fresh, QRandomGenerator::global()->generateDouble());
+                changed = true;
+            }
+            if (changed) save();
+        }
+
         // Every 10 minutes: when today's summary is still due and the switch is on, the site
-        // list, one probe pass and one upload.
+        // list, one probe pass and one upload (or only the upload, when today's pass is kept).
         void look() {
             auto &t = tele();
             const QString today = utcToday().toString(Qt::ISODate);
-            if (t.busy || !ConsentOn() || t.sentDay == today || nowSecs() < t.holdUntil) return;
+            if (t.busy || !ConsentOn() || t.sentDay == today) return;
+            rollDay(today);
+            if (nowSecs() < t.holdUntil || nowSecs() < t.startAt) return;
             QString token;
             if (!ApiToken(&token)) return;
             QString netType;
             bool checked = false;
             const QByteArray net = CurrentNetworkKey(&netType, &checked);
+            // The upload goes on the direct road too: the server reads region and provider from it.
             if (!checked || net.isEmpty() || !OffVpnNow()) return;
+
+            // Today's pass is done and only its upload failed: send the same body again.
+            if (!t.pending.isEmpty()) {
+                t.busy = true;
+                post(t.pending, token);
+                return;
+            }
+
             // The census's verdict for this network; after a few looks without one, «unknown».
             if (t.waitsDay != today) {
                 t.waitsDay = today;
@@ -677,44 +801,53 @@ namespace Shadowlos::Journal {
             QObject::connect(reply, &QNetworkReply::finished, nam, [reply, nam, net, netType, blocking, epoch] {
                 reply->deleteLater();
                 nam->deleteLater();
+                // Turned off while the list was on its way: no probe at all.
+                if (!ConsentOn()) {
+                    finish(End::Cancelled);
+                    return;
+                }
                 const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
                 const QJsonObject doc = QJsonDocument::fromJson(reply->readAll()).object();
                 if (status != 200 || doc.isEmpty()) {
                     LOG_INFO(QStringLiteral("[telemetry] site list: %1").arg(status ? QStringLiteral("HTTP %1").arg(status) : reply->errorString()));
-                    finish(false);
+                    finish(End::Failed);
                     return;
                 }
-                new Pass(tele().owner, parseSites(doc), [net, netType, blocking, epoch](const QList<QPair<QString, Outcome>> &rows) {
-                    if (!ConsentOn()) {
-                        tele().busy = false;
+                new Pass(tele().owner, parseSites(doc), [net, netType, blocking, epoch](const QList<QPair<QString, Outcome>> &rows, bool cancelled) {
+                    if (cancelled || !ConsentOn()) {
+                        finish(End::Cancelled);
                         return;
                     }
                     if (staleNow(net, epoch)) {
                         // Another network, or a tunnel that may have carried the probes.
                         LOG_INFO(QStringLiteral("[telemetry] probe pass dropped: the network or the tunnel changed"));
-                        finish(false, 5 * 60);
+                        finish(End::Stale);
                         return;
                     }
                     QString token;
                     if (!ApiToken(&token)) {
-                        finish(false);
+                        finish(End::Failed);
                         return;
                     }
                     const QJsonObject body = buildBody(currentInstall(), utcToday().toString(Qt::ISODate), netType, blocking, rows);
                     if (const QString problem = contractProblem(body, InstallId().toLower(), utcToday()); !problem.isEmpty()) {
                         LOG_INFO(QStringLiteral("[telemetry] summary not sent: %1").arg(problem));
-                        finish(true);
+                        finish(End::Sent);
                         return;
                     }
+                    // Kept until the server takes it, so a failed POST does not probe again.
+                    tele().pending = body;
+                    save();
                     post(body, token);
                 });
             });
         }
 
+        // The switch was turned on: look again soon. A server's Retry-After still stands.
         void scheduleSoon(int ms) {
             auto &t = tele();
             if (!t.timer) return;
-            t.holdUntil = 0;
+            if (!t.serverHold) t.holdUntil = 0;
             QTimer::singleShot(ms, t.timer, [] { look(); });
         }
 
@@ -822,6 +955,14 @@ namespace Shadowlos::Journal {
         QJsonObject extra = body;
         extra.insert(QStringLiteral("city"), QStringLiteral("x"));
         expect("unknown key refused", !contractProblem(extra, auth, today).isEmpty());
+
+        // The backoff and the day's delay.
+        expect("backoff 30/60/120/240 min, then 6 h",
+               backoffSecs(0) == 0 && backoffSecs(1) == 1800 && backoffSecs(2) == 3600 && backoffSecs(3) == 7200 &&
+                   backoffSecs(4) == 14400 && backoffSecs(5) == 21600 && backoffSecs(40) == 21600);
+        expect("no day delay for a fresh install's first summary", dayDelaySecs(true, 0.9) == 0);
+        expect("day delay within an hour", dayDelaySecs(false, 0.0) == 0 && dayDelaySecs(false, 0.5) == 1800 &&
+                                               dayDelaySecs(false, 1.0) == 3600 && dayDelaySecs(false, 7.0) == 3600);
 
         // The weekly id.
         expect("no id: new one", installDue({}, {}, today));

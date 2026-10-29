@@ -23,8 +23,11 @@
 // consent-text.html, word for word). Both builds.
 //
 // When: only in Обычный or Продвинутый, never in Минимальный; once per app version until the
-// user says «Да» (then never again). «Нет» or no answer is asked again after an update, once.
-// Closing it without an answer (Esc) is no answer: asked again at the next launch.
+// user says «Да» (then never again). «Нет» is asked again after an update, once. The window is
+// modal and has no other way out: Esc and Alt+F4 do nothing, a button must be pressed (an app
+// quit with it open is no answer, asked again at the next launch). «Да» looks primary but is not
+// the default button, focus starts on nothing, and both buttons ignore input for the first
+// second, so no key or click meant for something else can answer it.
 // The answer sets the «Улучшение обхода» switch; turning the switch on later counts as «Да».
 // Until a «Да», ConsentOn() is false: nothing is collected or sent. While the window is open,
 // geo and the census may look (ConsentPreview) so it can show what the user gets; that sends
@@ -226,8 +229,11 @@ namespace Shadowlos::Journal {
                 no->setCursor(Qt::PointingHandCursor);
                 auto *yes = new QPushButton(QStringLiteral("Да, разрешить"), card);
                 yes->setObjectName(QStringLiteral("slConsentYes"));
-                yes->setDefault(true);
-                yes->setAutoDefault(true);
+                // Primary in look only: never the default, so Enter answers nothing.
+                yes->setDefault(false);
+                yes->setAutoDefault(false);
+                no->setFocusPolicy(Qt::TabFocus);
+                yes->setFocusPolicy(Qt::TabFocus);
                 yes->setCursor(Qt::PointingHandCursor);
                 buttons->addWidget(no, 1);
                 buttons->addWidget(yes, 1);
@@ -239,7 +245,18 @@ namespace Shadowlos::Journal {
                 v->addWidget(note);
                 connect(no, &QPushButton::clicked, this, [this] { finish(false); });
                 connect(yes, &QPushButton::clicked, this, [this] { finish(true); });
-                yes->setFocus();
+                // Focus on the card, not on a button.
+                card->setFocusPolicy(Qt::StrongFocus);
+                card->setFocus();
+                // Nothing answers in the first second (a click or key meant for the window below).
+                buttons_ = {no, yes};
+                for (QPushButton *b : buttons_) b->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+                no->installEventFilter(this);
+                yes->installEventFilter(this);
+                QTimer::singleShot(1000, this, [this] {
+                    armed_ = true;
+                    for (QPushButton *b : buttons_) b->setAttribute(Qt::WA_TransparentForMouseEvents, false);
+                });
 
                 refresh();
                 auto *timer = new QTimer(this);
@@ -263,8 +280,17 @@ namespace Shadowlos::Journal {
                 move(r.topLeft());
             }
 
+            // Esc and Alt+F4 are no way out: a button must be pressed.
+            void reject() override {}
+
+        protected:
+            bool eventFilter(QObject *obj, QEvent *event) override {
+                // A key on a button in the first second answers nothing.
+                if (!armed_ && (event->type() == QEvent::KeyPress || event->type() == QEvent::KeyRelease)) return true;
+                return QDialog::eventFilter(obj, event);
+            }
+
         private:
-            // Esc closes it without an answer (asked again next launch); Enter is «Да», the default.
             void setMore(bool open) {
                 more_->setText(QStringLiteral("Какие данные мы собираем ") + (open ? QStringLiteral("⌃") : QStringLiteral("⌄")));
                 box_->setVisible(open);
@@ -300,6 +326,8 @@ namespace Shadowlos::Journal {
             QLabel *ip_ = nullptr, *region_ = nullptr, *blocking_ = nullptr, *dot_ = nullptr;
             QPushButton *more_ = nullptr;
             QFrame *box_ = nullptr;
+            QList<QPushButton *> buttons_;
+            bool armed_ = false;
         };
 
         // ── state (UI thread) ────────────────────────────────────────────────
@@ -352,7 +380,6 @@ namespace Shadowlos::Journal {
                 if (QAction *a = st().consent) a->setChecked(yes);
             });
             QObject::connect(dialog, &QObject::destroyed, dim, [dim] { dim->deleteLater(); });
-            QObject::connect(dialog, &QDialog::rejected, dialog, [] { LOG_INFO(QStringLiteral("[consent] closed without an answer")); });
             s.dialog = dialog;
             LOG_INFO(QStringLiteral("[consent] window shown"));
             dialog->place();
@@ -413,7 +440,7 @@ namespace Shadowlos::Journal {
         expect("never in Минимальный", !shouldAsk(kNever, {}, v14, false, false));
         expect("first Обычный/Продвинутый asks", shouldAsk(kNever, {}, v14, true, false));
         expect("once per run", !shouldAsk(kNever, {}, v14, true, true));
-        expect("closed without an answer: asked at the next launch", shouldAsk(kNever, {}, v14, true, false));
+        expect("an app quit with it open (no answer): asked at the next launch", shouldAsk(kNever, {}, v14, true, false));
         // «Да» is never asked again, not even after an update.
         Stored s;
         answer(s, true, v14);

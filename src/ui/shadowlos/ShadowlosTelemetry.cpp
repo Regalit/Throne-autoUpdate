@@ -263,15 +263,21 @@ namespace Shadowlos::Journal {
             return errorsBlock(d);
         }
 
-        // A run that did not end cleanly: a crash when the crash handler left a report after the
-        // run began, else an abnormal exit (killed, power loss).
-        void countPreviousRun() {
-            if (!Logging::PreviousSessionCrashed()) return;
-            const QFileInfo previousLog(Logging::PreviousSessionLogPath());
-            const QDateTime began = previousLog.exists() ? previousLog.birthTime() : QDateTime();
-            const auto reports = QDir(Logging::CrashDir()).entryInfoList(QDir::Files, QDir::Time);
-            const bool crash = !reports.isEmpty() && (!began.isValid() || reports.first().lastModified() >= began);
-            countError(crash ? ErrorKind::Crash : ErrorKind::Abnormal);
+        // <config dir>/telemetry-run.marker: written at start, removed on a clean exit. Found at
+        // start, the previous run did not end cleanly: a crash when the crash handler left a
+        // report after it began, else an abnormal exit (killed, power loss).
+        void countPreviousRun(QObject *owner) {
+            const QString marker = QDir::current().absoluteFilePath(QStringLiteral("telemetry-run.marker"));
+            const QFileInfo previous(marker);
+            if (previous.exists()) {
+                const QDateTime began = previous.lastModified();
+                const auto reports = QDir(Logging::CrashDir()).entryInfoList(QDir::Files, QDir::Time);
+                const bool crash = !reports.isEmpty() && reports.first().lastModified() >= began;
+                countError(crash ? ErrorKind::Crash : ErrorKind::Abnormal);
+            }
+            QFile f(marker);
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) f.write("run\n"); // the time is the file's
+            QObject::connect(qApp, &QCoreApplication::aboutToQuit, owner, [marker] { QFile::remove(marker); });
         }
 
     } // namespace
@@ -403,7 +409,7 @@ namespace Shadowlos::Journal {
             errs().file = QDir::current().absoluteFilePath(QStringLiteral("telemetry-errors.json"));
             loadErrorsLocked();
         }
-        countPreviousRun();
+        countPreviousRun(window);
         InstallTelemetry(window);
     }
 
@@ -716,6 +722,17 @@ namespace Shadowlos::Journal {
             return qMin(secs, kBackoffMaxSecs);
         }
 
+        // Whether to send a day's full summary again for its grown error counts: a past day (within
+        // the contract's 14) once, today at most every 4 hours; never after a 400 refused errors today.
+        bool refreshRule(const QString &day, const QString &today, int total, int sentErrors, const QString &refreshedDay,
+                         const QString &errorsOffDay, qint64 sinceLastPost) {
+            const QDate d = QDate::fromString(day, Qt::ISODate), t = QDate::fromString(today, Qt::ISODate);
+            if (!d.isValid() || !t.isValid() || d > t || d.daysTo(t) > 14 || errorsOffDay == today) return false;
+            if (total <= sentErrors) return false;
+            if (day != today) return refreshedDay != day;
+            return sinceLastPost >= 4 * 60 * 60;
+        }
+
         // The delay before a day's first attempt: none for the very first summary of a fresh
         // install, else [roll] (0..1) of up to an hour, to spread the midnight-UTC spike.
         qint64 dayDelaySecs(bool freshInstall, double roll) {
@@ -747,6 +764,7 @@ namespace Shadowlos::Journal {
             int sentErrors = 0;      // the error total last sent for sentBody's day
             qint64 lastPostAt = 0;   // when sentBody last went
             QString errorsOffDay;    // a 400 came with errors this UTC day: no errors block until tomorrow
+            QString refreshedDay;    // the past day already sent again for its errors (once only)
         };
 
         Tele &tele() {
@@ -781,6 +799,7 @@ namespace Shadowlos::Journal {
             t.sentErrors = o.value(QStringLiteral("sent_errors")).toInt();
             t.lastPostAt = o.value(QStringLiteral("last_post_at")).toInteger();
             t.errorsOffDay = o.value(QStringLiteral("errors_off_day")).toString();
+            t.refreshedDay = o.value(QStringLiteral("refreshed_day")).toString();
         }
 
         void save() {
@@ -798,7 +817,8 @@ namespace Shadowlos::Journal {
                           {"start_at", t.startAt},
                           {"sent_errors", t.sentErrors},
                           {"last_post_at", t.lastPostAt},
-                          {"errors_off_day", t.errorsOffDay}};
+                          {"errors_off_day", t.errorsOffDay},
+                          {"refreshed_day", t.refreshedDay}};
             if (!t.pending.isEmpty()) o.insert(QStringLiteral("pending"), t.pending);
             if (!t.sentBody.isEmpty()) o.insert(QStringLiteral("sent_body"), t.sentBody);
             f.write(QJsonDocument(o).toJson(QJsonDocument::Compact));
@@ -867,27 +887,25 @@ namespace Shadowlos::Journal {
         enum class Purpose { Daily, Refresh };
 
         // [body] with the current errors block of its day, unless a 400 refused errors today
-        // or the block would break the contract.
-        QJsonObject withErrors(QJsonObject body, int *total) {
+        // or the block would break the contract. [included]: the errors in the block; [dayTotal]:
+        // the day's errors now, sent or not (what a later refresh compares against).
+        QJsonObject withErrors(QJsonObject body, int *included, int *dayTotal) {
             body.remove(QStringLiteral("errors"));
-            *total = 0;
-            if (tele().errorsOffDay == utcToday().toString(Qt::ISODate)) return body;
-            const QJsonObject e = errorsFor(body.value(QStringLiteral("day")).toString(), total);
-            if (e.isEmpty()) return body;
+            *included = 0;
+            const QJsonObject e = errorsFor(body.value(QStringLiteral("day")).toString(), dayTotal);
+            if (e.isEmpty() || tele().errorsOffDay == utcToday().toString(Qt::ISODate)) return body;
             QJsonObject with = body;
             with.insert(QStringLiteral("errors"), e);
-            if (!contractProblem(with, InstallId().toLower(), utcToday()).isEmpty()) {
-                *total = 0;
-                return body;
-            }
+            if (!contractProblem(with, InstallId().toLower(), utcToday()).isEmpty()) return body;
+            *included = *dayTotal;
             return with;
         }
 
         // [body] is kept without errors; the block is added here, fresh. Daily: today's summary.
         // Refresh: the last sent body again, because its day's error counts grew since.
         void post(const QJsonObject &body, const QString &token, Purpose purpose) {
-            int errorTotal = 0;
-            const QJsonObject sent = withErrors(body, &errorTotal);
+            int errorTotal = 0, dayTotal = 0;
+            const QJsonObject sent = withErrors(body, &errorTotal, &dayTotal);
             const bool hasErrors = sent.contains(QStringLiteral("errors"));
             auto *nam = new QNetworkAccessManager(tele().owner);
             nam->setProxy(QNetworkProxy::NoProxy);
@@ -899,7 +917,7 @@ namespace Shadowlos::Journal {
             request.setTransferTimeout(30 * 1000);
             const int rows = int(sent.value(QStringLiteral("listed")).toArray().size());
             auto *reply = nam->post(request, QJsonDocument(sent).toJson(QJsonDocument::Compact));
-            QObject::connect(reply, &QNetworkReply::finished, nam, [reply, nam, rows, body, token, purpose, hasErrors, errorTotal] {
+            QObject::connect(reply, &QNetworkReply::finished, nam, [reply, nam, rows, body, token, purpose, hasErrors, errorTotal, dayTotal] {
                 reply->deleteLater();
                 nam->deleteLater();
                 auto &t = tele();
@@ -914,10 +932,14 @@ namespace Shadowlos::Journal {
                 Event("api", "call", status == 200 ? "ok" : "fail",
                       QStringLiteral("POST %1 %2").arg(QLatin1String(kTelemetryPath), status ? QString::number(status) : QStringLiteral("error")),
                       status == 200 ? QString() : answer);
-                const auto taken = [&t, &body, errorTotal] {
+                // Done with this body and the day's counts as they were, sent or left out: a
+                // later refresh only follows new errors, and a past day goes again only once.
+                const auto taken = [&t, &body, dayTotal, purpose] {
                     t.sentBody = body;
-                    t.sentErrors = errorTotal;
+                    t.sentErrors = dayTotal;
                     t.lastPostAt = nowSecs();
+                    const QString day = body.value(QStringLiteral("day")).toString();
+                    if (purpose == Purpose::Refresh && day != utcToday().toString(Qt::ISODate)) t.refreshedDay = day;
                 };
                 if (status == 400 && hasErrors) {
                     // The server does not take the errors block (yet): once more today without
@@ -927,7 +949,10 @@ namespace Shadowlos::Journal {
                     if (purpose == Purpose::Daily) {
                         post(body, token, purpose);
                     } else {
+                        // A refresh only carried errors: nothing more to send for these counts.
+                        taken();
                         t.busy = false;
+                        save();
                     }
                     return;
                 }
@@ -1079,14 +1104,11 @@ namespace Shadowlos::Journal {
         // day (within the contract's 14) at once, today at most every 4 hours.
         bool refreshDue(const QString &today) {
             auto &t = tele();
-            if (t.sentBody.isEmpty() || t.errorsOffDay == today) return false;
+            if (t.sentBody.isEmpty()) return false;
             const QString day = t.sentBody.value(QStringLiteral("day")).toString();
-            const QDate d = QDate::fromString(day, Qt::ISODate);
-            if (!d.isValid() || d.daysTo(utcToday()) > 14) return false;
             int total = 0;
             errorsFor(day, &total);
-            if (total <= t.sentErrors) return false;
-            return day != today || nowSecs() - t.lastPostAt >= 4 * 60 * 60;
+            return refreshRule(day, today, total, t.sentErrors, t.refreshedDay, t.errorsOffDay, nowSecs() - t.lastPostAt);
         }
 
         // A new UTC day: the backoff starts over (a server hold stands), yesterday's unsent body
@@ -1371,6 +1393,20 @@ namespace Shadowlos::Journal {
             expect("host in a row refused", !contractProblem(badRow, auth, today).isEmpty());
             badRow.insert("errors", QJsonObject{});
             expect("empty errors block refused", !contractProblem(badRow, auth, today).isEmpty());
+        }
+
+        // The errors refresh: a past day once, today every 4 h, no loop when the block was left out.
+        {
+            const QString d28 = "2026-10-28", d29 = "2026-10-29";
+            expect("refresh: a past day's grown counts go once", refreshRule(d28, d29, 3, 1, {}, {}, 60));
+            expect("refresh: a past day only once", !refreshRule(d28, d29, 5, 3, d28, {}, 60));
+            expect("refresh: today not within 4 h", !refreshRule(d29, d29, 3, 1, {}, {}, 3600));
+            expect("refresh: today after 4 h", refreshRule(d29, d29, 3, 1, {}, {}, 4 * 3600));
+            expect("refresh: no growth, no send", !refreshRule(d28, d29, 2, 2, {}, {}, 60));
+            // A send that left the block out records the day's total: nothing grows afterwards.
+            expect("refresh: a left-out block does not loop", !refreshRule(d28, d29, 2, 2, {}, {}, 60));
+            expect("refresh: not after a 400 refused errors today", !refreshRule(d28, d29, 3, 1, {}, d29, 60));
+            expect("refresh: not past the 14 days", !refreshRule("2026-10-10", d29, 3, 1, {}, {}, 60));
         }
 
         // The backoff and the day's delay.

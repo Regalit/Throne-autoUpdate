@@ -10,8 +10,6 @@
 
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
-#if SHADOWLOS_DEV
-
 #include "include/database/DatabaseManager.h"
 #include "include/database/SettingsRepo.h"
 #include "include/global/Logger.hpp"
@@ -20,6 +18,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QElapsedTimer>
+#include <QHostAddress>
 #include <QHash>
 #include <QJsonDocument>
 #include <QMutex>
@@ -41,6 +40,9 @@
 // on Windows, and no city is kept anywhere (shadowlos 2feb9c58: it narrows a person down).
 // No IP is ever kept: the server's answer has none, and every value goes through SanitizeGeo
 // before it is used.
+//
+// Both builds: the bottom bar's region line and the census need it. Asked only while the
+// «Улучшение обхода» switch is on. The net lines go to the dev journal (no-ops in prod).
 namespace Shadowlos::Journal {
 
     namespace {
@@ -51,7 +53,7 @@ namespace Shadowlos::Journal {
         constexpr qint64 kRetrySecs = 5 * 60;
         constexpr auto kWhereamiPath = "/api/mobile/whereami";
         // The server refuses whereami without it (handlers/whereami.go whereamiApps).
-        constexpr auto kAppHeader = "shadowlos-throne-dev";
+        constexpr auto kAppHeader = SHADOWLOS_DEV ? "shadowlos-throne-dev" : "shadowlos-throne";
 
         // ── sanitizing ───────────────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ namespace Shadowlos::Journal {
         struct Entry {
             QJsonObject geo;   // country region asn org, sanitized
             qint64 nextAt = 0; // when to ask again
+            QString ip;        // the user's own IP on this network if whereami tells it: memory only, shown masked, never sent or logged
         };
 
         struct Geo {
@@ -256,7 +259,8 @@ namespace Shadowlos::Journal {
         // socket, so nothing is asked while connected in TUN mode.
         bool mayFetch() {
             if (!g().nam || g().busy || g().net.key.isEmpty()) return false;
-            if (settings()->shadowlos_send_journal == 0) return false;
+            // The consent window may look before the answer: it shows what the user gets.
+            if (!ConsentOn() && !ConsentPreview()) return false;
             if (settings()->spmode_vpn && TunnelActive()) return false;
             QString token;
             return ApiToken(&token);
@@ -297,6 +301,9 @@ namespace Shadowlos::Journal {
                     }
                     geo = SanitizeGeo(geo);
                     geo.remove(QStringLiteral("net_type"));
+                    // Only an address that parses; it stays in memory and goes nowhere.
+                    const QHostAddress ip(answer.value(QStringLiteral("ip")).toString());
+                    entry.ip = ip.isNull() ? QString() : ip.toString();
                     entry.geo = geo;
                     entry.nextAt = now + kFreshSecs;
                 } else {
@@ -442,6 +449,25 @@ namespace Shadowlos::Journal {
         return false;
     }
 
+    // 185.•••.•••.42; for IPv6 the first and the last group.
+    QString LocalIpMasked() {
+        // The IP of the network the last check saw: never another network's.
+        const QString ip = g().cache.value(g().net.key).ip;
+        if (ip.isEmpty()) return {};
+        const QString dots = QStringLiteral("•••");
+        if (ip.contains(u'.') && !ip.contains(u':')) {
+            const QStringList p = ip.split(u'.');
+            if (p.size() == 4) return p[0] + u'.' + dots + u'.' + dots + u'.' + p[3];
+        }
+        const QStringList p = ip.split(u':', Qt::SkipEmptyParts);
+        if (p.size() >= 2) return p.first() + u':' + dots + u':' + p.last();
+        return dots;
+    }
+
+    void GeoKick() {
+        if (fetchDue() && mayFetch()) fetch();
+    }
+
     QJsonObject LatestGeo() {
         QMutexLocker lock(&latestMutex());
         return latest();
@@ -478,5 +504,3 @@ namespace Shadowlos::Journal {
     }
 
 } // namespace Shadowlos::Journal
-
-#endif // SHADOWLOS_DEV

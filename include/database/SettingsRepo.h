@@ -14,6 +14,7 @@
 #endif
 
 namespace Configs {
+
     // Loopback/broadcast are deliberately absent: routing them into the tun breaks the sing-box <-> Xray bridges and local DNS.
     inline QStringList defaultTunPrivateRanges() {
         return {"10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "224.0.0.0/4",
@@ -84,7 +85,9 @@ namespace Configs {
         int shadowlos_simple_view = 1; // before 1.0.13: the simple server list (on) or the full one; migrated to shadowlos_view
         int shadowlos_view = -1; // main window view: 0 minimal, 1 normal, 2 advanced; -1 = take it from shadowlos_simple_view
         QString shadowlos_full_geometry; // saveGeometry() of the full view, kept while the minimal view is shown (base64)
-        int shadowlos_send_journal = 1; // dev builds: send the error journal to the developers (Tools menu)
+        int shadowlos_send_journal = 0; // «Улучшение обхода» switch: the anonymous daily summary (both builds) and, in dev, the error journal; counts only once shadowlos_consent is 1
+        int shadowlos_consent = 0; // the consent window's answer: 0 never answered, 1 «Да» (or the switch turned on since), 2 «Нет»
+        QString shadowlos_consent_version; // the app version the consent window was last answered for
         QString mux_protocol = "smux";
         bool mux_padding = false;
         int mux_concurrency = 8;

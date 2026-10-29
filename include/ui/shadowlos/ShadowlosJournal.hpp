@@ -2,71 +2,97 @@
 
 #include "NkrVersion.h"
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QString>
 #include <QStringList>
 
 #include <functional>
+#include <memory>
 
 class QAbstractButton;
 class QAction;
 class QMenu;
+class QObject;
 class QWidget;
 
-// Dev-build error journal, in the Android dev app's format (shadowlos-build
-// team/journal-format.md): JSON lines `ts sid seq layer step outcome ms err d` in
-// <config dir>/journal/journal.jsonl, capped at 2 MiB, every string scrubbed before it is
-// written. Sent to our POST /api/mobile/client-logs (Sl-Sub auth) every 3 minutes; a crash
-// of the previous run is reported once on the next start.
+namespace Configs {
+    class Profile;
+}
+
+// Two layers, one namespace.
 //
-// Only a dev build (SHADOWLOS_DEV) has any of it. In a prod build every hook below is an
-// empty inline function, so upstream-owned files can call them unconditionally.
+// BOTH builds (prod and dev): the «Улучшение обхода» consent (settings->shadowlos_send_journal,
+// the bottom-bar switch), the connect state, geo (whereami, network type), the blocking census
+// and its badge, and the anonymous daily summary (ShadowlosTelemetry.cpp, POST
+// /api/mobile/telemetry: counters only, a weekly install id, one upload a UTC day).
 //
-// The user can turn sending off in Tools («Отправлять журнал ошибок разработчикам»,
-// settings->shadowlos_send_journal); off clears the journal, the queue and the crash record.
+// DEV only (SHADOWLOS_DEV): the error journal in the Android dev app's format (shadowlos-build
+// team/journal-format.md): JSON lines under <config dir>/journal, uploaded every 3 minutes,
+// crash and manual reports, and the «Улучшение обхода блокировок» page. In a prod build those
+// hooks are empty inline functions, so upstream-owned files can call them unconditionally,
+// and none of that code is compiled.
 namespace Shadowlos::Journal {
 
-#if SHADOWLOS_DEV
+    // ── both builds ──────────────────────────────────────────────────────────
 
-    // `--journal-selftest`: runs the scrub table, prints PASS/FAIL, returns the exit code.
-    // -1 when the flag is absent.
-    int RunSelfTestIfAsked(const QStringList &args);
-
-    // Opens the journal and writes the start line. Call once, after Logging::Init, with
-    // the config dir (where throne.db is) as the current directory. A previous run that
-    // did not shut down cleanly is queued as a crash report first.
-    void Start();
-
-    // The Tools menu action, the UI tracker (dialogs, taps, warnings), lifecycle, the mode
-    // toggles and the upload timer. Call once from Chrome::Install.
+    // The consent, geo, the census tick and the daily summary; in dev also the journal (its
+    // Tools menu action, UI tracker and upload timer). Call once from Chrome::Install.
     void Install(QWidget *window, QMenu *tools, QAbstractButton *tun, QAbstractButton *systemProxy);
 
-    // One line. layer/step/outcome are fixed words; d and err are scrubbed here.
-    // ms < 0 leaves the key out. Thread-safe.
-    void Event(const char *layer, const char *step, const char *outcome,
-               const QString &d = {}, const QString &err = {}, qint64 ms = -1);
+    // The «Улучшение обхода» consent: the bottom-bar switch and Продвинутый's toggle flip this
+    // action; nullptr before Install. ConsentOn: the user said «Да» in the consent window (or
+    // turned the switch on since) and the switch is on. Nothing is collected or sent otherwise.
+    QAction *ConsentAction();
+    bool ConsentOn();
 
-    // Text on its way to the log view (MW_show_log): core and GUI log lines. Errors (fail) and
-    // warnings (ok) are kept; info only within 30 s after a connect starts. Rate capped. Thread-safe.
-    void CoreLog(const QString &text);
+    // ── the consent window (ShadowlosConsent.cpp) ──
+
+    // Called from Install with the consent action.
+    void InstallConsent(QWidget *window, QAction *consent);
+
+    // The view now shown (at start and on every change): the window is asked for only in
+    // Обычный or Продвинутый, never in Минимальный.
+    void ConsentViewChanged(bool fullView);
+
+    // The consent window is open: geo and the census may look so it can show what the user gets
+    // (nothing is sent before an answer).
+    bool ConsentPreview();
+
+    // The decision rules (when to ask, what counts as consent); "" when all hold.
+    QString ConsentSelfTest();
+
+    // For the consent window: the user's own IP, masked (never sent, logged or stored; "" when
+    // the server did not tell it), region · provider ("" unknown), and the census verdict
+    // ("" unknown) with its dot level (ok, warn, bad, none). UI thread.
+    QString LocalIpMasked();
+    QString GeoRegionProvider();
+    QString CensusVerdictNow(QString *level);
+
+    // A whereami look now if one is due and allowed. UI thread.
+    void GeoKick();
 
     // profile_start / profile_stop. Thread-safe.
     void ConnectStart(const QString &server, bool automatic);
     void ConnectEnd(bool ok);
     void Disconnect(bool crash, bool manual);
 
-    // The scrub rules (a port of the Android app's scrub.dart).
+    // For the summary's error counts: the profile a connect starts (its protocol label and
+    // server country, nothing else is kept), and the core's answer to it (only its class is
+    // kept: dns, tcp, tls, handshake, timeout, other). Worker thread.
+    void ConnectProfile(const std::shared_ptr<Configs::Profile> &ent);
+    void ConnectResult(bool rpcOK, const QString &error);
+
+    // How many connects have started this run, and whether one is being brought up or is up
+    // (false again after a stop or a core crash). Thread-safe.
+    int ConnectCount();
+    bool TunnelActive();
+    bool Connecting();
+
+    // The scrub rules (a port of the Android app's scrub.dart); geo's free text must pass them.
     QString Scrub(const QString &text);
 
-    // A journal line with every string value scrubbed, still valid JSON; a line that is
-    // not a JSON object is scrubbed as text.
-    QString ScrubJsonLine(const QString &line);
-
-    // The upload body (client-logs, Windows shape: platform/os, no android/sdk), with the
-    // latest geo object when there is one.
-    QJsonObject UploadEnvelope(const QString &reason, const QString &requestId, const QString &log);
-
-    // ── geo (ShadowlosGeo.cpp; journal-format.md "Addendum: net step and geo") ──
+    // ── geo (ShadowlosGeo.cpp) ──
 
     // The geo object as the server accepts it: only its keys (net_type carrier mcc_mnc country
     // region asn org; never city), shaped fields checked, free text plain (no IP, host, link, control
@@ -80,19 +106,11 @@ namespace Shadowlos::Journal {
     // The network-key rules (gateway MAC missing, appearing, changing); "" when all hold.
     QString NetworkKeySelfTest();
 
-    // The 15 s network check, whereami and the start net line. Called from Install.
+    // The 15 s network check and whereami. Called from Install.
     void InstallGeo(QObject *owner);
 
-    // A net line for a connect start. UI thread (ConnectStart queues it).
+    // A look at the network for a connect start (and, in dev, its net line). UI thread.
     void GeoConnectStart();
-
-    // How many connects have started this run, and whether one is being brought up or is up
-    // (false again after a stop or a core crash). Thread-safe.
-    int ConnectCount();
-    bool TunnelActive();
-
-    // An app/net line (outcome ok) carrying the nested geo object. Thread-safe.
-    void NetEvent(const QString &d, const QJsonObject &geo);
 
     // The network the last 15 s check saw: its key ("" for none), net_type, and whether a
     // check has run yet; [checks] counts the looks taken (the 15 s check and a connect's).
@@ -100,9 +118,7 @@ namespace Shadowlos::Journal {
     QByteArray CurrentNetworkKey(QString *netType = nullptr, bool *checked = nullptr, int *checks = nullptr);
 
     // The network's key read now from the adapters (the 15 s check may not have run since a
-    // switch), with the same key rules. It goes through the shared key memo (last adapter,
-    // gateway MAC and key) exactly as the check does, so the check then derives the same key;
-    // it leaves the check's last network and its counter alone. UI thread.
+    // switch), with the same key rules. UI thread.
     QByteArray FreshNetworkKey(QString *netType = nullptr);
 
     // Whether our TUN adapter (throne-tun, Wintun) is still up: a torn-down tunnel takes a
@@ -113,14 +129,18 @@ namespace Shadowlos::Journal {
 
     // The badge for the bottom bar: the blocking type found by the census (the Android app's
     // control / foreign / resilient probe, run off the VPN) plus region and operator from geo.
-    // nullptr in a prod build.
     QWidget *MakeBlockingBadge(QWidget *parent);
 
     // The verdict rules, the kept-verdict rules and the badge text; "" when all hold.
     QString CensusSelfTest();
 
-    // A census result for the «Улучшение обхода блокировок» page. measured is false when no
-    // verdict came (the tunnel is up, the network changed meanwhile); note then says why.
+    // The verdict shown for the current network in the telemetry contract's words: none,
+    // regular, whitelist, noInternet or unknown. measured is false before anything was
+    // measured on this network. UI thread.
+    QString CensusBlockingWord(bool *measured = nullptr);
+
+    // A census result. measured is false when no verdict came (the tunnel is up, the network
+    // changed meanwhile); note then says why.
     struct CensusNow {
         bool measured = false;
         QString verdict; // «Нет блокировок», «Обычные блокировки», …; «Не удалось определить»
@@ -138,10 +158,65 @@ namespace Shadowlos::Journal {
     // The last result on the current network; false before anything was measured on it.
     bool CensusLast(CensusNow *out);
 
-    // ── the «Улучшение обхода блокировок» page (ShadowlosImprove.cpp) ──
+    // Whether a probe may go out now on the user's own network: not while our tunnel is up in
+    // TUN mode, nor while a torn-down tunnel is still leaving. UI thread.
+    bool OffVpnNow();
 
-    // The Tools menu's consent action (shadowlos_send_journal); nullptr before Install.
-    QAction *ConsentAction();
+    // ── the daily summary (ShadowlosTelemetry.cpp) ──
+
+    // The summary's timer, started from Install.
+    void InstallTelemetry(QObject *owner);
+
+    // The pure rules (probe classification, the body against the server contract, the weekly
+    // id); "" when all hold.
+    QString TelemetrySelfTest();
+
+#if SHADOWLOS_DEV
+
+    // ── dev only: the journal (ShadowlosJournal.cpp, ShadowlosScrub.cpp) ──
+
+    // `--journal-selftest`: runs the scrub table and the other rules, prints PASS/FAIL, returns
+    // the exit code. -1 when the flag is absent.
+    int RunSelfTestIfAsked(const QStringList &args);
+
+    // Opens the journal and writes the start line. Call once, after Logging::Init, with
+    // the config dir (where throne.db is) as the current directory. A previous run that
+    // did not shut down cleanly is queued as a crash report first.
+    void Start();
+
+    // The journal's part of Install: the consent action goes into Tools, the UI tracker,
+    // lifecycle, the mode toggles and the upload timer.
+    void InstallJournal(QWidget *window, QMenu *tools, QAction *consent, QAbstractButton *tun, QAbstractButton *systemProxy);
+
+    // The journal's side of the consent: off clears the journal, the queue and the crash record.
+    void JournalConsentChanged(bool on);
+
+    // The journal's lines for the connect hooks (the shared state is kept by the callers).
+    void JournalConnectStart(const QString &server, bool automatic);
+    void JournalConnectEnd(bool ok);
+    void JournalDisconnect(bool crash, bool manual);
+
+    // One line. layer/step/outcome are fixed words; d and err are scrubbed here.
+    // ms < 0 leaves the key out. Thread-safe.
+    void Event(const char *layer, const char *step, const char *outcome,
+               const QString &d = {}, const QString &err = {}, qint64 ms = -1);
+
+    // Text on its way to the log view (MW_show_log): core and GUI log lines. Errors (fail) and
+    // warnings (ok) are kept; info only within 30 s after a connect starts. Rate capped. Thread-safe.
+    void CoreLog(const QString &text);
+
+    // A journal line with every string value scrubbed, still valid JSON; a line that is
+    // not a JSON object is scrubbed as text.
+    QString ScrubJsonLine(const QString &line);
+
+    // The upload body (Windows shape: platform/os, no android/sdk), with the latest geo object
+    // when there is one.
+    QJsonObject UploadEnvelope(const QString &reason, const QString &requestId, const QString &log);
+
+    // An app/net line (outcome ok) carrying the nested geo object. Thread-safe.
+    void NetEvent(const QString &d, const QJsonObject &geo);
+
+    // ── the «Улучшение обхода блокировок» page (ShadowlosImprove.cpp) ──
 
     // «Отправить логи»: a reason "manual" upload of the latest journal lines, now. Manual
     // reports share the server's 20 a day per user with crash reports, so the client allows one
@@ -161,17 +236,13 @@ namespace Shadowlos::Journal {
 
 #else
 
+    // Prod: no journal, no log upload, no crash or manual report, no page.
     inline int RunSelfTestIfAsked(const QStringList &) { return -1; }
     inline void Start() {}
-    inline void Install(QWidget *, QMenu *, QAbstractButton *, QAbstractButton *) {}
     inline void Event(const char *, const char *, const char *,
                       const QString & = {}, const QString & = {}, qint64 = -1) {}
     inline void CoreLog(const QString &) {}
-    inline void ConnectStart(const QString &, bool) {}
-    inline void ConnectEnd(bool) {}
-    inline void Disconnect(bool, bool) {}
-    inline QWidget *MakeBlockingBadge(QWidget *) { return nullptr; }
-    // Prod has no journal, so no page and no menu item.
+    inline void NetEvent(const QString &, const QJsonObject &) {}
     inline void InstallImprovePage(QWidget *, QMenu *) {}
 
 #endif

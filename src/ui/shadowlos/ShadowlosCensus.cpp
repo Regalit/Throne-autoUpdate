@@ -1,8 +1,6 @@
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
-#if SHADOWLOS_DEV
-
 #include "include/database/DatabaseManager.h"
 #include "include/database/SettingsRepo.h"
 
@@ -37,6 +35,9 @@
 // Each host gets a direct TLS handshake on :443 (never our proxy). One deadline for the
 // whole pass: a finished handshake is true, a refusal/reset/TLS or name failure is false, a
 // host that did not finish is left out ("not measured", never "unreachable").
+//
+// Both builds: the badge shows while «Улучшение обхода» is on, and the daily summary sends
+// its verdict as net.blocking. The automatic passes run only while that switch is on.
 namespace Shadowlos::Journal {
 
     namespace {
@@ -512,6 +513,8 @@ namespace Shadowlos::Journal {
                     tip << QStringLiteral("Последняя проверка: ") + fullLabel(*e->last) + QStringLiteral("; показан прошлый результат (") + ago(e->keptAt) + u')';
                 }
             }
+            // The user's own IP, masked, display only (never stored, logged or sent).
+            if (const QString ip = LocalIpMasked(); !ip.isEmpty() && Shadowlos::Chrome::UiDemo().isEmpty()) tip << QStringLiteral("Ваш IP: ") + ip;
             const QString region = geoRegion(geo), op = geoOperator(geo);
             if (!region.isEmpty() || !op.isEmpty()) {
                 tip << QStringLiteral("Регион: ") + (region.isEmpty() ? QStringLiteral("?") : region) +
@@ -519,7 +522,7 @@ namespace Shadowlos::Journal {
             }
             if (s.measuring) tip << QStringLiteral("Идёт проверка…");
             if (tun) tip << QStringLiteral("Пока VPN подключён в режиме TUN, проверка не идёт: показан последний результат в этой сети.");
-            tip << QStringLiteral("Проверка идёт мимо VPN: vk.com/ya.ru, заблокированные и обычно доступные сайты. Только в dev-сборке.");
+            tip << QStringLiteral("Проверка идёт мимо VPN: vk.com/ya.ru, заблокированные и обычно доступные сайты.");
 
             s.label->setFullText(text);
             s.label->setToolTip(tip.join(u'\n'));
@@ -703,7 +706,8 @@ namespace Shadowlos::Journal {
                 s.due = true;
                 s.trigger = QStringLiteral("refresh");
             }
-            if (s.due && !s.measuring && !teardownWaiting(now)) measure();
+            // Nothing goes out on its own while «Улучшение обхода» is off.
+            if (s.due && !s.measuring && (ConsentOn() || ConsentPreview()) && !teardownWaiting(now)) measure();
             render();
         }
 
@@ -784,6 +788,32 @@ namespace Shadowlos::Journal {
         if (e == nullptr || !e->last) return false;
         *out = describe(e->census, e->measuredAt);
         return true;
+    }
+
+    QString GeoRegionProvider() {
+        const QJsonObject geo = LatestGeo();
+        QStringList parts;
+        for (const QString &p : {geoRegion(geo), geoOperator(geo)}) {
+            if (!p.isEmpty()) parts << p;
+        }
+        return parts.join(QStringLiteral(" · "));
+    }
+
+    QString CensusVerdictNow(QString *level) {
+        const auto shown = st().keeper.shown(st().net);
+        if (level != nullptr) *level = QLatin1String(dotLevel(shown));
+        return note(shown);
+    }
+
+    QString CensusBlockingWord(bool *measured) {
+        const auto shown = st().keeper.shown(st().net);
+        if (measured != nullptr) *measured = shown.has_value();
+        return QLatin1String(word(shown.value_or(Blocking::Unknown)));
+    }
+
+    bool OffVpnNow() {
+        noteConnects();
+        return !tunMode() && !teardownWaiting(nowMs());
     }
 
     QString CensusSelfTest() {
@@ -895,5 +925,3 @@ namespace Shadowlos::Journal {
     }
 
 } // namespace Shadowlos::Journal
-
-#endif // SHADOWLOS_DEV

@@ -44,6 +44,9 @@ namespace {
 
 RuntimeStatsWidget::RuntimeStatsWidget(QWidget* parent) : QWidget(parent), ui(new Ui::RuntimeStatsWidget) {
     ui->setupUi(this);
+    // Shadowlos: no IP is shown anywhere (Ivan, 2026-10-30); the country row stays.
+    ui->labelOutIp->hide();
+    ui->vOutIp->hide();
 
     ui->rootGrid->setColumnStretch(0, 1);
     ui->rootGrid->setRowStretch(0, 1);
@@ -375,15 +378,11 @@ void RuntimeStatsWidget::probeEgress() {
             const QJsonDocument doc = QJsonDocument::fromJson(resp.data);
             if (doc.isObject()) {
                 const QJsonObject obj = doc.object();
-                const QString ip = obj[QStringLiteral("query")].toString();
                 const QString countryName = obj[QStringLiteral("country")].toString();
                 const QString countryCode = obj[QStringLiteral("countryCode")].toString();
                 const QString city = obj[QStringLiteral("city")].toString();
-                if (!ip.isEmpty()) {
-                    ipText = ip;
-                    egressOk = true;
-                }
                 if (!countryName.isEmpty()) {
+                    egressOk = true;
                     countryText = CountryCodeToFlag(countryCode) + QStringLiteral(" ") + countryName;
                     if (!city.isEmpty()) countryText += QStringLiteral(", ") + city;
                 }

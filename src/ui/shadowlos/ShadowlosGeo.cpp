@@ -18,7 +18,6 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QElapsedTimer>
-#include <QHostAddress>
 #include <QHash>
 #include <QJsonDocument>
 #include <QMutex>
@@ -90,7 +89,6 @@ namespace Shadowlos::Journal {
         struct Entry {
             QJsonObject geo;   // country region asn org, sanitized
             qint64 nextAt = 0; // when to ask again
-            QString ip;        // the user's own IP on this network if whereami tells it: memory only, shown masked, never sent or logged
         };
 
         struct Geo {
@@ -302,8 +300,6 @@ namespace Shadowlos::Journal {
                     geo = SanitizeGeo(geo);
                     geo.remove(QStringLiteral("net_type"));
                     // Only an address that parses; it stays in memory and goes nowhere.
-                    const QHostAddress ip(answer.value(QStringLiteral("ip")).toString());
-                    entry.ip = ip.isNull() ? QString() : ip.toString();
                     entry.geo = geo;
                     entry.nextAt = now + kFreshSecs;
                 } else {
@@ -447,21 +443,6 @@ namespace Shadowlos::Journal {
         }
 #endif
         return false;
-    }
-
-    // 185.•••.•••.42; for IPv6 the first and the last group.
-    QString LocalIpMasked() {
-        // The IP of the network the last check saw: never another network's.
-        const QString ip = g().cache.value(g().net.key).ip;
-        if (ip.isEmpty()) return {};
-        const QString dots = QStringLiteral("•••");
-        if (ip.contains(u'.') && !ip.contains(u':')) {
-            const QStringList p = ip.split(u'.');
-            if (p.size() == 4) return p[0] + u'.' + dots + u'.' + dots + u'.' + p[3];
-        }
-        const QStringList p = ip.split(u':', Qt::SkipEmptyParts);
-        if (p.size() >= 2) return p.first() + u':' + dots + u':' + p.last();
-        return dots;
     }
 
     void GeoKick() {

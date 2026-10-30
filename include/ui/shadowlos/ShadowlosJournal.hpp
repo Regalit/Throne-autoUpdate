@@ -66,11 +66,11 @@ namespace Shadowlos::Journal {
     // window. From the consent window's link and the «Программа» menu; answers nothing.
     void ShowPrivacyPolicy(QWidget *parent);
 
-    // For the consent window: the user's own IP, masked (never sent, logged or stored; "" when
-    // the server did not tell it), region · provider ("" unknown), and the census verdict
-    // ("" unknown) with its dot level (ok, warn, bad, none). UI thread.
-    QString LocalIpMasked();
-    QString GeoRegionProvider();
+    // For the consent window and the tooltips: the region (the country only when the region is
+    // unknown) and the provider ("" unknown), and the census verdict ("" unknown) with its dot
+    // level (ok, warn, bad, none). No IP is read or shown anywhere. UI thread.
+    QString GeoRegion();
+    QString GeoProvider();
     QString CensusVerdictNow(QString *level);
 
     // A whereami look now if one is due and allowed. UI thread.

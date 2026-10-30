@@ -45,7 +45,7 @@ namespace Configs_sys {
             auto log = readAllStandardOutput();
             if (log.contains("Extra process exited unexpectedly"))
             {
-                MW_show_log("Extra Core exited, stopping profile...");
+                MW_show_log(QObject::tr("Extra Core exited, stopping profile..."));
                 MW_dialog_message(MwMessage::CoreCrashed, {});
             }
             warnEgressForwarding(log);
@@ -59,7 +59,7 @@ namespace Configs_sys {
         connect(this, &QProcess::errorOccurred, this, [&](ProcessError error) {
             if (error == FailedToStart) {
                 failed_to_start = true;
-                MW_show_log("start core error occurred: " + errorString() + "\n");
+                MW_show_log(QObject::tr("Could not start the core: %1").arg(errorString()) + "\n");
             }
             LOG_ERROR(QString("core process error %1: %2").arg(static_cast<int>(error)).arg(errorString()));
         });

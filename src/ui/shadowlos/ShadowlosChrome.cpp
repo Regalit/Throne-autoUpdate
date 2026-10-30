@@ -1,5 +1,6 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "include/ui/shadowlos/ShadowlosRouting.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
@@ -64,6 +65,7 @@
 #include <algorithm>
 #include <QToolButton>
 #include <QToolTip>
+#include <QMessageBox>
 #include <QWidgetAction>
 #include <QVBoxLayout>
 #include <QVariantAnimation>
@@ -104,6 +106,14 @@ namespace Shadowlos::ChromeImpl {
     bool demoHas(const char *token) {
         const QString demo = Shadowlos::Chrome::UiDemo();
         return !demo.isEmpty() && demo.split(QLatin1Char(',')).contains(QLatin1String(token));
+    }
+
+    // Dev screenshots: the first err-* token (err-port, err-admin, err-vpn, err-cache, ...).
+    QString demoErrToken() {
+        for (const QString &token : Shadowlos::Chrome::UiDemo().split(QLatin1Char(','))) {
+            if (token.startsWith(QLatin1String("err-"))) return token;
+        }
+        return {};
     }
 
     // ------------------------------------------------------------ title bars
@@ -1012,6 +1022,9 @@ namespace Shadowlos::ChromeImpl {
                 default:
                     title = translate("Disconnected");
                     detail = translate("Press the button to connect");
+                    // The last connect failed: its sentence on the problem line until the next try.
+                    extra = Shadowlos::ErrorText::ConnectErrorLine();
+                    problem = !extra.isEmpty();
                     break;
             }
             if (p.busy) {
@@ -1904,13 +1917,14 @@ namespace Shadowlos::Chrome {
     // neither focus nor the mouse.
     void installDemoPopups(QMainWindow *window, Ui::MainWindow *ui) {
         using namespace Shadowlos::ChromeImpl;
-        if (!demoHas("menu") && !demoHas("tip")) return;
+        const QString errToken = demoErrToken();
+        if (!demoHas("menu") && !demoHas("tip") && errToken.isEmpty()) return;
         auto *poll = new QTimer(window);
         poll->setInterval(300);
-        QObject::connect(poll, &QTimer::timeout, window, [window, ui, poll] {
+        QObject::connect(poll, &QTimer::timeout, window, [window, ui, poll, errToken] {
             if (!window->isVisible() || window->isMinimized()) return;
             poll->stop();
-            QTimer::singleShot(1200, window, [window, ui] {
+            QTimer::singleShot(1200, window, [window, ui, errToken] {
                 Shell &s = shell();
                 if (demoHas("menu") && s.viewButton && s.view != View::Minimal) {
                     QToolButton *button = s.viewButton.data();
@@ -1926,6 +1940,17 @@ namespace Shadowlos::Chrome {
                         if (pill.isNull() || pill->objectName() != QLatin1String("slSpeedtest")) continue;
                         QToolTip::showText(pill->mapToGlobal(QPoint(0, pill->height() + 6)), pill->toolTip(), pill, {}, 20000);
                     }
+                }
+                // A failed connect as the user sees it: the box (shown without taking focus)
+                // and the status card's line.
+                if (const QString raw = Shadowlos::ErrorText::DemoRaw(errToken); !raw.isEmpty()) {
+                    Shadowlos::ErrorText::SetConnectError(raw);
+                    auto *box = new QMessageBox(QMessageBox::Warning, Shadowlos::ErrorText::ConnectTitle(),
+                                                Shadowlos::ErrorText::Html(raw, Shadowlos::ErrorText::ConnectFallback()),
+                                                QMessageBox::Ok, window);
+                    box->setAttribute(Qt::WA_ShowWithoutActivating, true);
+                    box->setAttribute(Qt::WA_DeleteOnClose, true);
+                    box->show();
                 }
                 Q_UNUSED(ui)
             });

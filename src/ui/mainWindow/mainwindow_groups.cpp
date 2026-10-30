@@ -83,7 +83,7 @@ void MainWindow::show_group(int gid) {
 
     const auto group = Configs::dataManager->groupsRepo->GetGroup(gid);
     if (group == nullptr) {
-        MessageBoxWarning(tr("Error"), QString("No such group: %1").arg(gid));
+        MessageBoxWarning(tr("Error"), tr("No such group: %1").arg(gid));
         Configs::dataManager->settingsRepo->refreshing_group = false;
         return;
     }

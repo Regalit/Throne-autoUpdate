@@ -198,7 +198,7 @@ void MainWindow::on_menu_export_config_triggered() {
     if (msg.clickedButton() == button_1) {
         result = BuildSingBoxConfig(ent);
         if (!result->error.isEmpty()) {
-            MessageBoxWarning("Build config error", result->error);
+            MessageBoxWarning(tr("Build config error"), result->error);
             return;
         }
         config_core = QJsonObject2QString(result->coreConfig, true);
@@ -206,7 +206,7 @@ void MainWindow::on_menu_export_config_triggered() {
     } else if (msg.clickedButton() == button_2) {
         auto res = Configs::BuildTestConfig({ent});
         if (!res->error.isEmpty()) {
-            MessageBoxWarning("Build Test config error", res->error);
+            MessageBoxWarning(tr("Build Test config error"), res->error);
             return;
         }
         if (!res->xrayFullConfigs.isEmpty()) config_core = res->xrayFullConfigs.first();
@@ -252,7 +252,7 @@ void MainWindow::display_qr_link(bool nkrFormat) {
                             im.setPixel(x + qr_padding, y + qr_padding, black);
                 show_qr(size());
             } catch (const std::exception &ex) {
-                QMessageBox::warning(nullptr, "error", ex.what());
+                QMessageBox::warning(nullptr, tr("Error"), ex.what());
             }
         }
 

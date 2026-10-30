@@ -400,7 +400,7 @@ namespace Configs {
             auto raw = query.queryItemValue("headers", QUrl::FullyDecoded);
             headers = raw.split("|");
             if (headers.length()%2 != 0) {
-                MW_show_log("Failed to import invalid headers: " + raw);
+                MW_show_log(QObject::tr("Skipped invalid headers: %1").arg(raw));
                 headers.clear();
             }
         }
@@ -556,7 +556,7 @@ namespace Configs {
             auto raw = query.queryItemValue("headers", QUrl::FullyDecoded);
             headers = raw.split("|");
             if (headers.length()%2 != 0) {
-                MW_show_log("Failed to import invalid headers: " + raw);
+                MW_show_log(QObject::tr("Skipped invalid headers: %1").arg(raw));
                 headers.clear();
             }
         }
@@ -764,7 +764,7 @@ namespace Configs {
             if (err.error == QJsonParseError::NoError && doc.isObject()) {
                 finalmask = doc.object();
             } else if (err.error != QJsonParseError::NoError) {
-                MW_show_log("Failed to parse FinalMask JSON: " + err.errorString());
+                MW_show_log(QObject::tr("Failed to parse FinalMask JSON: %1").arg(err.errorString()));
             }
         }
 

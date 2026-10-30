@@ -288,7 +288,7 @@ void MainWindow::set_system_proxy(bool enable) {
 void MainWindow::set_spmode_system_proxy(bool enable, bool save) {
     if (enable && Configs::dataManager->settingsRepo->disable_mixed_inbound) {
         runOnUiThread([=, this] {
-           MessageBoxWarning("Invalid Operation", "Cannot set system proxy when mixed inbound is disabled.");
+           MessageBoxWarning(tr("Invalid Operation"), tr("Cannot set system proxy when mixed inbound is disabled."));
         });
         ui->checkBox_SystemProxy->setChecked(false);
         return;

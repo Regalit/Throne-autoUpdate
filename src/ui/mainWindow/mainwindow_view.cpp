@@ -1,5 +1,6 @@
 #include "include/ui/mainwindow.h"
 #include "NkrVersion.h"
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 
 #include <QApplication>
 #include <QHeaderView>
@@ -350,7 +351,7 @@ void MainWindow::refresh_proxy_list_impl(const QList<int>& ids, bool mayNeedRese
     const auto currentGroup = Configs::dataManager->groupsRepo->CurrentGroup();
     if (currentGroup == nullptr)
     {
-        MW_show_log("Could not find current group!");
+        MW_show_log(tr("Could not find current group!"));
         return;
     }
     refresh_proxy_list_impl_refresh_data(ids, mayNeedReset);
@@ -432,7 +433,7 @@ void MainWindow::url_test_current() {
 
         runOnUiThread([=,this] {
             if (!result.results[0].error.value().empty()) {
-                MW_show_log(QString("UrlTest error: %1").arg(QString::fromStdString(result.results[0].error.value())));
+                MW_show_log(tr("URL test error: %1").arg(Shadowlos::ErrorText::Plain(QString::fromStdString(result.results[0].error.value()))));
             }
             if (latency <= 0) {
                 ui->label_running->setText(tr("Test Result") + ": " + (vpnText.isEmpty() ? tr("Unavailable") : vpnText));

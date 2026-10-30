@@ -29,7 +29,7 @@ namespace Configs {
             auto raw = query.queryItemValue("headers", QUrl::FullyDecoded);
             headers = raw.split("|");
             if (headers.length()%2 != 0) {
-                MW_show_log("Failed to import invalid headers: " + raw);
+                MW_show_log(QObject::tr("Skipped invalid headers: %1").arg(raw));
                 headers.clear();
             }
         }

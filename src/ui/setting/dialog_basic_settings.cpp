@@ -212,7 +212,7 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
                 }
             }
             if (!errors.isEmpty()) {
-                QMessageBox::warning(this, "Select custom image error", errors);
+                QMessageBox::warning(this, tr("Select custom image error"), errors);
             }
         }
     });

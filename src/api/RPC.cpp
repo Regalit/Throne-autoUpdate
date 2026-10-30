@@ -2,6 +2,7 @@
 #include <utility>
 
 #include "include/global/Configs.hpp"
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 
 #include <QLocalSocket>
 #include <QDataStream>
@@ -214,8 +215,10 @@ namespace API {
                 if (ok && call->status != 0) {
                     // The core may fail a call with no message: name the call and its status then.
                     const QString detail = QString::fromUtf8(call->data).trimmed();
+                    // The [Core error] marker stays English: the dev journal sorts lines by it.
                     MW_show_log("[Core error] " + methodName + ": " +
-                                (detail.isEmpty() ? QStringLiteral("status %1, no message").arg(call->status) : detail));
+                                (detail.isEmpty() ? QStringLiteral("status %1, no message").arg(call->status)
+                                                  : Shadowlos::ErrorText::Plain(detail)));
                     // `rsp` is filled on failure too, so callers can inspect the core's error payload.
                     rsp.assign(call->data.begin(), call->data.end());
                 }
@@ -255,7 +258,7 @@ namespace API {
 
 #define NOT_OK      \
     *rpcOK = false; \
-    MW_show_log(QString("IPC call failed (code %1)\n").arg(status));
+    MW_show_log(QObject::tr("No connection to the core (code %1)").arg(status) + "\n");
 
     QString Client::Start(bool *rpcOK, const libcore::LoadConfigReq &request) {
         libcore::ErrorResp reply;
@@ -505,7 +508,7 @@ namespace API {
         if (status == LocalSocketChannel::CallOK && tryDeserialize(resp, reply)) {
             return reply;
         }
-        if (status != LocalSocketChannel::CallOK) MW_show_log("Failed to query connections: IPC error");
+        if (status != LocalSocketChannel::CallOK) MW_show_log(QObject::tr("Failed to query connections: no connection to the core"));
         return {};
     }
 

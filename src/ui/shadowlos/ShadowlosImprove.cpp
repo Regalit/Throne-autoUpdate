@@ -260,8 +260,10 @@ namespace Shadowlos::Journal {
                 if (r.region.isEmpty() && r.op.isEmpty()) {
                     m_place->hide();
                 } else {
-                    m_place->setText(QStringLiteral("Регион: ") + (r.region.isEmpty() ? QStringLiteral("?") : r.region) +
-                                     QStringLiteral(", оператор: ") + (r.op.isEmpty() ? QStringLiteral("?") : r.op));
+                    QStringList rows;
+                    if (!r.region.isEmpty()) rows << QStringLiteral("Регион: ") + r.region;
+                    if (!r.op.isEmpty()) rows << QStringLiteral("Провайдер: ") + r.op;
+                    m_place->setText(rows.join(u'\n'));
                     m_place->show();
                 }
             }

@@ -305,8 +305,8 @@ namespace Shadowlos::Journal {
                     line->addWidget(*value);
                     g->addLayout(line);
                 };
-                row(QStringLiteral("Ваш IP"), &ip_, nullptr);
-                row(QStringLiteral("Регион и провайдер"), &region_, nullptr);
+                row(QStringLiteral("Регион"), &region_, nullptr);
+                row(QStringLiteral("Провайдер"), &provider_, nullptr);
                 row(QStringLiteral("Блокировки в вашей сети"), &blocking_, &dot_);
                 v->addWidget(gets);
                 v->addSpacing(14);
@@ -422,10 +422,9 @@ namespace Shadowlos::Journal {
             // What the user gets, from what geo and the census know now.
             void refresh() {
                 const QString unknown = QStringLiteral("определяем…");
-                const QString ip = LocalIpMasked();
-                ip_->setText(ip.isEmpty() ? unknown : ip);
-                const QString where = GeoRegionProvider();
-                region_->setText(where.isEmpty() ? unknown : where);
+                const QString region = GeoRegion(), provider = GeoProvider();
+                region_->setText(region.isEmpty() ? unknown : region);
+                provider_->setText(provider.isEmpty() ? unknown : provider);
                 QString level;
                 const QString verdict = CensusVerdictNow(&level);
                 blocking_->setText(verdict.isEmpty() ? unknown : verdict);
@@ -445,7 +444,7 @@ namespace Shadowlos::Journal {
             }
 
             std::function<void(bool)> answered_;
-            QLabel *ip_ = nullptr, *region_ = nullptr, *blocking_ = nullptr, *dot_ = nullptr;
+            QLabel *region_ = nullptr, *provider_ = nullptr, *blocking_ = nullptr, *dot_ = nullptr;
             QPushButton *more_ = nullptr;
             QFrame *box_ = nullptr;
             QList<QPushButton *> buttons_;

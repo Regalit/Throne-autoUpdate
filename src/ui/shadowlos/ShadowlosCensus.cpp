@@ -514,11 +514,11 @@ namespace Shadowlos::Journal {
                 }
             }
             // The user's own IP, masked, display only (never stored, logged or sent).
-            if (const QString ip = LocalIpMasked(); !ip.isEmpty() && Shadowlos::Chrome::UiDemo().isEmpty()) tip << QStringLiteral("Ваш IP: ") + ip;
             const QString region = geoRegion(geo), op = geoOperator(geo);
             if (!region.isEmpty() || !op.isEmpty()) {
-                tip << QStringLiteral("Регион: ") + (region.isEmpty() ? QStringLiteral("?") : region) +
-                           QStringLiteral(", оператор: ") + (op.isEmpty() ? QStringLiteral("?") : op);
+                // Two rows; geoRegion gives the country only when the region is unknown.
+                if (!region.isEmpty()) tip << QStringLiteral("Регион: ") + region;
+                if (!op.isEmpty()) tip << QStringLiteral("Провайдер: ") + op;
             }
             if (s.measuring) tip << QStringLiteral("Идёт проверка…");
             if (tun) tip << QStringLiteral("Пока VPN подключён в режиме TUN, проверка не идёт: показан последний результат в этой сети.");
@@ -790,13 +790,12 @@ namespace Shadowlos::Journal {
         return true;
     }
 
-    QString GeoRegionProvider() {
-        const QJsonObject geo = LatestGeo();
-        QStringList parts;
-        for (const QString &p : {geoRegion(geo), geoOperator(geo)}) {
-            if (!p.isEmpty()) parts << p;
-        }
-        return parts.join(QStringLiteral(" · "));
+    QString GeoRegion() {
+        return geoRegion(LatestGeo());
+    }
+
+    QString GeoProvider() {
+        return geoOperator(LatestGeo());
     }
 
     QString CensusVerdictNow(QString *level) {

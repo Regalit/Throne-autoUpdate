@@ -22,18 +22,18 @@ original under it.
 | --- | --- | --- |
 | Cache file locked | `initialize cache-file: timeout`, `cache.db: ... being used by another process` | Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова. |
 | Rule-set download failed | `initialize rule-set[geoip-ru]: Get "...": dial tcp ...`, `rule-set ... unexpected status: 404` | Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова. |
-| Admin required (TUN) | `configure tun interface: Access is denied.`, `requires elevation`, `operation not permitted` | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. |
+| Admin required (TUN) | `requires elevation`; `Access is denied` / `permission denied` / `operation not permitted` only with TUN on or a text about tun / wintun / WFP (else the fallback) | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. |
 | Another VPN | `Fwpm...`, TUN + `already exists` / `file exists` / `in use by another` | Мешает другой VPN. Закройте второй VPN и попробуйте снова. |
-| TUN failed | `configure tun interface`, `open tun`, `wintun` | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. |
+| TUN failed | `configure tun interface`, `open tun`, `wintun` (tun as a word, never inside return / tunnel) | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. |
 | Port in use | `listen tcp 127.0.0.1:2080: bind: Only one usage of each socket address`, `address already in use` | Порт 2080 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. |
 | Already started | `instance already started` | Подключение уже запущено. Отключитесь и подключитесь снова. |
 | No network | `network is unreachable`, `no route to host` | Нет подключения к интернету. Проверьте сеть и попробуйте снова. |
 | DNS failure | `lookup x: no such host`, `Host x not found`, `server misbehaving` | Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер. |
 | TLS handshake | `tls: handshake failure`, `x509: certificate ...`, `reality`, `SSL` | Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку. |
 | Connection refused | `connection refused`, `actively refused it` | Сервер отклонил подключение. Выберите другой сервер или обновите подписку. |
-| Timeout | `i/o timeout`, `context deadline exceeded`, `Operation canceled` | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. |
+| Timeout | `i/o timeout`, `context deadline exceeded` (Qt's `Operation canceled` is any abort: fallback) | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. |
 | Connection reset | `connection reset`, `forcibly closed by the remote host`, `unexpected EOF` | Соединение оборвалось. Проверьте интернет и попробуйте снова. |
-| HTTP error | `server replied: Forbidden`, `HTTP status 403` | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. |
+| HTTP error | `server replied: Forbidden`, `unexpected status`, `status code 502`, `HTTP 403`, `HTTP/1.1 404` (never a port or a URL) | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. |
 | Core not responding | `IPC call failed`, RPC without answer | Ядро программы не отвечает. Перезапустите программу. |
 
 The self-test (`ShadowLosThroneDev.exe --journal-selftest`, line «error text mapper») checks each
@@ -42,9 +42,10 @@ kind against real wording.
 Where the sentence shows: a failed connect opens «Не удалось подключиться» with the sentence and
 the original in small text, and the status card keeps the sentence as its red line until the next
 try. A start error that names the TUN adapter keeps upstream's own box («Не удалось включить режим
-TUN», with «Сброс» to restart the core); its «Ошибка: …» now reads «sentence (original)». Strict
-route (Fwpm) errors do the same in their box. Subscription errors and `[Core error]` lines in the
-log read «sentence (original)».
+TUN», with «Сброс» to restart the core), and strict route (Fwpm) errors keep theirs: both boxes
+give their own advice in Russian with the raw error after «Ошибка:», and the status card line is
+the box's title. Subscription errors in the log read «sentence (original)»; `[Core error]` lines
+read «[Core error] method: original — sentence», raw first so the journal keeps it.
 
 ## 1. Raw core errors: the mapper (src/ui/shadowlos/ShadowlosErrorText.cpp)
 
@@ -52,24 +53,24 @@ Shown as the Russian sentence with the original error in small text under it (me
 
 | Original | Russian | Where it shows |
 | --- | --- | --- |
-| Administrator rights are needed for TUN mode. Run the app as administrator or turn TUN mode off. | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. | src/ui/shadowlos/ShadowlosErrorText.cpp:86 (connect error box + status card) |
-| Another VPN is in the way. Close the other VPN and try again. | Мешает другой VPN. Закройте второй VPN и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:88 (connect error box + status card) |
-| Could not turn on TUN mode. Close other VPN apps, restart the app and try again. | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:90 (connect error box + status card) |
-| Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings. | Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | src/ui/shadowlos/ShadowlosErrorText.cpp:94 (connect error box + status card) |
-| A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings. | Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | src/ui/shadowlos/ShadowlosErrorText.cpp:95 (connect error box + status card) |
-| The cache file is busy in another copy of the app. Close the second copy of ShadowLos and try again. | Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:98 (connect error box + status card) |
-| Could not download the routing rule lists. Check the internet connection and try again. | Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:100 (connect error box + status card) |
-| Could not find the server address (DNS error). Check the internet connection or pick another server. | Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер. | src/ui/shadowlos/ShadowlosErrorText.cpp:102 (connect error box + status card) |
-| Could not set up a secure connection to the server. Pick another server or update the subscription. | Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:104 (connect error box + status card) |
-| The server did not answer in time. Check the internet connection or pick another server. | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. | src/ui/shadowlos/ShadowlosErrorText.cpp:106 (connect error box + status card) |
-| The server refused the connection. Pick another server or update the subscription. | Сервер отклонил подключение. Выберите другой сервер или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:108 (connect error box + status card) |
-| The connection was cut off. Check the internet connection and try again. | Соединение оборвалось. Проверьте интернет и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:110 (connect error box + status card) |
-| No internet connection. Check the network and try again. | Нет подключения к интернету. Проверьте сеть и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:112 (connect error box + status card) |
-| The server answered with an error. Try again later or update the subscription. | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:114 (connect error box + status card) |
-| The app's core is not responding. Restart the app. | Ядро программы не отвечает. Перезапустите программу. | src/ui/shadowlos/ShadowlosErrorText.cpp:116 (connect error box + status card) |
-| A connection is already running. Disconnect and connect again. | Подключение уже запущено. Отключитесь и подключитесь снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:118 (connect error box + status card) |
-| Could not connect. Try another server or restart the app. | Не удалось подключиться. Попробуйте другой сервер или перезапустите программу. | src/ui/shadowlos/ShadowlosErrorText.cpp:141 (connect error box + status card) |
-| Could not connect | Не удалось подключиться | src/ui/shadowlos/ShadowlosErrorText.cpp:141 (connect error box + status card); src/ui/shadowlos/ShadowlosErrorText.cpp:145 (connect error box + status card) |
+| Administrator rights are needed for TUN mode. Run the app as administrator or turn TUN mode off. | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. | src/ui/shadowlos/ShadowlosErrorText.cpp:104 (connect error box + status card) |
+| Another VPN is in the way. Close the other VPN and try again. | Мешает другой VPN. Закройте второй VPN и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:106 (connect error box + status card) |
+| Could not turn on TUN mode. Close other VPN apps, restart the app and try again. | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:108 (connect error box + status card) |
+| Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings. | Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | src/ui/shadowlos/ShadowlosErrorText.cpp:112 (connect error box + status card) |
+| A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings. | Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | src/ui/shadowlos/ShadowlosErrorText.cpp:113 (connect error box + status card) |
+| The cache file is busy in another copy of the app. Close the second copy of ShadowLos and try again. | Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:116 (connect error box + status card) |
+| Could not download the routing rule lists. Check the internet connection and try again. | Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:118 (connect error box + status card) |
+| Could not find the server address (DNS error). Check the internet connection or pick another server. | Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер. | src/ui/shadowlos/ShadowlosErrorText.cpp:120 (connect error box + status card) |
+| Could not set up a secure connection to the server. Pick another server or update the subscription. | Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:122 (connect error box + status card) |
+| The server did not answer in time. Check the internet connection or pick another server. | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. | src/ui/shadowlos/ShadowlosErrorText.cpp:124 (connect error box + status card) |
+| The server refused the connection. Pick another server or update the subscription. | Сервер отклонил подключение. Выберите другой сервер или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:126 (connect error box + status card) |
+| The connection was cut off. Check the internet connection and try again. | Соединение оборвалось. Проверьте интернет и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:128 (connect error box + status card) |
+| No internet connection. Check the network and try again. | Нет подключения к интернету. Проверьте сеть и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:130 (connect error box + status card) |
+| The server answered with an error. Try again later or update the subscription. | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:132 (connect error box + status card) |
+| The app's core is not responding. Restart the app. | Ядро программы не отвечает. Перезапустите программу. | src/ui/shadowlos/ShadowlosErrorText.cpp:134 (connect error box + status card) |
+| A connection is already running. Disconnect and connect again. | Подключение уже запущено. Отключитесь и подключитесь снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:136 (connect error box + status card) |
+| Could not connect. Try another server or restart the app. | Не удалось подключиться. Попробуйте другой сервер или перезапустите программу. | src/ui/shadowlos/ShadowlosErrorText.cpp:159 (connect error box + status card) |
+| Could not connect | Не удалось подключиться | src/ui/shadowlos/ShadowlosErrorText.cpp:159 (connect error box + status card); src/ui/shadowlos/ShadowlosErrorText.cpp:163 (connect error box + status card) |
 
 ## 2. Fixed poor translations (ru_RU.ts)
 
@@ -77,19 +78,19 @@ Existing entries that were wrong, literal or said nothing about what to do.
 
 | Original | Russian | Where it shows |
 | --- | --- | --- |
-| BuildConfig return error | Не удалось собрать конфигурацию | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:287 (message box); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:490 (message box) |
-| Stop return error | Не удалось отключиться | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:525 (message box) |
-| Tun device misbehaving | Не удалось включить режим TUN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:354 (message box) |
-| If you have trouble starting VPN, you can force reset Core process here… | Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.<br><br>Ошибка: %1 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:355 (message box); src/ui/setting/dialog_vpn_settings.cpp:147 (message box) |
+| BuildConfig return error | Не удалось собрать конфигурацию | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:287 (message box); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:493 (message box) |
+| Stop return error | Не удалось отключиться | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:528 (message box) |
+| Tun device misbehaving | Не удалось включить режим TUN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:352 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:357 (message box) |
+| If you have trouble starting VPN, you can force reset Core process here… | Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.<br><br>Ошибка: %1 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:358 (message box); src/ui/setting/dialog_vpn_settings.cpp:147 (message box) |
 | Please run Throne as admin | Для этого нужны права администратора. Перезапустить программу от имени администратора? | src/ui/mainWindow/mainwindow_system.cpp:249 (message box); src/ui/shadowlos/ShadowlosJournal.cpp:620 (message box) |
 | Geo asset missing category | В гео-файле нет нужной категории | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:183 (message box) |
 | Geo assets installed | Гео-файлы загружены | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:219 (message box) |
-| IPC error | Нет связи с ядром | src/api/RPC.cpp:424 (error text (shown by the caller's box or log)); src/api/RPC.cpp:466 (error text (shown by the caller's box or log)); src/api/RPC.cpp:483 (error text (shown by the caller's box or log)) +6 more |
+| IPC error | Нет связи с ядром | src/api/RPC.cpp:429 (error text (shown by the caller's box or log)); src/api/RPC.cpp:471 (error text (shown by the caller's box or log)); src/api/RPC.cpp:488 (error text (shown by the caller's box or log)) +6 more |
 | Something is very wrong, the subject ent cannot be found! | Внутренняя ошибка: профиль не найден. Перезапустите программу. | src/ui/mainWindow/TestRunner.cpp:222 (log panel); src/ui/mainWindow/TestRunner.cpp:283 (log panel); src/ui/mainWindow/TestRunner.cpp:622 (log panel) |
-| Try to start the config, but the core has not listened to the RPC port, so restart it... | Ядро не отвечает, перезапускаю его… | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:456 (log panel) |
-| Another profile is starting... | Другой сервер ещё подключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:443 (message box) |
-| Another profile is stopping... | Другой сервер ещё отключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:447 (message box) |
-| VPN endpoint problem | Проблема с конечной точкой VPN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:800 (error text (shown by the caller's box or log)) |
+| Try to start the config, but the core has not listened to the RPC port, so restart it... | Ядро не отвечает, перезапускаю его… | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:459 (log panel) |
+| Another profile is starting... | Другой сервер ещё подключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:446 (message box) |
+| Another profile is stopping... | Другой сервер ещё отключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:450 (message box) |
+| VPN endpoint problem | Проблема с конечной точкой VPN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:803 (error text (shown by the caller's box or log)) |
 | Invalid state | Неверное состояние | src/ui/setting/dialog_manage_routes.cpp:86 (message box) |
 | Requesting subscription %1 error: %2 | Не удалось обновить подписку %1: %2 | src/configs/sub/GroupUpdater.cpp:586 (log panel) |
 | Requesting profile error: %1 | Не удалось скачать профиль: %1 | src/ui/mainWindow/mainwindow_setup.cpp:959 (message box) |
@@ -126,7 +127,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | This server requires single sign-on in a browser… | Этот сервер требует вход через браузер (single sign-on), а Throne его пока не поддерживает. Нажмите «Отмена» и используйте профиль с логином и паролем или укажите cookie входа в расширенных настройках профиля. | src/ui/profile/dialog_vpn_auth.cpp:102 (error text (shown by the caller's box or log)) |
 | Unsupported authentication request: %1 | Неподдерживаемый запрос входа: %1 | src/ui/profile/dialog_vpn_auth.cpp:110 (error text (shown by the caller's box or log)) |
 | Expires in %1 | Истекает через %1 | src/ui/profile/dialog_vpn_auth.cpp:139 (error text (shown by the caller's box or log)); src/ui/profile/dialog_vpn_auth.cpp:251 (error text (shown by the caller's box or log)) |
-| Answer | Ответ | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:626 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:729 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:817 (error text (shown by the caller's box or log)) +37 more |
+| Answer | Ответ | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:629 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:732 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:820 (error text (shown by the caller's box or log)) +37 more |
 | This request expired. | Срок этого запроса истёк. Нажмите «Переподключиться». | src/ui/profile/dialog_vpn_auth.cpp:247 (error text (shown by the caller's box or log)) |
 | Submitting... | Отправка… | src/ui/profile/dialog_vpn_auth.cpp:271 (error text (shown by the caller's box or log)) |
 | Base64 DER of the enrolled ECDSA P-256 key; it signs the TLS client certificate. | Ключ ECDSA P-256 устройства в Base64 DER; им подписывается клиентский сертификат TLS. | include/ui/profile/edit_masque.ui:23 (dialog/form text) |
@@ -142,10 +143,10 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | DNS servers pushed by the server | DNS-серверы, выданные сервером | src/ui/stats/dialog_endpoint_details.cpp:268 (error text (shown by the caller's box or log)) |
 | Domains routed to this tunnel | Домены, направляемые в этот туннель | src/ui/stats/dialog_endpoint_details.cpp:269 (error text (shown by the caller's box or log)) |
 | Listening on all interfaces (%1) | Доступен со всех сетевых интерфейсов (%1) | src/ui/mainWindow/mainwindow_view.cpp:182 (error text (shown by the caller's box or log)) |
-| [VPN] %1: the core did not answer the sign-in prompt. | [VPN] %1: ядро не ответило на запрос входа. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:900 (log panel) |
-| [VPN] %1: could not answer the sign-in prompt: %2 | [VPN] %1: не удалось ответить на запрос входа: %2 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:902 (log panel) |
-| [VPN] %1: signed in again with a new one-time code. | [VPN] %1: повторный вход с новым одноразовым кодом выполнен. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:904 (log panel) |
-| [VPN] %1 rejected the saved credentials; restarting the profile with a new one-time code. | [VPN] %1 отклонил сохранённые данные входа; перезапускаю профиль с новым одноразовым кодом. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:929 (log panel) |
+| [VPN] %1: the core did not answer the sign-in prompt. | [VPN] %1: ядро не ответило на запрос входа. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:903 (log panel) |
+| [VPN] %1: could not answer the sign-in prompt: %2 | [VPN] %1: не удалось ответить на запрос входа: %2 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:905 (log panel) |
+| [VPN] %1: signed in again with a new one-time code. | [VPN] %1: повторный вход с новым одноразовым кодом выполнен. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:907 (log panel) |
+| [VPN] %1 rejected the saved credentials; restarting the profile with a new one-time code. | [VPN] %1 отклонил сохранённые данные входа; перезапускаю профиль с новым одноразовым кодом. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:932 (log panel) |
 | Could not update the autostart entry: | Не удалось изменить автозапуск: | src/ui/mainWindow/mainwindow_setup.cpp:802 (message box) |
 | This installation cannot grant the core privileges by itself. | Эта установка не может сама выдать ядру нужные права. | src/ui/mainWindow/mainwindow_system.cpp:220 (message box) |
 | The selected TLS version is not supported on this system. | Выбранная версия TLS не поддерживается в этой системе. Выберите другую в расширенных настройках группы. | src/global/HTTPRequestHelper.cpp:28 (error text (shown by the caller's box or log)) |
@@ -189,12 +190,12 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | Waiting for sign-in | Ожидание входа | src/ui/stats/dialog_endpoint_details.cpp:93 (error text (shown by the caller's box or log)) |
 | Too much data to fit in a QR code. | Слишком много данных для одного QR-кода. | src/ui/setting/dialog_otp_manager.cpp:67 (window text) |
 | Copy | Копировать | src/main.cpp:171 (error text (shown by the caller's box or log)); src/main.cpp:177 (error text (shown by the caller's box or log)); src/main.cpp:197 (error text (shown by the caller's box or log)) +41 more |
-| null | null | src/main.cpp:112 (error text (shown by the caller's box or log)); src/main.cpp:113 (error text (shown by the caller's box or log)); src/main.cpp:118 (error text (shown by the caller's box or log)) +940 more |
+| null | null | src/main.cpp:112 (error text (shown by the caller's box or log)); src/main.cpp:113 (error text (shown by the caller's box or log)); src/main.cpp:118 (error text (shown by the caller's box or log)) +955 more |
 | boolean | логическое значение | src/configs/sub/clash.cpp:6 (error text (shown by the caller's box or log)); src/configs/sub/clash.cpp:54 (error text (shown by the caller's box or log)); src/configs/sub/clash.cpp:61 (error text (shown by the caller's box or log)) +2 more |
 | number | число | src/configs/generate.cpp:293 (error text (shown by the caller's box or log)); src/configs/generate.cpp:2486 (log panel); src/configs/common/multiplex.cpp:31 (error text (shown by the caller's box or log)) +351 more |
-| string | строка | src/api/RPC.cpp:158 (error text (shown by the caller's box or log)); src/api/RPC.cpp:266 (error text (shown by the caller's box or log)); src/api/RPC.cpp:281 (error text (shown by the caller's box or log)) +2445 more |
+| string | строка | src/api/RPC.cpp:158 (error text (shown by the caller's box or log)); src/api/RPC.cpp:271 (error text (shown by the caller's box or log)); src/api/RPC.cpp:286 (error text (shown by the caller's box or log)) +2445 more |
 | array | массив | src/configs/outbounds/hysteria.cpp:175 (error text (shown by the caller's box or log)); src/configs/outbounds/masque.cpp:22 (error text (shown by the caller's box or log)); src/configs/outbounds/openconnect.cpp:14 (error text (shown by the caller's box or log)) +75 more |
-| object | объект | src/configs/generate.cpp:880 (error text (shown by the caller's box or log)); src/configs/generate.cpp:881 (error text (shown by the caller's box or log)); src/configs/generate.cpp:1369 (error text (shown by the caller's box or log)) +2408 more |
+| object | объект | src/configs/generate.cpp:880 (error text (shown by the caller's box or log)); src/configs/generate.cpp:881 (error text (shown by the caller's box or log)); src/configs/generate.cpp:1369 (error text (shown by the caller's box or log)) +2409 more |
 | Empty document | Пустой документ | src/ui/widget/json/JsonTree.cpp:51 (error text (shown by the caller's box or log)) |
 | Unexpected content after the end of the document | Лишний текст после конца документа | src/ui/widget/json/JsonTree.cpp:62 (error text (shown by the caller's box or log)) |
 | The document is nested too deeply | Слишком глубокая вложенность документа | src/ui/widget/json/JsonTree.cpp:126 (error text (shown by the caller's box or log)) |
@@ -215,7 +216,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | The schema is empty | Схема пуста | src/ui/widget/json/JsonSchemaValidator.cpp:138 (error text (shown by the caller's box or log)) |
 | The schema has no definition at %1 | В схеме нет определения %1 | src/ui/widget/json/JsonSchemaValidator.cpp:143 (error text (shown by the caller's box or log)) |
 | Expected %1, got %2 | Ожидалось: %1, получено: %2 | src/ui/widget/json/JsonSchemaValidator.cpp:211 (error text (shown by the caller's box or log)); src/ui/widget/json/JsonSchemaValidator.cpp:546 (error text (shown by the caller's box or log)) |
-|  or  |  или  | src/api/RPC.cpp:180 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:229 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:235 (error text (shown by the caller's box or log)) +227 more |
+|  or  |  или  | src/api/RPC.cpp:180 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:229 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:235 (error text (shown by the caller's box or log)) +235 more |
 | Expected %1 here | Здесь ожидалось: %1 | src/ui/widget/json/JsonSchemaValidator.cpp:222 (error text (shown by the caller's box or log)) |
 | %1 is not valid here (expected: %2) | %1 здесь недопустимо (ожидалось: %2) | src/ui/widget/json/JsonSchemaValidator.cpp:239 (error text (shown by the caller's box or log)) |
 | This option is deprecated | Этот параметр устарел | src/ui/widget/json/JsonSchemaValidator.cpp:248 (error text (shown by the caller's box or log)) |
@@ -297,7 +298,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | Original | Russian | Where it shows |
 | --- | --- | --- |
 | Failed to get admin access, cannot listen on port %1 without it | Нет прав администратора: без них нельзя слушать порт %1. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:235 (log panel) |
-| Failed to stop profile tests! | Не удалось остановить проверки серверов. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:518 (log panel) |
+| Failed to stop profile tests! | Не удалось остановить проверки серверов. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:521 (log panel) |
 | Build config error | Не удалось собрать конфигурацию | src/ui/mainWindow/mainwindow_profiles.cpp:201 (message box); src/ui/mainWindow/mainwindow_setup.cpp:1066 (message box) |
 | Build Test config error | Не удалось собрать тестовую конфигурацию | src/ui/mainWindow/mainwindow_profiles.cpp:209 (message box); src/ui/mainWindow/mainwindow_setup.cpp:1084 (message box) |
 | Action already in progress | Действие уже выполняется | src/ui/mainWindow/mainwindow_setup.cpp:469 (message box); src/ui/mainWindow/mainwindow_setup.cpp:526 (message box); src/ui/mainWindow/mainwindow_setup.cpp:601 (message box) +1 more |
@@ -319,8 +320,8 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | Subscription task failed. | Не удалось обновить подписку. | src/configs/sub/GroupUpdater.cpp:568 (log panel) |
 | Extra Core exited, stopping profile... | Дополнительное ядро завершилось, отключаю профиль… | src/sys/Process.cpp:48 (log panel) |
 | Could not start the core: %1 | Не удалось запустить ядро: %1 | src/sys/Process.cpp:62 (log panel) |
-| No connection to the core (code %1) | Нет связи с ядром (код %1) | src/api/RPC.cpp:261 (log panel) |
-| Failed to query connections: no connection to the core | Не удалось получить список соединений: нет связи с ядром | src/api/RPC.cpp:511 (log panel) |
+| No connection to the core (code %1) | Нет связи с ядром (код %1) | src/api/RPC.cpp:266 (log panel) |
+| Failed to query connections: no connection to the core | Не удалось получить список соединений: нет связи с ядром | src/api/RPC.cpp:516 (log panel) |
 | Config build error: %1 | Ошибка сборки конфигурации: %1 | src/configs/generate.cpp:2387 (log panel) |
 | Could not reach the core: %1 | Нет связи с ядром: %1 | src/configs/generate.cpp:2454 (log panel) |
 | Invalid auto selector: %1 | Неверный автовыбор: %1 | src/configs/generate.cpp:2463 (log panel) |

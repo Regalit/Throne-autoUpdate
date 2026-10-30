@@ -27,7 +27,9 @@ namespace Shadowlos::ErrorText {
         AlreadyRunning,
     };
 
-    Kind Classify(const QString &raw);
+    // [tunOn]: TUN mode is on (1) or off (0); -1 reads the settings. A plain "access is denied"
+    // means missing administrator rights only for TUN.
+    Kind Classify(const QString &raw, int tunOn = -1);
 
     // The sentence for [raw]; [fallback] when nothing is recognised (empty: none).
     QString Sentence(const QString &raw, const QString &fallback = {});
@@ -44,6 +46,8 @@ namespace Shadowlos::ErrorText {
 
     // The status card's line after a failed connect: set on failure, cleared on the next try.
     void SetConnectError(const QString &raw);
+    // A line of the caller's own (a box that gives its own advice).
+    void SetConnectErrorLine(const QString &line);
     void ClearConnectError();
     QString ConnectErrorLine();
 

@@ -215,10 +215,15 @@ namespace API {
                 if (ok && call->status != 0) {
                     // The core may fail a call with no message: name the call and its status then.
                     const QString detail = QString::fromUtf8(call->data).trimmed();
-                    // The [Core error] marker stays English: the dev journal sorts lines by it.
+                    // The [Core error] marker stays English: the dev journal sorts lines by it. The raw
+                    // text comes first, so the journal's 500-character failure line keeps it.
+                    const auto sentenceAfter = [](const QString &raw) {
+                        const QString sentence = Shadowlos::ErrorText::Sentence(raw);
+                        return sentence.isEmpty() ? QString() : QStringLiteral(" — ") + sentence;
+                    };
                     MW_show_log("[Core error] " + methodName + ": " +
                                 (detail.isEmpty() ? QStringLiteral("status %1, no message").arg(call->status)
-                                                  : Shadowlos::ErrorText::Plain(detail)));
+                                                  : QString(detail + sentenceAfter(detail))));
                     // `rsp` is filled on failure too, so callers can inspect the core's error payload.
                     rsp.assign(call->data.begin(), call->data.end());
                 }

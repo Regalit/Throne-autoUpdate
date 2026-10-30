@@ -1033,6 +1033,9 @@ namespace Shadowlos::ChromeImpl {
                 detail = p.detail;
                 done = p.done;
                 total = p.total;
+                // A test or a subscription update: the card shows only that, not the last failure.
+                extra.clear();
+                problem = false;
             }
             // Only a problem gets a line of its own (the VPN endpoint cannot be reached).
             if (!p.note.isEmpty() && p.noteProblem) {

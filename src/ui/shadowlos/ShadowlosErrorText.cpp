@@ -1,5 +1,8 @@
 #include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 
+#include "include/database/DatabaseManager.h"
+#include "include/database/SettingsRepo.h"
+
 #include <QCoreApplication>
 #include <QMutex>
 #include <QRegularExpression>
@@ -30,6 +33,12 @@ namespace Shadowlos::ErrorText {
             return m.hasMatch() ? m.captured(1) : QString();
         }
 
+        // TUN mode as set now; off before the settings are loaded (the self-test).
+        bool TunModeOn() {
+            const auto *dm = Configs::dataManager;
+            return dm != nullptr && dm->settingsRepo != nullptr && dm->settingsRepo->spmode_vpn;
+        }
+
         struct LastError {
             QMutex mutex;
             QString line;
@@ -42,21 +51,28 @@ namespace Shadowlos::ErrorText {
 
     } // namespace
 
-    Kind Classify(const QString &raw) {
+    Kind Classify(const QString &raw, int tunOn) {
         const QString e = raw.toLower();
         if (e.trimmed().isEmpty()) return Kind::Unknown;
         if (hasAny(e, {"cache-file", "cache.db", "cache file"})) return Kind::CacheLocked;
         if (hasAny(e, {"rule-set", "rule_set", "ruleset"}) &&
             hasAny(e, {"download", "fetch", "http", "get \"", "dial", "lookup", "timeout", "timed out", "status", "eof", "tls", "connection"}))
             return Kind::RuleSet;
-        if (hasAny(e, {"access is denied", "requires elevation", "operation not permitted", "permission denied",
-                       "administrator", "elevation"}))
-            return Kind::AdminRequired;
-        const bool tun = hasAny(e, {"tun", "wintun"});
+        // "tun" as a word or a known token (tun-in, tun0, wintun), never inside "return" or "tunnel".
+        static const QRegularExpression tunWord(QStringLiteral(R"((?<![a-z])tun(?![a-z])|wintun)"));
+        const bool tun = tunWord.match(e).hasMatch();
+        if (hasAny(e, {"requires elevation", "administrator", "elevation"})) return Kind::AdminRequired;
+        // A plain denial is about rights for TUN only when TUN is on or the text is about it;
+        // elsewhere (a file, a socket) it is something else.
+        if (hasAny(e, {"access is denied", "access denied", "operation not permitted", "permission denied"})) {
+            const bool tunMode = tunOn < 0 ? TunModeOn() : tunOn != 0;
+            return (tunMode || tun || hasAny(e, {"wfp", "fwpm"})) ? Kind::AdminRequired : Kind::Unknown;
+        }
         if (e.contains(QLatin1String("fwpm")) ||
             (tun && hasAny(e, {"already exists", "file exists", "in use by another", "already in use"})))
             return Kind::AnotherVpn;
-        if (hasAny(e, {"configure tun interface", "open tun", "create tun", "wintun", "tun device"})) return Kind::TunFailed;
+        if (tun && hasAny(e, {"configure tun interface", "open tun", "create tun", "wintun", "tun device", "tun interface"}))
+            return Kind::TunFailed;
         if (hasAny(e, {"address already in use", "only one usage of each socket address", "wsaeaddrinuse", ": bind:"}))
             return Kind::PortInUse;
         if (e.contains(QLatin1String("instance already started"))) return Kind::AlreadyRunning;
@@ -70,11 +86,13 @@ namespace Shadowlos::ErrorText {
             return Kind::Dns;
         if (hasAny(e, {"x509", "certificate", "tls", "handshake", "reality", "ssl"})) return Kind::Tls;
         if (hasAny(e, {"connection refused", "actively refused", "no connection could be made"})) return Kind::Refused;
-        if (hasAny(e, {"timeout", "timed out", "deadline exceeded", "operation canceled"})) return Kind::Timeout;
+        // "Operation canceled" is Qt's word for any abort, not only a timeout: left unknown.
+        if (hasAny(e, {"timeout", "timed out", "deadline exceeded"})) return Kind::Timeout;
         if (hasAny(e, {"connection reset", "forcibly closed", "broken pipe", "unexpected eof", "remote host closed",
                        "connection closed"}))
             return Kind::Reset;
-        static const QRegularExpression http(QStringLiteral(R"(\bhttp\b.*\b[45]\d\d\b|\bstatus(?: code)?:? [45]\d\d\b)"));
+        // "status code 403", "HTTP 403", "HTTP/1.1 502", "HTTP status 404": never a port or a URL.
+        static const QRegularExpression http(QStringLiteral(R"(\bstatus code:? [45]\d\d\b|\bhttp(?:/[\d.]+)?(?: status)?:? [45]\d\d\b)"));
         if (hasAny(e, {"server replied", "unexpected status"}) || http.match(e).hasMatch()) return Kind::ServerHttp;
         if (hasAny(e, {"ipc", "rpc", "core is not running", "core is unreachable"})) return Kind::CoreDown;
         return Kind::Unknown;
@@ -151,6 +169,12 @@ namespace Shadowlos::ErrorText {
         l.line = Sentence(raw, ConnectFallback());
     }
 
+    void SetConnectErrorLine(const QString &line) {
+        auto &l = last();
+        QMutexLocker lock(&l.mutex);
+        l.line = line;
+    }
+
     void ClearConnectError() {
         auto &l = last();
         QMutexLocker lock(&l.mutex);
@@ -169,6 +193,7 @@ namespace Shadowlos::ErrorText {
             const char *raw;
             Kind want;
             const char *demo; // the SHADOWLOS_UI_DEMO token that shows it, or nullptr
+            int tun = 0;      // TUN mode on while it happened
         } kCases[] = {
             {"start service: start inbound/mixed[mixed-in]: listen tcp 127.0.0.1:2080: bind: Only one usage of each socket address (protocol/network address/port) is normally permitted.", Kind::PortInUse, "err-port"},
             {"listen tcp 0.0.0.0:2080: bind: address already in use", Kind::PortInUse, nullptr},
@@ -196,6 +221,24 @@ namespace Shadowlos::ErrorText {
             {"instance already started", Kind::AlreadyRunning, nullptr},
             {"json: cannot unmarshal string into Go value of type option.Listable", Kind::Unknown, nullptr},
             {"", Kind::Unknown, nullptr},
+            // A plain denial means admin rights only with TUN on or about TUN/WFP.
+            {"open C:/Users/x/config/geoip.db: Access is denied.", Kind::Unknown, nullptr, 0},
+            {"open C:/Users/x/config/geoip.db: Access is denied.", Kind::AdminRequired, nullptr, 1},
+            {"listen udp 0.0.0.0:53: bind: permission denied", Kind::Unknown, nullptr, 0},
+            {"FwpmEngineOpen0: Access is denied.", Kind::AdminRequired, nullptr, 0},
+            {"wfp: operation not permitted", Kind::AdminRequired, nullptr, 0},
+            // "tun" as a word only: not inside "return" or "tunnel".
+            {"tunnel returned: object already exists", Kind::Unknown, nullptr},
+            {"open tun0: file exists", Kind::AnotherVpn, nullptr},
+            {"wintun: adapter already exists", Kind::AnotherVpn, nullptr},
+            // Qt's "Operation canceled" is any abort, not a timeout.
+            {"Operation canceled", Kind::Unknown, nullptr},
+            // An HTTP status only after "status code" or "HTTP", never a port or a URL.
+            {"dial tcp 203.0.113.7:404: connectex: an attempt was made", Kind::Unknown, nullptr},
+            {"GET http://example.com:8443/sub/503 failed", Kind::Unknown, nullptr},
+            {"subscription: unexpected response, status code 502", Kind::ServerHttp, nullptr},
+            {"Download failed: server returned HTTP status 403.", Kind::ServerHttp, nullptr},
+            {"HTTP/1.1 404 Not Found", Kind::ServerHttp, nullptr},
         };
     } // namespace
 
@@ -210,7 +253,7 @@ namespace Shadowlos::ErrorText {
         QStringList problems;
         for (const auto &c : kCases) {
             const QString raw = QString::fromUtf8(c.raw);
-            const Kind got = Classify(raw);
+            const Kind got = Classify(raw, c.tun);
             if (got != c.want) problems << QStringLiteral("kind %1 want %2: %3").arg(int(got)).arg(int(c.want)).arg(raw);
         }
         if (portOf(QString::fromUtf8(kCases[0].raw)) != QStringLiteral("2080")) problems << QStringLiteral("port not found");

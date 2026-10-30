@@ -337,22 +337,25 @@ void MainWindow::profile_start(int _id) {
                 return false;
             }
             if (error.contains("Fwpm", Qt::CaseInsensitive)) {
+                // The box gives its own advice; the card's line says the same, not the mapper's.
+                Shadowlos::ErrorText::SetConnectErrorLine(tr("Strict routing unavailable"));
                 runOnUiThread([=, this] {
                     MessageBoxWarning(
                         tr("Strict routing unavailable"),
                         tr("Windows could not enable strict routing. Open Tun Settings, "
                            "disable Strict Route, and start the profile again.\n\n"
-                           "Disabling Strict Route may cause DNS leaks.\n\nError: %1").arg(Shadowlos::ErrorText::Plain(error)));
+                           "Disabling Strict Route may cause DNS leaks.\n\nError: %1").arg(error));
                 });
                 return false;
             }
             if (error.contains("configure tun interface")) {
+                Shadowlos::ErrorText::SetConnectErrorLine(tr("Tun device misbehaving"));
                 runOnUiThread([=, this] {
 
                     QMessageBox msg(
                         QMessageBox::Information,
                         tr("Tun device misbehaving"),
-                        tr("If you have trouble starting VPN, you can force reset Core process here and then try starting the profile again. The error is %1").arg(Shadowlos::ErrorText::Plain(error)),
+                        tr("If you have trouble starting VPN, you can force reset Core process here and then try starting the profile again. The error is %1").arg(error),
                         QMessageBox::NoButton,
                         this
                     );

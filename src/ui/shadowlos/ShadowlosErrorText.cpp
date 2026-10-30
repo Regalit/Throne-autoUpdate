@@ -2,8 +2,15 @@
 
 #include "include/database/DatabaseManager.h"
 #include "include/database/SettingsRepo.h"
+#include "include/global/Utils.hpp"
 
 #include <QCoreApplication>
+#include <QFont>
+#include <QGridLayout>
+#include <QLabel>
+#include <QMessageBox>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QMutex>
 #include <QRegularExpression>
 #include <QStringList>
@@ -41,7 +48,8 @@ namespace Shadowlos::ErrorText {
 
         struct LastError {
             QMutex mutex;
-            QString line;
+            QString line;    // the short form
+            QString tooltip; // the full sentence
         };
 
         LastError &last() {
@@ -103,19 +111,19 @@ namespace Shadowlos::ErrorText {
             case Kind::AdminRequired:
                 return translate("Administrator rights are needed for TUN mode. Run the app as administrator or turn TUN mode off.");
             case Kind::AnotherVpn:
-                return translate("Another VPN is in the way. Close the other VPN and try again.");
+                return translate("ShadowLos or another VPN may be running twice. Close all copies of ShadowLos and other VPNs, then start ShadowLos again.");
             case Kind::TunFailed:
                 return translate("Could not turn on TUN mode. Close other VPN apps, restart the app and try again.");
             case Kind::PortInUse: {
                 const QString port = portOf(raw);
                 if (!port.isEmpty())
-                    return translate("Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.").arg(port);
-                return translate("A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.");
+                    return translate("ShadowLos may be running twice. Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.").arg(port);
+                return translate("ShadowLos may be running twice. A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.");
             }
             case Kind::CacheLocked:
-                return translate("The cache file is busy in another copy of the app. Close the second copy of ShadowLos and try again.");
+                return translate("ShadowLos may be running twice. Close all copies of ShadowLos and start it again.");
             case Kind::RuleSet:
-                return translate("Could not download the routing rule lists. Check the internet connection and try again.");
+                return translate("Could not download the GeoIP database (the region lists for routing). Check the internet connection and try again.");
             case Kind::Dns:
                 return translate("Could not find the server address (DNS error). Check the internet connection or pick another server.");
             case Kind::Tls:
@@ -140,23 +148,95 @@ namespace Shadowlos::ErrorText {
         return fallback;
     }
 
-    QString Html(const QString &raw, const QString &fallback) {
-        const QString sentence = Sentence(raw, fallback);
-        QString original = raw.trimmed().toHtmlEscaped();
-        original.replace(QLatin1Char('\n'), QStringLiteral("<br>"));
-        if (sentence.isEmpty()) return QStringLiteral("<p>%1</p>").arg(original);
-        if (original.isEmpty()) return QStringLiteral("<p>%1</p>").arg(sentence.toHtmlEscaped());
-        return QStringLiteral("<p>%1</p><p><small>%2</small></p>").arg(sentence.toHtmlEscaped(), original);
+    QString Short(const QString &raw, const QString &fallback) {
+        switch (Classify(raw)) {
+            case Kind::AdminRequired:
+                return translate("TUN mode needs administrator rights");
+            case Kind::AnotherVpn:
+                return translate("ShadowLos or a VPN runs twice. Close the extra ones");
+            case Kind::TunFailed:
+                return translate("TUN mode failed. Restart the app");
+            case Kind::PortInUse: {
+                const QString port = portOf(raw);
+                if (!port.isEmpty()) return translate("Port %1 is busy. ShadowLos may run twice").arg(port);
+                return translate("A port is busy. ShadowLos may run twice");
+            }
+            case Kind::CacheLocked:
+                return translate("ShadowLos runs twice. Close the extra copies");
+            case Kind::RuleSet:
+                return translate("GeoIP database did not download. Check the internet");
+            case Kind::Dns:
+                return translate("DNS error. Check the internet or change server");
+            case Kind::Tls:
+                return translate("Secure connection failed. Change server");
+            case Kind::Timeout:
+                return translate("The server does not answer. Change server");
+            case Kind::Refused:
+                return translate("The server refused. Change server");
+            case Kind::Reset:
+                return translate("Connection cut off. Check the internet");
+            case Kind::NetworkDown:
+                return translate("No internet. Check the network");
+            case Kind::ServerHttp:
+                return translate("The server answered with an error. Try later");
+            case Kind::CoreDown:
+                return translate("The core does not answer. Restart the app");
+            case Kind::AlreadyRunning:
+                return translate("Already connected. Disconnect and connect again");
+            case Kind::Unknown:
+                break;
+        }
+        return fallback;
     }
 
-    QString Plain(const QString &raw) {
-        const QString sentence = Sentence(raw);
-        if (sentence.isEmpty()) return raw;
-        return QStringLiteral("%1 (%2)").arg(sentence, raw.trimmed());
+    void AttachRaw(QMessageBox *box, const QString &raw) {
+        const QString text = raw.trimmed();
+        if (box == nullptr || text.isEmpty()) return;
+        // An informative text gives the box a row under its text (the buttons move below it);
+        // that row holds the raw text instead of the informative label.
+        box->setInformativeText(QStringLiteral(" "));
+        if (auto *informative = box->findChild<QLabel *>(QStringLiteral("qt_msgbox_informativelabel"))) informative->hide();
+        auto *grid = qobject_cast<QGridLayout *>(box->layout());
+        if (grid == nullptr) return;
+        // Small and selectable, in an area of at most about eight lines that scrolls: a rule-set
+        // error can run to pages and must not make the window huge. No colour of its own.
+        auto *label = new QLabel(text);
+        label->setTextFormat(Qt::PlainText);
+        label->setWordWrap(true);
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        QFont font = label->font();
+        font.setPointSizeF(font.pointSizeF() * 0.85);
+        label->setFont(font);
+        auto *area = new QScrollArea(box);
+        area->setObjectName(QStringLiteral("slErrorRaw"));
+        area->setFrameShape(QFrame::NoFrame);
+        area->setWidgetResizable(true);
+        area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        area->setStyleSheet(QStringLiteral("QScrollArea#slErrorRaw, QScrollArea#slErrorRaw > QWidget > QWidget { background: transparent; }"));
+        area->setWidget(label);
+        constexpr int kWidth = 480;
+        const int lines = label->fontMetrics().lineSpacing();
+        const int cap = lines * 8;
+        const int needed = label->heightForWidth(kWidth);
+        const bool scrolls = needed > cap;
+        area->setVerticalScrollBarPolicy(scrolls ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAlwaysOff);
+        area->setFixedSize(kWidth + (scrolls ? area->verticalScrollBar()->sizeHint().width() : 0),
+                           scrolls ? cap : qMax(needed, lines) + 2);
+        grid->addWidget(area, 1, 1, 1, 1);
+    }
+
+    int ShowError(const QString &title, const QString &sentence, const QString &raw) {
+        QMessageBox box(QMessageBox::Warning, title, sentence, QMessageBox::Ok, GetMessageBoxParent());
+        AttachRaw(&box, raw);
+        return box.exec();
     }
 
     QString ConnectFallback() {
         return translate("Could not connect. Try another server or restart the app.");
+    }
+
+    QString ConnectFallbackShort() {
+        return translate("Could not connect. Change server");
     }
 
     QString ConnectTitle() {
@@ -164,27 +244,30 @@ namespace Shadowlos::ErrorText {
     }
 
     void SetConnectError(const QString &raw) {
-        auto &l = last();
-        QMutexLocker lock(&l.mutex);
-        l.line = Sentence(raw, ConnectFallback());
+        SetConnectErrorLine(Short(raw, ConnectFallbackShort()), Sentence(raw, ConnectFallback()));
     }
 
-    void SetConnectErrorLine(const QString &line) {
+    void SetConnectErrorLine(const QString &shortLine, const QString &full) {
         auto &l = last();
         QMutexLocker lock(&l.mutex);
-        l.line = line;
+        l.line = shortLine;
+        l.tooltip = full;
     }
 
     void ClearConnectError() {
-        auto &l = last();
-        QMutexLocker lock(&l.mutex);
-        l.line.clear();
+        SetConnectErrorLine({}, {});
     }
 
     QString ConnectErrorLine() {
         auto &l = last();
         QMutexLocker lock(&l.mutex);
         return l.line;
+    }
+
+    QString ConnectErrorTooltip() {
+        auto &l = last();
+        QMutexLocker lock(&l.mutex);
+        return l.tooltip;
     }
 
     namespace {
@@ -206,6 +289,21 @@ namespace Shadowlos::ErrorText {
             {"open C:\\Users\\x\\config\\cache.db: The process cannot access the file because it is being used by another process.", Kind::CacheLocked, nullptr},
             {"initialize rule-set[geoip-ru]: Get \"https://example.com/geoip-ru.srs\": dial tcp: lookup example.com: no such host", Kind::RuleSet, "err-ruleset"},
             {"initialize rule-set[geosite-ru]: unexpected status: 404 Not Found", Kind::RuleSet, nullptr},
+            // The first download of the GeoIP rule-sets, failing all at once: a long text.
+            {"start service: initialize rule-set failed:\n"
+             "initialize rule-set[geoip-ru]: Get \"https://geo.example.com/geoip-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-category-ru]: Get \"https://geo.example.com/geosite-category-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-category-gov-ru]: Get \"https://geo.example.com/geosite-category-gov-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-category-retail-ru]: Get \"https://geo.example.com/geosite-category-retail-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-category-education-ru]: Get \"https://geo.example.com/geosite-category-education-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geoip-private]: Get \"https://geo.example.com/geoip-private.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-ru-available-only-inside]: Get \"https://geo.example.com/geosite-ru-available-only-inside.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-category-bank-ru]: Get \"https://geo.example.com/geosite-category-bank-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-category-media-ru]: Get \"https://geo.example.com/geosite-category-media-ru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-yandex]: Get \"https://geo.example.com/geosite-yandex.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-vk]: Get \"https://geo.example.com/geosite-vk.srs\": dial tcp 203.0.113.7:443: i/o timeout\n"
+             "initialize rule-set[geosite-mailru]: Get \"https://geo.example.com/geosite-mailru.srs\": dial tcp 203.0.113.7:443: i/o timeout\n",
+             Kind::RuleSet, "err-geoip"},
             {"dial tcp: lookup node1.example.com: no such host", Kind::Dns, "err-dns"},
             {"Host sub.example.com not found", Kind::Dns, nullptr},
             {"remote error: tls: handshake failure", Kind::Tls, "err-tls"},
@@ -255,20 +353,26 @@ namespace Shadowlos::ErrorText {
             const QString raw = QString::fromUtf8(c.raw);
             const Kind got = Classify(raw, c.tun);
             if (got != c.want) problems << QStringLiteral("kind %1 want %2: %3").arg(int(got)).arg(int(c.want)).arg(raw);
+            // Every known kind has both forms; neither ever carries the raw text.
+            if (c.want != Kind::Unknown && c.tun == 0) {
+                const QString full = Sentence(raw), brief = Short(raw);
+                if (full.isEmpty() || brief.isEmpty()) problems << QStringLiteral("no text: ") + raw;
+                if (brief.size() > 55) problems << QStringLiteral("short form too long: ") + brief;
+                if (raw.size() > 12 && (full.contains(raw) || brief.contains(raw))) problems << QStringLiteral("raw shown: ") + raw;
+            }
         }
         if (portOf(QString::fromUtf8(kCases[0].raw)) != QStringLiteral("2080")) problems << QStringLiteral("port not found");
-        // Every known kind has a sentence; unknown has the fallback only; the original is kept.
-        const QString html = Html(QString::fromUtf8(kCases[0].raw));
-        if (!html.contains(QStringLiteral("<small>")) || !html.contains(QStringLiteral("2080: bind")))
-            problems << QStringLiteral("html keeps no original: ") + html;
-        if (!Sentence(QStringLiteral("something new")).isEmpty()) problems << QStringLiteral("unknown has a sentence");
-        if (Sentence(QStringLiteral("something new"), QStringLiteral("x")) != QStringLiteral("x")) problems << QStringLiteral("fallback lost");
-        if (Plain(QStringLiteral("something new")) != QStringLiteral("something new")) problems << QStringLiteral("plain changed unknown");
-        if (Html(QStringLiteral("<b>&")).contains(QStringLiteral("<b>"))) problems << QStringLiteral("html not escaped");
+        if (!Short(QString::fromUtf8(kCases[0].raw)).contains(QStringLiteral("2080"))) problems << QStringLiteral("short form lost the port");
+        if (!Sentence(QStringLiteral("something new")).isEmpty() || !Short(QStringLiteral("something new")).isEmpty())
+            problems << QStringLiteral("unknown has a text");
+        if (Sentence(QStringLiteral("something new"), QStringLiteral("x")) != QStringLiteral("x") ||
+            Short(QStringLiteral("something new"), QStringLiteral("y")) != QStringLiteral("y"))
+            problems << QStringLiteral("fallback lost");
+        if (ConnectFallbackShort().size() > 55) problems << QStringLiteral("fallback short form too long");
         SetConnectError(QString::fromUtf8(kCases[2].raw));
-        const bool set = !ConnectErrorLine().isEmpty();
+        const bool set = !ConnectErrorLine().isEmpty() && ConnectErrorTooltip().size() > ConnectErrorLine().size();
         ClearConnectError();
-        if (!set || !ConnectErrorLine().isEmpty()) problems << QStringLiteral("connect error line");
+        if (!set || !ConnectErrorLine().isEmpty() || !ConnectErrorTooltip().isEmpty()) problems << QStringLiteral("connect error line");
         return problems.join(QStringLiteral("; "));
     }
 

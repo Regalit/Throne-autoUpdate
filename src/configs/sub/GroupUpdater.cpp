@@ -1,7 +1,6 @@
 #include "include/configs/sub/GroupUpdater.hpp"
 
 #include "include/configs/generate.h"
-#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/configs/sub/SubscriptionParser.hpp"
 #include "include/configs/sub/SubscriptionReconcile.hpp"
 #include "include/configs/sub/SubscriptionScan.hpp"
@@ -583,7 +582,7 @@ namespace Subscription {
         options.http2 = identity.httpVersion != Configs::subHttpVersion::http11;
         auto resp = NetworkRequestHelper::HttpGet(url, options);
         if (!resp.error.isEmpty()) {
-            MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(name, Shadowlos::ErrorText::Plain(resp.error) + "\n" + resp.data));
+            MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(name, resp.error + "\n" + resp.data));
             return false;
         }
         body = std::move(resp.data);

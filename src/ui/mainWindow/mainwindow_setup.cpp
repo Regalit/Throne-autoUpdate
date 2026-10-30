@@ -1,3 +1,4 @@
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/ui/mainwindow.h"
 
 #include "include/ui/mainWindow/MainWindowInternal.h"
@@ -384,13 +385,16 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             const auto error = API::defaultClient->UpdateRuleSets(&rpcOK, &updated);
             runOnUiThread([=,this] {
                 m_ruleSetUpdateBusy = false;
+                const QString failed = Shadowlos::ErrorText::Sentence(
+                    error, tr("Could not update the rule lists. Check the internet connection and try again."));
                 if (!rpcOK) {
-                    MessageBoxWarning(tr("Update Rule-Sets"), error);
+                    Shadowlos::ErrorText::ShowError(tr("Update Rule-Sets"), failed, error);
                     return;
                 }
                 const auto summary = tr("%n remote rule-set(s) refreshed", nullptr, updated);
                 if (!error.isEmpty()) {
-                    MessageBoxWarning(tr("Update Rule-Sets"), summary + "\n\n" + error);
+                    MW_show_log(error); // the raw text for analysis
+                    Shadowlos::ErrorText::ShowError(tr("Update Rule-Sets"), summary + "\n\n" + failed, error);
                 } else {
                     MessageBoxInfo(tr("Update Rule-Sets"), summary);
                 }

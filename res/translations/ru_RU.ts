@@ -7123,18 +7123,6 @@ Download them now?</source>
         <translation>Строгая маршрутизация недоступна</translation>
     </message>
     <message>
-        <source>Windows could not enable strict routing. Open Tun Settings, disable Strict Route, and start the profile again.
-
-Disabling Strict Route may cause DNS leaks.
-
-Error: %1</source>
-        <translation>Windows не удалось включить строгую маршрутизацию. Откройте «Настройки режима TUN», отключите «Строгий маршрут» и снова запустите профиль.
-
-Отключение строгой маршрутизации может привести к утечкам DNS.
-
-Ошибка: %1</translation>
-    </message>
-    <message>
         <source>Reset</source>
         <translation>Сброс</translation>
     </message>
@@ -7177,12 +7165,6 @@ Error: %1</source>
     <message>
         <source>Remove Invalid</source>
         <translation>Удалить недействительные</translation>
-    </message>
-    <message>
-        <source>If you have trouble starting VPN, you can force reset Core process here and then try starting the profile again. The error is %1</source>
-        <translation>Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.
-
-Ошибка: %1</translation>
     </message>
     <message>
         <source>Remove %1 Unavailable item(s) ?</source>
@@ -7769,6 +7751,26 @@ Please type /config into @shadowlos_bot and input one of the URLs that work:</so
     <message>
         <source>IPC connection from an unexpected process was rejected</source>
         <translation>Отклонено подключение к IPC от постороннего процесса</translation>
+    </message>
+    <message>
+        <source>Windows could not enable strict routing. Open Tun Settings, disable Strict Route, and start the profile again.
+
+Disabling Strict Route may cause DNS leaks.</source>
+        <translation>Windows не удалось включить строгую маршрутизацию. Откройте «Настройки режима TUN», отключите «Строгий маршрут» и снова запустите профиль.
+
+Отключение строгой маршрутизации может привести к утечкам DNS.</translation>
+    </message>
+    <message>
+        <source>Could not turn on TUN mode. Press Reset to restart the core, then connect again.</source>
+        <translation>Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.</translation>
+    </message>
+    <message>
+        <source>Could not download the geo files. Check the internet connection and try again.</source>
+        <translation>Не удалось скачать гео-файлы. Проверьте интернет и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>Could not update the rule lists. Check the internet connection and try again.</source>
+        <translation>Не удалось обновить списки правил. Проверьте интернет и попробуйте снова.</translation>
     </message>
 </context>
 <context>
@@ -10136,28 +10138,8 @@ Remove that endpoint from this routing profile as well?</source>
         <translation>Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN.</translation>
     </message>
     <message>
-        <source>Another VPN is in the way. Close the other VPN and try again.</source>
-        <translation>Мешает другой VPN. Закройте второй VPN и попробуйте снова.</translation>
-    </message>
-    <message>
         <source>Could not turn on TUN mode. Close other VPN apps, restart the app and try again.</source>
         <translation>Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова.</translation>
-    </message>
-    <message>
-        <source>Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
-        <translation>Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
-    </message>
-    <message>
-        <source>A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
-        <translation>Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
-    </message>
-    <message>
-        <source>The cache file is busy in another copy of the app. Close the second copy of ShadowLos and try again.</source>
-        <translation>Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова.</translation>
-    </message>
-    <message>
-        <source>Could not download the routing rule lists. Check the internet connection and try again.</source>
-        <translation>Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова.</translation>
     </message>
     <message>
         <source>Could not find the server address (DNS error). Check the internet connection or pick another server.</source>
@@ -10202,6 +10184,94 @@ Remove that endpoint from this routing profile as well?</source>
     <message>
         <source>Could not connect</source>
         <translation>Не удалось подключиться</translation>
+    </message>
+    <message>
+        <source>ShadowLos or another VPN may be running twice. Close all copies of ShadowLos and other VPNs, then start ShadowLos again.</source>
+        <translation>Возможно, ShadowLos или другой VPN запущен дважды. Закройте все копии ShadowLos и другие VPN, затем запустите ShadowLos снова.</translation>
+    </message>
+    <message>
+        <source>ShadowLos may be running twice. Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
+        <translation>Возможно, ShadowLos запущен дважды. Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
+    </message>
+    <message>
+        <source>ShadowLos may be running twice. A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
+        <translation>Возможно, ShadowLos запущен дважды. Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
+    </message>
+    <message>
+        <source>ShadowLos may be running twice. Close all copies of ShadowLos and start it again.</source>
+        <translation>Возможно, ShadowLos запущен дважды. Закройте все копии ShadowLos и запустите снова.</translation>
+    </message>
+    <message>
+        <source>Could not download the GeoIP database (the region lists for routing). Check the internet connection and try again.</source>
+        <translation>Не удалось загрузить базу GeoIP (списки регионов для маршрутизации). Проверьте интернет и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>TUN mode needs administrator rights</source>
+        <translation>Для режима TUN нужны права администратора</translation>
+    </message>
+    <message>
+        <source>ShadowLos or a VPN runs twice. Close the extra ones</source>
+        <translation>ShadowLos или VPN запущен дважды. Закройте лишнее</translation>
+    </message>
+    <message>
+        <source>TUN mode failed. Restart the app</source>
+        <translation>Режим TUN не включился. Перезапустите программу</translation>
+    </message>
+    <message>
+        <source>Port %1 is busy. ShadowLos may run twice</source>
+        <translation>Порт %1 занят. Возможно, ShadowLos запущен дважды</translation>
+    </message>
+    <message>
+        <source>A port is busy. ShadowLos may run twice</source>
+        <translation>Порт занят. Возможно, ShadowLos запущен дважды</translation>
+    </message>
+    <message>
+        <source>ShadowLos runs twice. Close the extra copies</source>
+        <translation>ShadowLos запущен дважды. Закройте лишние копии</translation>
+    </message>
+    <message>
+        <source>GeoIP database did not download. Check the internet</source>
+        <translation>База GeoIP не загрузилась. Проверьте интернет</translation>
+    </message>
+    <message>
+        <source>DNS error. Check the internet or change server</source>
+        <translation>Ошибка DNS. Проверьте интернет или смените сервер</translation>
+    </message>
+    <message>
+        <source>Secure connection failed. Change server</source>
+        <translation>Ошибка защищённого соединения. Смените сервер</translation>
+    </message>
+    <message>
+        <source>The server does not answer. Change server</source>
+        <translation>Сервер не отвечает. Смените сервер</translation>
+    </message>
+    <message>
+        <source>The server refused. Change server</source>
+        <translation>Сервер отклонил подключение. Смените сервер</translation>
+    </message>
+    <message>
+        <source>Connection cut off. Check the internet</source>
+        <translation>Соединение оборвалось. Проверьте интернет</translation>
+    </message>
+    <message>
+        <source>No internet. Check the network</source>
+        <translation>Нет интернета. Проверьте сеть</translation>
+    </message>
+    <message>
+        <source>The server answered with an error. Try later</source>
+        <translation>Сервер ответил ошибкой. Попробуйте позже</translation>
+    </message>
+    <message>
+        <source>The core does not answer. Restart the app</source>
+        <translation>Ядро не отвечает. Перезапустите программу</translation>
+    </message>
+    <message>
+        <source>Already connected. Disconnect and connect again</source>
+        <translation>Уже подключено. Отключитесь и подключитесь снова</translation>
+    </message>
+    <message>
+        <source>Could not connect. Change server</source>
+        <translation>Не удалось подключиться. Смените сервер</translation>
     </message>
 </context>
 </TS>

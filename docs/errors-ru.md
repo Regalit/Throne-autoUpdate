@@ -39,6 +39,13 @@ original under it.
 The self-test (`ShadowLosThroneDev.exe --journal-selftest`, line «error text mapper») checks each
 kind against real wording.
 
+Where the sentence shows: a failed connect opens «Не удалось подключиться» with the sentence and
+the original in small text, and the status card keeps the sentence as its red line until the next
+try. A start error that names the TUN adapter keeps upstream's own box («Не удалось включить режим
+TUN», with «Сброс» to restart the core); its «Ошибка: …» now reads «sentence (original)». Strict
+route (Fwpm) errors do the same in their box. Subscription errors and `[Core error]` lines in the
+log read «sentence (original)».
+
 ## 1. Raw core errors: the mapper (src/ui/shadowlos/ShadowlosErrorText.cpp)
 
 Shown as the Russian sentence with the original error in small text under it (message box), as the red line of the status card after a failed connect, and as «sentence (original)» in the log line of a failed subscription or core call.
@@ -70,21 +77,21 @@ Existing entries that were wrong, literal or said nothing about what to do.
 
 | Original | Russian | Where it shows |
 | --- | --- | --- |
-| BuildConfig return error | Не удалось собрать конфигурацию | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:286 (message box); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:480 (message box) |
-| Stop return error | Не удалось отключиться | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:515 (message box) |
-| Tun device misbehaving | Не удалось включить режим TUN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:350 (message box) |
-| If you have trouble starting VPN, you can force reset Core process here… | Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.<br><br>Ошибка: %1 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:351 (message box); src/ui/setting/dialog_vpn_settings.cpp:147 (message box) |
+| BuildConfig return error | Не удалось собрать конфигурацию | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:287 (message box); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:490 (message box) |
+| Stop return error | Не удалось отключиться | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:525 (message box) |
+| Tun device misbehaving | Не удалось включить режим TUN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:354 (message box) |
+| If you have trouble starting VPN, you can force reset Core process here… | Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.<br><br>Ошибка: %1 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:355 (message box); src/ui/setting/dialog_vpn_settings.cpp:147 (message box) |
 | Please run Throne as admin | Для этого нужны права администратора. Перезапустить программу от имени администратора? | src/ui/mainWindow/mainwindow_system.cpp:249 (message box); src/ui/shadowlos/ShadowlosJournal.cpp:620 (message box) |
-| Geo asset missing category | В гео-файле нет нужной категории | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:182 (message box) |
-| Geo assets installed | Гео-файлы загружены | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:218 (message box) |
-| IPC error | Нет связи с ядром | src/api/RPC.cpp:421 (error text (shown by the caller's box or log)); src/api/RPC.cpp:463 (error text (shown by the caller's box or log)); src/api/RPC.cpp:480 (error text (shown by the caller's box or log)) +7 more |
+| Geo asset missing category | В гео-файле нет нужной категории | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:183 (message box) |
+| Geo assets installed | Гео-файлы загружены | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:219 (message box) |
+| IPC error | Нет связи с ядром | src/api/RPC.cpp:424 (error text (shown by the caller's box or log)); src/api/RPC.cpp:466 (error text (shown by the caller's box or log)); src/api/RPC.cpp:483 (error text (shown by the caller's box or log)) +6 more |
 | Something is very wrong, the subject ent cannot be found! | Внутренняя ошибка: профиль не найден. Перезапустите программу. | src/ui/mainWindow/TestRunner.cpp:222 (log panel); src/ui/mainWindow/TestRunner.cpp:283 (log panel); src/ui/mainWindow/TestRunner.cpp:622 (log panel) |
-| Try to start the config, but the core has not listened to the RPC port, so restart it... | Ядро не отвечает, перезапускаю его… | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:447 (log panel) |
-| Another profile is starting... | Другой сервер ещё подключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:434 (message box) |
-| Another profile is stopping... | Другой сервер ещё отключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:438 (message box) |
-| VPN endpoint problem | Проблема с конечной точкой VPN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:790 (error text (shown by the caller's box or log)) |
+| Try to start the config, but the core has not listened to the RPC port, so restart it... | Ядро не отвечает, перезапускаю его… | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:456 (log panel) |
+| Another profile is starting... | Другой сервер ещё подключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:443 (message box) |
+| Another profile is stopping... | Другой сервер ещё отключается. Подождите несколько секунд. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:447 (message box) |
+| VPN endpoint problem | Проблема с конечной точкой VPN | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:800 (error text (shown by the caller's box or log)) |
 | Invalid state | Неверное состояние | src/ui/setting/dialog_manage_routes.cpp:86 (message box) |
-| Requesting subscription %1 error: %2 | Не удалось обновить подписку %1: %2 | src/configs/sub/GroupUpdater.cpp:585 (log panel) |
+| Requesting subscription %1 error: %2 | Не удалось обновить подписку %1: %2 | src/configs/sub/GroupUpdater.cpp:586 (log panel) |
 | Requesting profile error: %1 | Не удалось скачать профиль: %1 | src/ui/mainWindow/mainwindow_setup.cpp:959 (message box) |
 | Core exits too frequently, stop automatic restart this profile. | Ядро слишком часто падает, автоматический перезапуск этого профиля остановлен. | src/sys/Process.cpp:91 (log panel) |
 | Core exited, cleaning up... | Ядро неожиданно завершилось, очищаю… | src/sys/Process.cpp:84 (log panel) |
@@ -111,7 +118,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | None of the selected profiles could be exported. | Не удалось экспортировать ни один из выбранных профилей. | src/ui/setting/dialog_otp_manager.cpp:384 (message box) |
 | Exported %1 OTP profile(s) to:<br>%2 | Экспортировано OTP-профилей: %1. Файл:<br>%2 | src/ui/setting/dialog_otp_manager.cpp:406 (message box) |
 | VPN Authentication | Вход в VPN | include/ui/profile/dialog_vpn_auth.ui:14 (dialog/form text) |
-| Reconnect | Переподключиться | src/api/RPC.cpp:24 (error text (shown by the caller's box or log)); src/api/RPC.cpp:132 (error text (shown by the caller's box or log)); src/api/RPC.cpp:138 (error text (shown by the caller's box or log)) +6 more |
+| Reconnect | Переподключиться | src/api/RPC.cpp:25 (error text (shown by the caller's box or log)); src/api/RPC.cpp:133 (error text (shown by the caller's box or log)); src/api/RPC.cpp:139 (error text (shown by the caller's box or log)) +6 more |
 | Submit | Отправить | src/main.cpp:58 (error text (shown by the caller's box or log)); src/main.cpp:63 (error text (shown by the caller's box or log)); src/main.cpp:411 (error text (shown by the caller's box or log)) +17 more |
 | The VPN server sent a message. | Сервер VPN прислал сообщение. | src/ui/profile/dialog_vpn_auth.cpp:79 (window text) |
 | Finish signing in at the address shown below… | Завершите вход по адресу ниже и закройте это окно. Подключение продолжится само, когда сервер примет вход. | src/ui/profile/dialog_vpn_auth.cpp:88 (error text (shown by the caller's box or log)) |
@@ -119,7 +126,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | This server requires single sign-on in a browser… | Этот сервер требует вход через браузер (single sign-on), а Throne его пока не поддерживает. Нажмите «Отмена» и используйте профиль с логином и паролем или укажите cookie входа в расширенных настройках профиля. | src/ui/profile/dialog_vpn_auth.cpp:102 (error text (shown by the caller's box or log)) |
 | Unsupported authentication request: %1 | Неподдерживаемый запрос входа: %1 | src/ui/profile/dialog_vpn_auth.cpp:110 (error text (shown by the caller's box or log)) |
 | Expires in %1 | Истекает через %1 | src/ui/profile/dialog_vpn_auth.cpp:139 (error text (shown by the caller's box or log)); src/ui/profile/dialog_vpn_auth.cpp:251 (error text (shown by the caller's box or log)) |
-| Answer | Ответ | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:616 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:719 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:807 (error text (shown by the caller's box or log)) +37 more |
+| Answer | Ответ | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:626 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:729 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:817 (error text (shown by the caller's box or log)) +37 more |
 | This request expired. | Срок этого запроса истёк. Нажмите «Переподключиться». | src/ui/profile/dialog_vpn_auth.cpp:247 (error text (shown by the caller's box or log)) |
 | Submitting... | Отправка… | src/ui/profile/dialog_vpn_auth.cpp:271 (error text (shown by the caller's box or log)) |
 | Base64 DER of the enrolled ECDSA P-256 key; it signs the TLS client certificate. | Ключ ECDSA P-256 устройства в Base64 DER; им подписывается клиентский сертификат TLS. | include/ui/profile/edit_masque.ui:23 (dialog/form text) |
@@ -134,11 +141,11 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | Kept outside this tunnel | Вне этого туннеля | src/ui/stats/dialog_endpoint_details.cpp:267 (error text (shown by the caller's box or log)) |
 | DNS servers pushed by the server | DNS-серверы, выданные сервером | src/ui/stats/dialog_endpoint_details.cpp:268 (error text (shown by the caller's box or log)) |
 | Domains routed to this tunnel | Домены, направляемые в этот туннель | src/ui/stats/dialog_endpoint_details.cpp:269 (error text (shown by the caller's box or log)) |
-| Listening on all interfaces (%1) | Доступен со всех сетевых интерфейсов (%1) | src/ui/mainWindow/mainwindow_view.cpp:181 (error text (shown by the caller's box or log)) |
-| [VPN] %1: the core did not answer the sign-in prompt. | [VPN] %1: ядро не ответило на запрос входа. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:890 (log panel) |
-| [VPN] %1: could not answer the sign-in prompt: %2 | [VPN] %1: не удалось ответить на запрос входа: %2 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:892 (log panel) |
-| [VPN] %1: signed in again with a new one-time code. | [VPN] %1: повторный вход с новым одноразовым кодом выполнен. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:894 (log panel) |
-| [VPN] %1 rejected the saved credentials; restarting the profile with a new one-time code. | [VPN] %1 отклонил сохранённые данные входа; перезапускаю профиль с новым одноразовым кодом. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:919 (log panel) |
+| Listening on all interfaces (%1) | Доступен со всех сетевых интерфейсов (%1) | src/ui/mainWindow/mainwindow_view.cpp:182 (error text (shown by the caller's box or log)) |
+| [VPN] %1: the core did not answer the sign-in prompt. | [VPN] %1: ядро не ответило на запрос входа. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:900 (log panel) |
+| [VPN] %1: could not answer the sign-in prompt: %2 | [VPN] %1: не удалось ответить на запрос входа: %2 | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:902 (log panel) |
+| [VPN] %1: signed in again with a new one-time code. | [VPN] %1: повторный вход с новым одноразовым кодом выполнен. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:904 (log panel) |
+| [VPN] %1 rejected the saved credentials; restarting the profile with a new one-time code. | [VPN] %1 отклонил сохранённые данные входа; перезапускаю профиль с новым одноразовым кодом. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:929 (log panel) |
 | Could not update the autostart entry: | Не удалось изменить автозапуск: | src/ui/mainWindow/mainwindow_setup.cpp:802 (message box) |
 | This installation cannot grant the core privileges by itself. | Эта установка не может сама выдать ядру нужные права. | src/ui/mainWindow/mainwindow_system.cpp:220 (message box) |
 | The selected TLS version is not supported on this system. | Выбранная версия TLS не поддерживается в этой системе. Выберите другую в расширенных настройках группы. | src/global/HTTPRequestHelper.cpp:28 (error text (shown by the caller's box or log)) |
@@ -148,22 +155,22 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | Failed to import the OpenConnect profile. | Не удалось импортировать профиль OpenConnect. | src/configs/sub/SubscriptionParser.cpp:490 (log panel); src/configs/sub/SubscriptionParser.cpp:505 (log panel) |
 | Failed to decode the vpn:// link. | Не удалось прочитать ссылку vpn://. | src/configs/sub/SubscriptionParser.cpp:601 (log panel) |
 | No importable profile found in the vpn:// link. | В ссылке vpn:// нет профиля для импорта. | src/configs/sub/SubscriptionParser.cpp:635 (log panel) |
-| Removed %1 duplicate profiles: | Удалены повторяющиеся профили (%1): | src/configs/sub/GroupUpdater.cpp:310 (error text (shown by the caller's box or log)) |
-| Removed %1 insecure profiles: | Удалены небезопасные профили (%1): | src/configs/sub/GroupUpdater.cpp:314 (error text (shown by the caller's box or log)) |
-| Skipped removing invalid profiles: the core is unreachable. | Недействительные профили не удалены: ядро не отвечает. | src/configs/sub/GroupUpdater.cpp:326 (log panel) |
-| Removed %1 invalid profiles: | Удалены недействительные профили (%1): | src/configs/sub/GroupUpdater.cpp:328 (log panel) |
-| The running profile was kept. | Запущенный профиль оставлен. | src/configs/sub/GroupUpdater.cpp:339 (message box); src/configs/sub/GroupUpdater.cpp:360 (message box) |
-| Removed %1 unavailable profiles: | Удалены недоступные профили (%1): | src/configs/sub/GroupUpdater.cpp:359 (message box) |
-| Skipped sorting %1: another sort is in progress. | Сортировка %1 пропущена: уже идёт другая сортировка. | src/configs/sub/GroupUpdater.cpp:369 (log panel) |
-| Subscription update already queued: %1 | Обновление подписки уже в очереди: %1 | src/configs/sub/GroupUpdater.cpp:431 (log panel) |
-| Subscription server update interval: %1 hour(s) | Сервер подписки просит обновлять её раз в %1 ч | src/configs/sub/GroupUpdater.cpp:676 (log panel) |
-| The URL of %1 changed during the update, so the result was discarded. | Ссылка %1 изменилась во время обновления, результат отброшен. Обновите подписку ещё раз. | src/configs/sub/GroupUpdater.cpp:710 (log panel) |
-| The server returned a web page instead of a subscription.… | Сервер вернул веб-страницу вместо подписки. Если это капча или проверка на бота, попробуйте другую версию TLS, версию HTTP или User Agent в расширенных настройках группы. | src/configs/sub/GroupUpdater.cpp:719 (log panel) |
-| Announcement from %1: %2 | Объявление от %1: %2 | src/configs/sub/GroupUpdater.cpp:723 (log panel) |
-| No profiles found in the subscription: %1 was left unchanged. | В подписке нет серверов: группа %1 оставлена без изменений. | src/configs/sub/GroupUpdater.cpp:728 (log panel) |
-| Still in use, so kept instead of deleted:<br>%1 | Используются, поэтому не удалены:<br>%1 | src/configs/sub/GroupUpdater.cpp:869 (error text (shown by the caller's box or log)) |
-| Working, so kept instead of deleted:<br>%1 | Работают, поэтому не удалены:<br>%1 | src/configs/sub/GroupUpdater.cpp:872 (error text (shown by the caller's box or log)) |
-| After the URL test of %1: | После проверки задержки %1: | src/configs/sub/GroupUpdater.cpp:920 (log panel) |
+| Removed %1 duplicate profiles: | Удалены повторяющиеся профили (%1): | src/configs/sub/GroupUpdater.cpp:311 (error text (shown by the caller's box or log)) |
+| Removed %1 insecure profiles: | Удалены небезопасные профили (%1): | src/configs/sub/GroupUpdater.cpp:315 (error text (shown by the caller's box or log)) |
+| Skipped removing invalid profiles: the core is unreachable. | Недействительные профили не удалены: ядро не отвечает. | src/configs/sub/GroupUpdater.cpp:327 (log panel) |
+| Removed %1 invalid profiles: | Удалены недействительные профили (%1): | src/configs/sub/GroupUpdater.cpp:329 (log panel) |
+| The running profile was kept. | Запущенный профиль оставлен. | src/configs/sub/GroupUpdater.cpp:340 (message box); src/configs/sub/GroupUpdater.cpp:361 (message box) |
+| Removed %1 unavailable profiles: | Удалены недоступные профили (%1): | src/configs/sub/GroupUpdater.cpp:360 (message box) |
+| Skipped sorting %1: another sort is in progress. | Сортировка %1 пропущена: уже идёт другая сортировка. | src/configs/sub/GroupUpdater.cpp:370 (log panel) |
+| Subscription update already queued: %1 | Обновление подписки уже в очереди: %1 | src/configs/sub/GroupUpdater.cpp:432 (log panel) |
+| Subscription server update interval: %1 hour(s) | Сервер подписки просит обновлять её раз в %1 ч | src/configs/sub/GroupUpdater.cpp:677 (log panel) |
+| The URL of %1 changed during the update, so the result was discarded. | Ссылка %1 изменилась во время обновления, результат отброшен. Обновите подписку ещё раз. | src/configs/sub/GroupUpdater.cpp:711 (log panel) |
+| The server returned a web page instead of a subscription.… | Сервер вернул веб-страницу вместо подписки. Если это капча или проверка на бота, попробуйте другую версию TLS, версию HTTP или User Agent в расширенных настройках группы. | src/configs/sub/GroupUpdater.cpp:720 (log panel) |
+| Announcement from %1: %2 | Объявление от %1: %2 | src/configs/sub/GroupUpdater.cpp:724 (log panel) |
+| No profiles found in the subscription: %1 was left unchanged. | В подписке нет серверов: группа %1 оставлена без изменений. | src/configs/sub/GroupUpdater.cpp:729 (log panel) |
+| Still in use, so kept instead of deleted:<br>%1 | Используются, поэтому не удалены:<br>%1 | src/configs/sub/GroupUpdater.cpp:870 (error text (shown by the caller's box or log)) |
+| Working, so kept instead of deleted:<br>%1 | Работают, поэтому не удалены:<br>%1 | src/configs/sub/GroupUpdater.cpp:873 (error text (shown by the caller's box or log)) |
+| After the URL test of %1: | После проверки задержки %1: | src/configs/sub/GroupUpdater.cpp:921 (log panel) |
 | IPv4 forwarding breaks Tun mode | Раздача интернета мешает режиму TUN | src/sys/Process.cpp:23 (warning box (passive)) |
 | IPv4 forwarding is on for the network adapter… | Для сетевого адаптера «%1» включена пересылка IPv4 — обычно из-за мобильного хот-спота или общего доступа к интернету.<br><br>Тогда Windows не даёт собственным соединениям Throne обойти TUN, они зацикливаются и обрываются.<br><br>Чтобы исправить, раздавайте хот-спот с адаптера throne-tun вместо «%1» (Параметры > Мобильный хот-спот > Совместное использование интернет-соединения) или выключите хот-спот, пока работает режим TUN. | src/sys/Process.cpp:24 (warning box (passive)) |
 | Auto-update: every %1 | Автообновление: каждые %1 | src/ui/group/GroupItem.cpp:27 (error text (shown by the caller's box or log)); src/ui/mainWindow/mainwindow_groups.cpp:54 (error text (shown by the caller's box or log)); src/ui/widget/SubscriptionInfoCard.cpp:521 (error text (shown by the caller's box or log)) |
@@ -185,7 +192,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | null | null | src/main.cpp:112 (error text (shown by the caller's box or log)); src/main.cpp:113 (error text (shown by the caller's box or log)); src/main.cpp:118 (error text (shown by the caller's box or log)) +940 more |
 | boolean | логическое значение | src/configs/sub/clash.cpp:6 (error text (shown by the caller's box or log)); src/configs/sub/clash.cpp:54 (error text (shown by the caller's box or log)); src/configs/sub/clash.cpp:61 (error text (shown by the caller's box or log)) +2 more |
 | number | число | src/configs/generate.cpp:293 (error text (shown by the caller's box or log)); src/configs/generate.cpp:2486 (log panel); src/configs/common/multiplex.cpp:31 (error text (shown by the caller's box or log)) +351 more |
-| string | строка | src/api/RPC.cpp:157 (error text (shown by the caller's box or log)); src/api/RPC.cpp:263 (error text (shown by the caller's box or log)); src/api/RPC.cpp:278 (error text (shown by the caller's box or log)) +2445 more |
+| string | строка | src/api/RPC.cpp:158 (error text (shown by the caller's box or log)); src/api/RPC.cpp:266 (error text (shown by the caller's box or log)); src/api/RPC.cpp:281 (error text (shown by the caller's box or log)) +2445 more |
 | array | массив | src/configs/outbounds/hysteria.cpp:175 (error text (shown by the caller's box or log)); src/configs/outbounds/masque.cpp:22 (error text (shown by the caller's box or log)); src/configs/outbounds/openconnect.cpp:14 (error text (shown by the caller's box or log)) +75 more |
 | object | объект | src/configs/generate.cpp:880 (error text (shown by the caller's box or log)); src/configs/generate.cpp:881 (error text (shown by the caller's box or log)); src/configs/generate.cpp:1369 (error text (shown by the caller's box or log)) +2408 more |
 | Empty document | Пустой документ | src/ui/widget/json/JsonTree.cpp:51 (error text (shown by the caller's box or log)) |
@@ -208,7 +215,7 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | The schema is empty | Схема пуста | src/ui/widget/json/JsonSchemaValidator.cpp:138 (error text (shown by the caller's box or log)) |
 | The schema has no definition at %1 | В схеме нет определения %1 | src/ui/widget/json/JsonSchemaValidator.cpp:143 (error text (shown by the caller's box or log)) |
 | Expected %1, got %2 | Ожидалось: %1, получено: %2 | src/ui/widget/json/JsonSchemaValidator.cpp:211 (error text (shown by the caller's box or log)); src/ui/widget/json/JsonSchemaValidator.cpp:546 (error text (shown by the caller's box or log)) |
-|  or  |  или  | src/api/RPC.cpp:179 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:229 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:235 (error text (shown by the caller's box or log)) +227 more |
+|  or  |  или  | src/api/RPC.cpp:180 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:229 (error text (shown by the caller's box or log)); src/configs/AutoSelectorPlan.cpp:235 (error text (shown by the caller's box or log)) +227 more |
 | Expected %1 here | Здесь ожидалось: %1 | src/ui/widget/json/JsonSchemaValidator.cpp:222 (error text (shown by the caller's box or log)) |
 | %1 is not valid here (expected: %2) | %1 здесь недопустимо (ожидалось: %2) | src/ui/widget/json/JsonSchemaValidator.cpp:239 (error text (shown by the caller's box or log)) |
 | This option is deprecated | Этот параметр устарел | src/ui/widget/json/JsonSchemaValidator.cpp:248 (error text (shown by the caller's box or log)) |
@@ -289,8 +296,8 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 
 | Original | Russian | Where it shows |
 | --- | --- | --- |
-| Failed to get admin access, cannot listen on port %1 without it | Нет прав администратора: без них нельзя слушать порт %1. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:234 (log panel) |
-| Failed to stop profile tests! | Не удалось остановить проверки серверов. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:508 (log panel) |
+| Failed to get admin access, cannot listen on port %1 without it | Нет прав администратора: без них нельзя слушать порт %1. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:235 (log panel) |
+| Failed to stop profile tests! | Не удалось остановить проверки серверов. | src/ui/mainWindow/mainwindow_profile_lifecycle.cpp:518 (log panel) |
 | Build config error | Не удалось собрать конфигурацию | src/ui/mainWindow/mainwindow_profiles.cpp:201 (message box); src/ui/mainWindow/mainwindow_setup.cpp:1066 (message box) |
 | Build Test config error | Не удалось собрать тестовую конфигурацию | src/ui/mainWindow/mainwindow_profiles.cpp:209 (message box); src/ui/mainWindow/mainwindow_setup.cpp:1084 (message box) |
 | Action already in progress | Действие уже выполняется | src/ui/mainWindow/mainwindow_setup.cpp:469 (message box); src/ui/mainWindow/mainwindow_setup.cpp:526 (message box); src/ui/mainWindow/mainwindow_setup.cpp:601 (message box) +1 more |
@@ -298,39 +305,39 @@ Entries that were empty or marked unfinished. Entries kept as they were but mark
 | No such group: %1 | Группа не найдена: %1 | src/ui/mainWindow/mainwindow_groups.cpp:86 (message box) |
 | Invalid Operation | Недопустимое действие | src/ui/mainWindow/mainwindow_system.cpp:291 (message box) |
 | Cannot set system proxy when mixed inbound is disabled. | Нельзя включить системный прокси, когда выключен смешанный (mixed) вход. Включите его в настройках. | src/ui/mainWindow/mainwindow_system.cpp:291 (message box) |
-| Could not find current group! | Текущая группа не найдена. | src/ui/mainWindow/mainwindow_view.cpp:353 (log panel) |
-| URL test error: %1 | Ошибка проверки задержки: %1 | via ru_RU.ts context MainWindow |
-| IPC connection from an unexpected process was rejected | Отклонено подключение к IPC от постороннего процесса | via ru_RU.ts context MainWindow |
+| Could not find current group! | Текущая группа не найдена. | src/ui/mainWindow/mainwindow_view.cpp:354 (log panel) |
+| URL test error: %1 | Ошибка проверки задержки: %1 | src/ui/mainWindow/mainwindow_view.cpp:436 (log panel) |
+| IPC connection from an unexpected process was rejected | Отклонено подключение к IPC от постороннего процесса | src/ui/mainWindow/mainwindow_setup.cpp:228 (log panel) |
 | Wrong type | Неверный тип профиля | src/ui/profile/dialog_edit_profile.cpp:225 (message box) |
-| A profile with this id already exists. | Профиль с таким id уже существует. | via ru_RU.ts context DialogEditProfile |
+| A profile with this id already exists. | Профиль с таким id уже существует. | src/ui/profile/dialog_edit_profile.cpp:330 (message box) |
 | Select custom image error | Не удалось выбрать картинку | src/ui/setting/dialog_basic_settings.cpp:215 (message box) |
-| Internal error | Внутренняя ошибка | src/configs/sub/GroupUpdater.cpp:336 (message box); src/configs/sub/GroupUpdater.cpp:356 (message box); src/configs/sub/GroupUpdater.cpp:826 (message box) |
-| DB Error when deleting profiles, data may be corrupted | Ошибка базы данных при удалении профилей, данные могут быть повреждены. Перезапустите программу. | src/configs/sub/GroupUpdater.cpp:336 (message box); src/configs/sub/GroupUpdater.cpp:356 (message box); src/configs/sub/GroupUpdater.cpp:826 (message box) |
-| DB Error when deleting profiles, Please try again. | Ошибка базы данных при удалении профилей. Попробуйте ещё раз. | src/configs/sub/GroupUpdater.cpp:769 (message box) |
-| The last subscription update has not exited. | Предыдущее обновление подписки ещё не закончилось. | src/configs/sub/GroupUpdater.cpp:447 (log panel) |
-| Subscription task failed: %1 | Не удалось обновить подписку: %1 | src/configs/sub/GroupUpdater.cpp:565 (log panel) |
-| Subscription task failed. | Не удалось обновить подписку. | src/configs/sub/GroupUpdater.cpp:567 (log panel) |
+| Internal error | Внутренняя ошибка | src/configs/sub/GroupUpdater.cpp:337 (message box); src/configs/sub/GroupUpdater.cpp:357 (message box); src/configs/sub/GroupUpdater.cpp:770 (message box) +1 more |
+| DB Error when deleting profiles, data may be corrupted | Ошибка базы данных при удалении профилей, данные могут быть повреждены. Перезапустите программу. | src/configs/sub/GroupUpdater.cpp:337 (message box); src/configs/sub/GroupUpdater.cpp:357 (message box); src/configs/sub/GroupUpdater.cpp:827 (message box) |
+| DB Error when deleting profiles, Please try again. | Ошибка базы данных при удалении профилей. Попробуйте ещё раз. | src/configs/sub/GroupUpdater.cpp:770 (message box) |
+| The last subscription update has not exited. | Предыдущее обновление подписки ещё не закончилось. | src/configs/sub/GroupUpdater.cpp:448 (log panel) |
+| Subscription task failed: %1 | Не удалось обновить подписку: %1 | src/configs/sub/GroupUpdater.cpp:566 (log panel) |
+| Subscription task failed. | Не удалось обновить подписку. | src/configs/sub/GroupUpdater.cpp:568 (log panel) |
 | Extra Core exited, stopping profile... | Дополнительное ядро завершилось, отключаю профиль… | src/sys/Process.cpp:48 (log panel) |
-| Could not start the core: %1 | Не удалось запустить ядро: %1 | via ru_RU.ts context QObject |
-| No connection to the core (code %1) | Нет связи с ядром (код %1) | via ru_RU.ts context QObject |
-| Failed to query connections: no connection to the core | Не удалось получить список соединений: нет связи с ядром | via ru_RU.ts context QObject |
-| Config build error: %1 | Ошибка сборки конфигурации: %1 | via ru_RU.ts context QObject |
-| Could not reach the core: %1 | Нет связи с ядром: %1 | via ru_RU.ts context QObject |
-| Invalid auto selector: %1 | Неверный автовыбор: %1 | via ru_RU.ts context QObject |
+| Could not start the core: %1 | Не удалось запустить ядро: %1 | src/sys/Process.cpp:62 (log panel) |
+| No connection to the core (code %1) | Нет связи с ядром (код %1) | src/api/RPC.cpp:261 (log panel) |
+| Failed to query connections: no connection to the core | Не удалось получить список соединений: нет связи с ядром | src/api/RPC.cpp:511 (log panel) |
+| Config build error: %1 | Ошибка сборки конфигурации: %1 | src/configs/generate.cpp:2387 (log panel) |
+| Could not reach the core: %1 | Нет связи с ядром: %1 | src/configs/generate.cpp:2454 (log panel) |
+| Invalid auto selector: %1 | Неверный автовыбор: %1 | src/configs/generate.cpp:2463 (log panel) |
 | Custom Xray full config is not valid JSON | Полная конфигурация Xray — некорректный JSON | src/configs/generate.cpp:1472 (error text (shown by the caller's box or log)); src/configs/generate.cpp:2511 (log panel) |
-| Invalid Xray server %1: %2 | Неверный сервер Xray %1: %2 | via ru_RU.ts context QObject |
-| Invalid server %1: %2 | Неверный сервер %1: %2 | via ru_RU.ts context QObject |
-| Skipping invalid custom Xray full config: %1 | Пропущена неверная полная конфигурация Xray: %1 | via ru_RU.ts context QObject |
+| Invalid Xray server %1: %2 | Неверный сервер Xray %1: %2 | src/configs/generate.cpp:2522 (log panel); src/configs/generate.cpp:2532 (log panel); src/configs/generate.cpp:2542 (log panel) |
+| Invalid server %1: %2 | Неверный сервер %1: %2 | src/configs/generate.cpp:2559 (log panel) |
+| Skipping invalid custom Xray full config: %1 | Пропущена неверная полная конфигурация Xray: %1 | src/configs/generate.cpp:2609 (log panel) |
 | Custom Xray full config produced no Xray config: %1 | Полная конфигурация Xray не дала настроек Xray: %1 | src/configs/generate.cpp:2623 (log panel) |
-| Skipping invalid config: %1 | Пропущен неверный сервер: %1 | via ru_RU.ts context QObject |
-| TLS errors: %1 | Ошибки TLS: %1 | via ru_RU.ts context QObject |
-| TLS errors (ignored): %1 | Ошибки TLS (пропущены): %1 | via ru_RU.ts context QObject |
-| Skipped invalid headers: %1 | Пропущены неверные заголовки: %1 | via ru_RU.ts context QObject |
-| Failed to parse FinalMask JSON: %1 | Не удалось прочитать JSON FinalMask: %1 | via ru_RU.ts context QObject |
+| Skipping invalid config: %1 | Пропущен неверный сервер: %1 | src/configs/generate.cpp:2635 (log panel) |
+| TLS errors: %1 | Ошибки TLS: %1 | src/global/HTTPRequestHelper.cpp:65 (log panel); src/global/HTTPRequestHelper.cpp:138 (log panel) |
+| TLS errors (ignored): %1 | Ошибки TLS (пропущены): %1 | src/global/HTTPRequestHelper.cpp:65 (log panel); src/global/HTTPRequestHelper.cpp:138 (log panel) |
+| Skipped invalid headers: %1 | Пропущены неверные заголовки: %1 | src/configs/common/transport.cpp:32 (log panel); src/configs/common/xrayStreamSetting.cpp:403 (log panel); src/configs/common/xrayStreamSetting.cpp:559 (log panel) |
+| Failed to parse FinalMask JSON: %1 | Не удалось прочитать JSON FinalMask: %1 | src/configs/common/xrayStreamSetting.cpp:767 (log panel) |
 | Skipping an endpoint rule whose endpoint is no longer in the routing profile | Пропущено правило конечной точки, которой больше нет в профиле маршрутизации | src/database/entities/RouteProfile.cpp:646 (log panel) |
 | Aborted generating routing section, an error has occurred | Не удалось собрать маршрутизацию: произошла ошибка | src/database/entities/RouteProfile.cpp:651 (log panel) |
 | The outbound described in the rule chain is missing, maybe your data is corrupted | Сервер из правила не найден, возможно, данные повреждены | src/database/entities/RouteRule.cpp:168 (log panel) |
-| Could not find group with id %1 | Группа с id %1 не найдена | via ru_RU.ts context QObject |
+| Could not find group with id %1 | Группа с id %1 не найдена | src/database/ProfilesRepo.cpp:403 (log panel) |
 
 ## 5. Translated in place
 
@@ -359,3 +366,16 @@ narrow slot next to «Обновить», a longer hint would be cut off.
 - Profile editor field names and tooltips of protocol settings (OpenVPN / OpenConnect advanced,
   XHTTP, AmneziaWG, TLS tricks; about 450 unfinished ts entries): these are option labels, not
   errors or warnings.
+
+## 8. Screenshots (team\mockups\errors-ru)
+
+Before: dev at 8bf72fa6, built locally; after: this branch. Both 1.0.15-dev, a copied config with
+enable_tun=false, Russian UI.
+
+| # | Error | How it was triggered | Files |
+| --- | --- | --- | --- |
+| 1 | Port in use on connect | real: the test held 127.0.0.1:2781 (the copy's mixed port) | 1-port-in-use-before.png, -before-window.png, -after.png, -after-window.png |
+| 2 | Cache file locked | real: the test held config\cache.db open without sharing | 2-cache-locked-before.png, -after.png, -after-window.png (status card line) |
+| 3 | Subscription DNS failure | real: subscription URL on a non-existent .invalid host | 3-subscription-dns-before.png, -after.png (log panel) |
+| 4 | Admin rights for TUN | demo switch SHADOWLOS_UI_DEMO=err-admin (dev only); no before: TUN was off on purpose | 4-tun-admin-after-demo.png |
+| 5 | Another VPN | demo switch SHADOWLOS_UI_DEMO=err-vpn (dev only); no before | 5-another-vpn-after-demo.png |

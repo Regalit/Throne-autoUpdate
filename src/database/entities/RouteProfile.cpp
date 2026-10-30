@@ -643,12 +643,12 @@ namespace Configs {
             if (outboundMap.contains(item->outboundID)) outboundTag = outboundMap[item->outboundID];
             // an endpoint that left the list has no tag to gate on; skip instead of aborting the build
             if (!forView && item->type == endpointPreferredBy && outboundTag.isEmpty()) {
-                MW_show_log("Skipping an endpoint rule whose endpoint is no longer in the routing profile");
+                MW_show_log(QObject::tr("Skipping an endpoint rule whose endpoint is no longer in the routing profile"));
                 continue;
             }
             auto rule_json = item->get_rule_json(forView, outboundTag);
             if (rule_json.empty()) {
-                MW_show_log("Aborted generating routing section, an error has occurred");
+                MW_show_log(QObject::tr("Aborted generating routing section, an error has occurred"));
                 return {};
             }
             if (!added_adblock && Configs::dataManager->settingsRepo->adblock_enable && rule_json["action"] == "route") {

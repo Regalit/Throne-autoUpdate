@@ -400,7 +400,7 @@ namespace Configs {
         for (auto groupID : groupIDs) {
             auto group = dataManager->groupsRepo->GetGroup(groupID);
             if (!group) {
-                MW_show_log("Could not find group with id " + Int2String(groupID));
+                MW_show_log(QObject::tr("Could not find group with id %1").arg(groupID));
                 return false;
             }
             group->RemoveProfileBatch(ids);

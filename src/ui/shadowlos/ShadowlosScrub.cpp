@@ -1,4 +1,5 @@
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 
 #include <QJsonArray>
@@ -320,6 +321,8 @@ namespace Shadowlos::Journal {
         check(QStringLiteral("manual report quota"), quotaProblems.isEmpty(), quotaProblems.isEmpty() ? QStringLiteral("ok") : quotaProblems);
         const QString stopwatchProblems = Shadowlos::Chrome::StopwatchSelfTest();
         check(QStringLiteral("corner stopwatch"), stopwatchProblems.isEmpty(), stopwatchProblems.isEmpty() ? QStringLiteral("ok") : stopwatchProblems);
+        const QString errorTextProblems = Shadowlos::ErrorText::SelfTest();
+        check(QStringLiteral("error text mapper"), errorTextProblems.isEmpty(), errorTextProblems.isEmpty() ? QStringLiteral("ok") : errorTextProblems);
         check(QStringLiteral("envelope without geo"), !UploadEnvelope(QStringLiteral("journal"), QStringLiteral("j1"), QStringLiteral("x")).contains(QStringLiteral("geo")), {});
 
         print(failed == 0 ? QStringLiteral("journal selftest: all %1 passed").arg(std::size(cases) + extra)

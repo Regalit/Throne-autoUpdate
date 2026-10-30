@@ -119,11 +119,11 @@ Outbound: %4</translation>
     </message>
     <message>
         <source>The core could not capture the profile: %1</source>
-        <translation type="unfinished">Ядро не смогло снять профиль: %1</translation>
+        <translation>Ядро не смогло снять профиль производительности: %1</translation>
     </message>
     <message>
         <source>The core returned an empty profile.</source>
-        <translation type="unfinished">Ядро вернуло пустой профиль.</translation>
+        <translation>Ядро вернуло пустой профиль производительности.</translation>
     </message>
     <message>
         <source>Could not save %1: %2</source>
@@ -1125,6 +1125,10 @@ Throne will restart to complete the restore.</source>
     <message>
         <source>Select at least one part to restore.</source>
         <translation>Выберите хотя бы один раздел для восстановления.</translation>
+    </message>
+    <message>
+        <source>Select custom image error</source>
+        <translation>Не удалось выбрать картинку</translation>
     </message>
 </context>
 <context>
@@ -2152,6 +2156,14 @@ Throne will restart to complete the restore.</source>
         <source>Headers cannot contain &quot;|&quot;.</source>
         <translation>Заголовки не могут содержать символ &quot;|&quot;.</translation>
     </message>
+    <message>
+        <source>Wrong type</source>
+        <translation>Неверный тип профиля</translation>
+    </message>
+    <message>
+        <source>A profile with this id already exists.</source>
+        <translation>Профиль с таким id уже существует.</translation>
+    </message>
 </context>
 <context>
     <name>DialogEndpointDetails</name>
@@ -2181,7 +2193,7 @@ Throne will restart to complete the restore.</source>
     </message>
     <message>
         <source>Cipher</source>
-        <translation type="unfinished"></translation>
+        <translation>Шифр</translation>
     </message>
     <message>
         <source>MTU</source>
@@ -2201,23 +2213,23 @@ Throne will restart to complete the restore.</source>
     </message>
     <message>
         <source>All domains — every DNS query goes through this tunnel</source>
-        <translation type="unfinished"></translation>
+        <translation>Все домены — каждый DNS-запрос идёт через этот туннель</translation>
     </message>
     <message>
         <source>Routes through this tunnel</source>
-        <translation type="unfinished"></translation>
+        <translation>Маршруты через этот туннель</translation>
     </message>
     <message>
         <source>Kept outside this tunnel</source>
-        <translation type="unfinished"></translation>
+        <translation>Вне этого туннеля</translation>
     </message>
     <message>
         <source>DNS servers pushed by the server</source>
-        <translation type="unfinished"></translation>
+        <translation>DNS-серверы, выданные сервером</translation>
     </message>
     <message>
         <source>Domains routed to this tunnel</source>
-        <translation type="unfinished"></translation>
+        <translation>Домены, направляемые в этот туннель</translation>
     </message>
     <message>
         <source>No longer running</source>
@@ -2586,7 +2598,7 @@ For more information, see the document &quot;Configuration/DNS&quot;.</source>
     </message>
     <message>
         <source>Invalid state</source>
-        <translation>Неверный статус</translation>
+        <translation>Неверное состояние</translation>
     </message>
     <message>
         <source>The list of routing profiles is empty, this should be an unreachable state, crashes may occur now</source>
@@ -2952,23 +2964,23 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Delete &quot;%1&quot;? Its secret cannot be recovered.</source>
-        <translation type="unfinished"></translation>
+        <translation>Удалить «%1»? Секрет нельзя будет восстановить.</translation>
     </message>
     <message>
         <source>Failed to store the OTP profile.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось сохранить OTP-профиль. Попробуйте ещё раз.</translation>
     </message>
     <message>
         <source>This one as otpauth:// link and QR</source>
-        <translation type="unfinished"></translation>
+        <translation>Этот — ссылкой otpauth:// и QR-кодом</translation>
     </message>
     <message>
         <source>All as otpauth-migration:// link and QR</source>
-        <translation type="unfinished"></translation>
+        <translation>Все — ссылкой otpauth-migration:// и QR-кодом</translation>
     </message>
     <message>
         <source>All as JSON file...</source>
-        <translation type="unfinished"></translation>
+        <translation>Все — файлом JSON…</translation>
     </message>
     <message>
         <source>Add manually...</source>
@@ -2984,7 +2996,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Paste otpauth:// links, an otpauth-migration:// link, a JSON export, or just a base32 secret.</source>
-        <translation type="unfinished"></translation>
+        <translation>Вставьте ссылки otpauth://, ссылку otpauth-migration://, экспорт JSON или просто секрет base32.</translation>
     </message>
     <message>
         <source>From clipboard</source>
@@ -3004,7 +3016,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>No QR code found in the clipboard image.</source>
-        <translation type="unfinished"></translation>
+        <translation>В картинке из буфера обмена нет QR-кода.</translation>
     </message>
     <message>
         <source>Clipboard is empty.</source>
@@ -3012,7 +3024,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>QR images and exports (*.png *.jpg *.jpeg *.bmp *.gif *.json *.txt);;All files (*)</source>
-        <translation type="unfinished"></translation>
+        <translation>QR-картинки и экспорты (*.png *.jpg *.jpeg *.bmp *.gif *.json *.txt);;Все файлы (*)</translation>
     </message>
     <message>
         <source>%1: cannot be opened</source>
@@ -3028,7 +3040,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Nothing to import.</source>
-        <translation type="unfinished"></translation>
+        <translation>Нечего импортировать.</translation>
     </message>
     <message>
         <source>OTP %1</source>
@@ -3036,11 +3048,11 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Imported %1 OTP profile(s).</source>
-        <translation type="unfinished"></translation>
+        <translation>Импортировано OTP-профилей: %1.</translation>
     </message>
     <message>
         <source>Skipped %1 duplicate or unusable entries.</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущено повторов и негодных записей: %1.</translation>
     </message>
     <message>
         <source>Export OTP</source>
@@ -3048,7 +3060,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>None of the selected profiles could be exported.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось экспортировать ни один из выбранных профилей.</translation>
     </message>
     <message>
         <source>JSON (*.json)</source>
@@ -3061,7 +3073,8 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     <message>
         <source>Exported %1 OTP profile(s) to:
 %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Экспортировано OTP-профилей: %1. Файл:
+%2</translation>
     </message>
 </context>
 <context>
@@ -3407,7 +3420,7 @@ https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
     <name>DialogVpnAuth</name>
     <message>
         <source>VPN Authentication</source>
-        <translation type="unfinished"></translation>
+        <translation>Вход в VPN</translation>
     </message>
     <message>
         <source>Endpoint: %1</source>
@@ -3415,35 +3428,35 @@ https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
     </message>
     <message>
         <source>Reconnect</source>
-        <translation type="unfinished"></translation>
+        <translation>Переподключиться</translation>
     </message>
     <message>
         <source>Submit</source>
-        <translation type="unfinished"></translation>
+        <translation>Отправить</translation>
     </message>
     <message>
         <source>The VPN server sent a message.</source>
-        <translation type="unfinished"></translation>
+        <translation>Сервер VPN прислал сообщение.</translation>
     </message>
     <message>
         <source>Finish signing in at the address shown below, then close this window. The connection continues on its own once the server accepts it.</source>
-        <translation type="unfinished"></translation>
+        <translation>Завершите вход по адресу ниже и закройте это окно. Подключение продолжится само, когда сервер примет вход.</translation>
     </message>
     <message>
         <source>Open in Browser</source>
-        <translation type="unfinished">Открыть в браузере</translation>
+        <translation>Открыть в браузере</translation>
     </message>
     <message>
         <source>This server requires single sign-on in a browser, which Throne does not support yet. Cancel here and use a profile with direct credentials, or supply an authentication cookie in the profile&apos;s advanced settings.</source>
-        <translation type="unfinished"></translation>
+        <translation>Этот сервер требует вход через браузер (single sign-on), а Throne его пока не поддерживает. Нажмите «Отмена» и используйте профиль с логином и паролем или укажите cookie входа в расширенных настройках профиля.</translation>
     </message>
     <message>
         <source>Unsupported authentication request: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неподдерживаемый запрос входа: %1</translation>
     </message>
     <message>
         <source>Expires in %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Истекает через %1</translation>
     </message>
     <message>
         <source>Username</source>
@@ -3455,15 +3468,15 @@ https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
     </message>
     <message>
         <source>Answer</source>
-        <translation type="unfinished"></translation>
+        <translation>Ответ</translation>
     </message>
     <message>
         <source>This request expired.</source>
-        <translation type="unfinished"></translation>
+        <translation>Срок этого запроса истёк. Нажмите «Переподключиться».</translation>
     </message>
     <message>
         <source>Submitting...</source>
-        <translation type="unfinished"></translation>
+        <translation>Отправка…</translation>
     </message>
 </context>
 <context>
@@ -4347,7 +4360,7 @@ Improves hole-punching reliability. Requires IPv4.</source>
     <name>EditMasque</name>
     <message>
         <source>Base64 DER of the enrolled ECDSA P-256 key; it signs the TLS client certificate.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ключ ECDSA P-256 устройства в Base64 DER; им подписывается клиентский сертификат TLS.</translation>
     </message>
     <message>
         <source>Private Key</source>
@@ -4355,15 +4368,15 @@ Improves hole-punching reliability. Requires IPv4.</source>
     </message>
     <message>
         <source>Base64 DER of the server&apos;s public key. When set, it pins the server certificate, even with Allow insecure.</source>
-        <translation type="unfinished">Публичный ключ узла(Peer Public Key) в формате Base64 DER. Если он задан, выполняется привязка сертификата сервера, даже при использовании параметра «Разрешить небезопасные».</translation>
+        <translation>Публичный ключ узла(Peer Public Key) в формате Base64 DER. Если он задан, выполняется привязка сертификата сервера, даже при использовании параметра «Разрешить небезопасные».</translation>
     </message>
     <message>
         <source>Peer Public Key</source>
-        <translation type="unfinished">Публичный ключ узла</translation>
+        <translation>Публичный ключ узла</translation>
     </message>
     <message>
         <source>Comma separated list of the tunnel&apos;s own addresses, e.g. 172.16.0.2/32,2606:4700::1/128</source>
-        <translation type="unfinished"></translation>
+        <translation>Собственные адреса туннеля через запятую, например 172.16.0.2/32,2606:4700::1/128</translation>
     </message>
     <message>
         <source>Local Address</source>
@@ -4391,19 +4404,19 @@ Improves hole-punching reliability. Requires IPv4.</source>
     </message>
     <message>
         <source>Register a new Cloudflare WARP device for MASQUE and fill the key, address and server fields.</source>
-        <translation type="unfinished"></translation>
+        <translation>Зарегистрировать новое устройство Cloudflare WARP для MASQUE и заполнить поля ключа, адреса и сервера.</translation>
     </message>
     <message>
         <source>Generate WARP identity</source>
-        <translation type="unfinished"></translation>
+        <translation>Создать данные WARP</translation>
     </message>
     <message>
         <source>Generating identity...</source>
-        <translation type="unfinished"></translation>
+        <translation>Создаю данные…</translation>
     </message>
     <message>
         <source>Failed to generate WARP identity</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось создать данные WARP. Проверьте интернет и попробуйте снова.</translation>
     </message>
     <message>
         <source>Success!</source>
@@ -6907,7 +6920,7 @@ URL: %2</translation>
     </message>
     <message>
         <source>Listening on all interfaces (%1)</source>
-        <translation type="unfinished"></translation>
+        <translation>Доступен со всех сетевых интерфейсов (%1)</translation>
     </message>
     <message>
         <source>Select</source>
@@ -7003,7 +7016,7 @@ URL: %2</translation>
     </message>
     <message>
         <source>Geo asset missing category</source>
-        <translation>Отсутствует Geo категория</translation>
+        <translation>В гео-файле нет нужной категории</translation>
     </message>
     <message>
         <source>The Xray config &quot;%1&quot; needs &quot;%2&quot;, but the installed %3 does not contain it.
@@ -7035,7 +7048,7 @@ Download them now?</source>
     </message>
     <message>
         <source>Geo assets installed</source>
-        <translation>Загрузка Гео-файлов</translation>
+        <translation>Гео-файлы загружены</translation>
     </message>
     <message>
         <source>[Auto selector] Running the best %1 of %2 ranked profiles.</source>
@@ -7067,27 +7080,27 @@ Download them now?</source>
     </message>
     <message>
         <source>VPN endpoint problem</source>
-        <translation type="unfinished">Проблема конечной точки VPN</translation>
+        <translation>Проблема с конечной точкой VPN</translation>
     </message>
     <message>
         <source>VPN endpoint</source>
-        <translation type="unfinished">Конечная точка VPN</translation>
+        <translation>Конечная точка VPN</translation>
     </message>
     <message>
         <source>[VPN] %1: the core did not answer the sign-in prompt.</source>
-        <translation type="unfinished"></translation>
+        <translation>[VPN] %1: ядро не ответило на запрос входа.</translation>
     </message>
     <message>
         <source>[VPN] %1: could not answer the sign-in prompt: %2</source>
-        <translation type="unfinished"></translation>
+        <translation>[VPN] %1: не удалось ответить на запрос входа: %2</translation>
     </message>
     <message>
         <source>[VPN] %1: signed in again with a new one-time code.</source>
-        <translation type="unfinished"></translation>
+        <translation>[VPN] %1: повторный вход с новым одноразовым кодом выполнен.</translation>
     </message>
     <message>
         <source>[VPN] %1 rejected the saved credentials; restarting the profile with a new one-time code.</source>
-        <translation type="unfinished"></translation>
+        <translation>[VPN] %1 отклонил сохранённые данные входа; перезапускаю профиль с новым одноразовым кодом.</translation>
     </message>
     <message>
         <source>The server refused the credentials saved with this profile. Enter the ones to use for this session; the profile itself is left unchanged.</source>
@@ -7103,7 +7116,7 @@ Download them now?</source>
     </message>
     <message>
         <source>Tun device misbehaving</source>
-        <translation>Некорректное поведение устройства TUN</translation>
+        <translation>Не удалось включить режим TUN</translation>
     </message>
     <message>
         <source>Strict routing unavailable</source>
@@ -7167,7 +7180,9 @@ Error: %1</source>
     </message>
     <message>
         <source>If you have trouble starting VPN, you can force reset Core process here and then try starting the profile again. The error is %1</source>
-        <translation>Если у вас возникли проблемы с запуском режима TUN, можете принудительно сбросить процесс ядра здесь и попробовать перезапустить профиль. Ошибка: %1</translation>
+        <translation>Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить ядро, и подключитесь снова.
+
+Ошибка: %1</translation>
     </message>
     <message>
         <source>Remove %1 Unavailable item(s) ?</source>
@@ -7239,7 +7254,7 @@ Error: %1</source>
     </message>
     <message>
         <source>Could not update the autostart entry:</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось изменить автозапуск:</translation>
     </message>
     <message>
         <source> Test result(s) copied to clipboard!</source>
@@ -7295,7 +7310,7 @@ Error: %1</source>
     </message>
     <message>
         <source>This installation cannot grant the core privileges by itself.</source>
-        <translation type="unfinished"></translation>
+        <translation>Эта установка не может сама выдать ядру нужные права.</translation>
     </message>
     <message>
         <source>Please give the core root privileges</source>
@@ -7359,7 +7374,7 @@ Error: %1</source>
     </message>
     <message>
         <source>Something is very wrong, the subject ent cannot be found!</source>
-        <translation>Что-то явно не так, объект ent не может быть найден!</translation>
+        <translation>Внутренняя ошибка: профиль не найден. Перезапустите программу.</translation>
     </message>
     <message>
         <source>Profile manager data is corrupted, try again.</source>
@@ -7391,23 +7406,23 @@ Please try again.</source>
     </message>
     <message>
         <source>BuildConfig return error</source>
-        <translation>Ошибка BuildConfig</translation>
+        <translation>Не удалось собрать конфигурацию</translation>
     </message>
     <message>
         <source>Another profile is starting...</source>
-        <translation>Другой профиль запускается...</translation>
+        <translation>Другой сервер ещё подключается. Подождите несколько секунд.</translation>
     </message>
     <message>
         <source>Another profile is stopping...</source>
-        <translation>Другой профиль останавливается...</translation>
+        <translation>Другой сервер ещё отключается. Подождите несколько секунд.</translation>
     </message>
     <message>
         <source>Try to start the config, but the core has not listened to the RPC port, so restart it...</source>
-        <translation>Попытка запустить конфигурацию — ядро не прослушивает порт RPC, поэтому перезапустите его...</translation>
+        <translation>Ядро не отвечает, перезапускаю его…</translation>
     </message>
     <message>
         <source>Stop return error</source>
-        <translation>Ошибка остановки</translation>
+        <translation>Не удалось отключиться</translation>
     </message>
     <message>
         <source>Copy core config</source>
@@ -7483,7 +7498,7 @@ Please try again.</source>
     </message>
     <message>
         <source>Please run Throne as admin</source>
-        <translation>Пожалуйста, запустите Throne от имени администратора</translation>
+        <translation>Для этого нужны права администратора. Перезапустить программу от имени администратора?</translation>
     </message>
     <message>
         <source>Add profile from File(s)</source>
@@ -7573,7 +7588,7 @@ Name: %1</source>
     </message>
     <message>
         <source>IPC error</source>
-        <translation>IPC ошибка</translation>
+        <translation>Нет связи с ядром</translation>
     </message>
     <message>
         <source>Collapse All</source>
@@ -7707,6 +7722,54 @@ Please type /config into @shadowlos_bot and input one of the URLs that work:</so
         <source>Debug check finished.</source>
         <translation>Проверка завершена.</translation>
     </message>
+    <message>
+        <source>Failed to get admin access, cannot listen on port %1 without it</source>
+        <translation>Нет прав администратора: без них нельзя слушать порт %1.</translation>
+    </message>
+    <message>
+        <source>Failed to stop profile tests!</source>
+        <translation>Не удалось остановить проверки серверов.</translation>
+    </message>
+    <message>
+        <source>Build config error</source>
+        <translation>Не удалось собрать конфигурацию</translation>
+    </message>
+    <message>
+        <source>Build Test config error</source>
+        <translation>Не удалось собрать тестовую конфигурацию</translation>
+    </message>
+    <message>
+        <source>Action already in progress</source>
+        <translation>Действие уже выполняется</translation>
+    </message>
+    <message>
+        <source>A sort action is already in progress</source>
+        <translation>Сортировка уже идёт. Подождите, пока она закончится.</translation>
+    </message>
+    <message>
+        <source>No such group: %1</source>
+        <translation>Группа не найдена: %1</translation>
+    </message>
+    <message>
+        <source>Invalid Operation</source>
+        <translation>Недопустимое действие</translation>
+    </message>
+    <message>
+        <source>Cannot set system proxy when mixed inbound is disabled.</source>
+        <translation>Нельзя включить системный прокси, когда выключен смешанный (mixed) вход. Включите его в настройках.</translation>
+    </message>
+    <message>
+        <source>Could not find current group!</source>
+        <translation>Текущая группа не найдена.</translation>
+    </message>
+    <message>
+        <source>URL test error: %1</source>
+        <translation>Ошибка проверки задержки: %1</translation>
+    </message>
+    <message>
+        <source>IPC connection from an unexpected process was rejected</source>
+        <translation>Отклонено подключение к IPC от постороннего процесса</translation>
+    </message>
 </context>
 <context>
     <name>OtpItem</name>
@@ -7799,7 +7862,7 @@ Please type /config into @shadowlos_bot and input one of the URLs that work:</so
     <name>QObject</name>
     <message>
         <source>The selected TLS version is not supported on this system.</source>
-        <translation type="unfinished">Выбранная версия TLS не поддерживается в этой системе</translation>
+        <translation>Выбранная версия TLS не поддерживается в этой системе. Выберите другую в расширенных настройках группы.</translation>
     </message>
     <message>
         <source>Request with proxy but no profile started.</source>
@@ -7807,7 +7870,7 @@ Please type /config into @shadowlos_bot and input one of the URLs that work:</so
     </message>
     <message>
         <source>Response larger than %1 MB</source>
-        <translation type="unfinished"></translation>
+        <translation>Ответ больше %1 МБ</translation>
     </message>
     <message>
         <source>Download failed: server returned HTTP status %1.</source>
@@ -7863,7 +7926,7 @@ How to update?</source>
     </message>
     <message>
         <source>Requesting subscription %1 error: %2</source>
-        <translation>Ошибка запроса подписки %1: %2</translation>
+        <translation>Не удалось обновить подписку %1: %2</translation>
     </message>
     <message>
         <source>Subscription request fininshed: %1</source>
@@ -7879,59 +7942,59 @@ How to update?</source>
     </message>
     <message>
         <source>Failed to parse the Clash configuration.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось прочитать конфигурацию Clash.</translation>
     </message>
     <message>
         <source>Failed to import the OpenVPN profile.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось импортировать профиль OpenVPN.</translation>
     </message>
     <message>
         <source>Failed to import the OpenConnect profile.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось импортировать профиль OpenConnect.</translation>
     </message>
     <message>
         <source>Failed to decode the vpn:// link.</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось прочитать ссылку vpn://.</translation>
     </message>
     <message>
         <source>No importable profile found in the vpn:// link.</source>
-        <translation type="unfinished"></translation>
+        <translation>В ссылке vpn:// нет профиля для импорта.</translation>
     </message>
     <message>
         <source>Removed %1 duplicate profiles:</source>
-        <translation type="unfinished"></translation>
+        <translation>Удалены повторяющиеся профили (%1):</translation>
     </message>
     <message>
         <source>Removed %1 insecure profiles:</source>
-        <translation type="unfinished"></translation>
+        <translation>Удалены небезопасные профили (%1):</translation>
     </message>
     <message>
         <source>Skipped removing invalid profiles: the core is unreachable.</source>
-        <translation type="unfinished"></translation>
+        <translation>Недействительные профили не удалены: ядро не отвечает.</translation>
     </message>
     <message>
         <source>Removed %1 invalid profiles:</source>
-        <translation type="unfinished"></translation>
+        <translation>Удалены недействительные профили (%1):</translation>
     </message>
     <message>
         <source>The running profile was kept.</source>
-        <translation type="unfinished"></translation>
+        <translation>Запущенный профиль оставлен.</translation>
     </message>
     <message>
         <source>Removed %1 unavailable profiles:</source>
-        <translation type="unfinished"></translation>
+        <translation>Удалены недоступные профили (%1):</translation>
     </message>
     <message>
         <source>Skipped sorting %1: another sort is in progress.</source>
-        <translation type="unfinished"></translation>
+        <translation>Сортировка %1 пропущена: уже идёт другая сортировка.</translation>
     </message>
     <message>
         <source>Subscription update already queued: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Обновление подписки уже в очереди: %1</translation>
     </message>
     <message>
         <source>Subscription server update interval: %1 hour(s)</source>
-        <translation type="unfinished"></translation>
+        <translation>Сервер подписки просит обновлять её раз в %1 ч</translation>
     </message>
     <message>
         <source>Process complete, applying...</source>
@@ -7939,19 +8002,19 @@ How to update?</source>
     </message>
     <message>
         <source>The URL of %1 changed during the update, so the result was discarded.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ссылка %1 изменилась во время обновления, результат отброшен. Обновите подписку ещё раз.</translation>
     </message>
     <message>
         <source>The server returned a web page instead of a subscription. If it is a CAPTCHA or a bot check, try another TLS version, HTTP version or User Agent in the group&apos;s Advanced settings.</source>
-        <translation type="unfinished"></translation>
+        <translation>Сервер вернул веб-страницу вместо подписки. Если это капча или проверка на бота, попробуйте другую версию TLS, версию HTTP или User Agent в расширенных настройках группы.</translation>
     </message>
     <message>
         <source>Announcement from %1: %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Объявление от %1: %2</translation>
     </message>
     <message>
         <source>No profiles found in the subscription: %1 was left unchanged.</source>
-        <translation type="unfinished"></translation>
+        <translation>В подписке нет серверов: группа %1 оставлена без изменений.</translation>
     </message>
     <message>
         <source>Added %1 profiles:
@@ -7970,12 +8033,14 @@ Deleted %5 Profiles:
     <message>
         <source>Still in use, so kept instead of deleted:
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Используются, поэтому не удалены:
+%1</translation>
     </message>
     <message>
         <source>Working, so kept instead of deleted:
 %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Работают, поэтому не удалены:
+%1</translation>
     </message>
     <message>
         <source>Nothing</source>
@@ -7991,11 +8056,11 @@ Deleted %5 Profiles:
     </message>
     <message>
         <source>After the URL test of %1:</source>
-        <translation type="unfinished"></translation>
+        <translation>После проверки задержки %1:</translation>
     </message>
     <message>
         <source>IPv4 forwarding breaks Tun mode</source>
-        <translation type="unfinished"></translation>
+        <translation>Раздача интернета мешает режиму TUN</translation>
     </message>
     <message>
         <source>IPv4 forwarding is on for the network adapter &quot;%1&quot;, usually because Mobile Hotspot or Internet Connection Sharing is sharing it.
@@ -8003,15 +8068,19 @@ Deleted %5 Profiles:
 Windows then ignores the adapter binding that keeps Throne&apos;s own connections out of the Tun, so they loop back into it and fail.
 
 To fix this, share the hotspot from the throne-tun adapter instead of &quot;%1&quot; (Settings &gt; Mobile hotspot &gt; Share my internet connection from), or turn the hotspot off while using Tun mode.</source>
-        <translation type="unfinished"></translation>
+        <translation>Для сетевого адаптера «%1» включена пересылка IPv4 — обычно из-за мобильного хот-спота или общего доступа к интернету.
+
+Тогда Windows не даёт собственным соединениям Throne обойти TUN, они зацикливаются и обрываются.
+
+Чтобы исправить, раздавайте хот-спот с адаптера throne-tun вместо «%1» (Параметры &gt; Мобильный хот-спот &gt; Совместное использование интернет-соединения) или выключите хот-спот, пока работает режим TUN.</translation>
     </message>
     <message>
         <source>Core exited, cleaning up...</source>
-        <translation>Ядро завершило работу, очистка...</translation>
+        <translation>Ядро неожиданно завершилось, очищаю…</translation>
     </message>
     <message>
         <source>Core exits too frequently, stop automatic restart this profile.</source>
-        <translation>Ядро слишком часто останавливается, отмена автоматического перезапуска этого профиля.</translation>
+        <translation>Ядро слишком часто падает, автоматический перезапуск этого профиля остановлен.</translation>
     </message>
     <message>
         <source>Restarting the core ...</source>
@@ -8023,7 +8092,7 @@ To fix this, share the hotspot from the throne-tun adapter instead of &quot;%1&q
     </message>
     <message>
         <source>Requesting profile error: %1</source>
-        <translation>Ошибка запроса профиля: %1</translation>
+        <translation>Не удалось скачать профиль: %1</translation>
     </message>
     <message>
         <source>Added remote routing profiles: %1 of %2 fetched</source>
@@ -8075,7 +8144,7 @@ Release note:
     </message>
     <message>
         <source>None</source>
-        <translation type="unfinished">Нет</translation>
+        <translation>Нет</translation>
     </message>
     <message>
         <source>Used: %1 Remain: %2 Expire: %3</source>
@@ -8083,7 +8152,7 @@ Release note:
     </message>
     <message>
         <source>Auto-update: every %1</source>
-        <translation type="unfinished">Авто-обновление: каждый(ые) %1</translation>
+        <translation>Автообновление: каждые %1</translation>
     </message>
     <message>
         <source>Default</source>
@@ -8091,35 +8160,35 @@ Release note:
     </message>
     <message>
         <source>The routing profile lists an endpoint profile (id %1) that no longer exists</source>
-        <translation type="unfinished"></translation>
+        <translation>В профиле маршрутизации указана конечная точка (id %1), которой больше нет. Уберите её из профиля</translation>
     </message>
     <message>
         <source>%1 is listed as a routing profile endpoint but is empty or corrupted</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 указан как конечная точка профиля маршрутизации, но он пуст или повреждён</translation>
     </message>
     <message>
         <source>%1 is listed as a routing profile endpoint but a hop of it no longer exists</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 указан как конечная точка профиля маршрутизации, но одного из его звеньев больше нет</translation>
     </message>
     <message>
         <source>%1 is listed as a routing profile endpoint, so its last hop must be an OpenVPN or OpenConnect profile</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 указан как конечная точка профиля маршрутизации, поэтому его последнее звено должно быть профилем OpenVPN или OpenConnect</translation>
     </message>
     <message>
         <source>Hops of the routing profile endpoint %1 cannot use an extra core, a full config, or be a chain</source>
-        <translation type="unfinished"></translation>
+        <translation>Звенья конечной точки %1 не могут использовать дополнительное ядро, полную конфигурацию или быть цепочкой</translation>
     </message>
     <message>
         <source>Hops of the routing profile endpoint %1 cannot run on the Xray core</source>
-        <translation type="unfinished"></translation>
+        <translation>Звенья конечной точки %1 не могут работать на ядре Xray</translation>
     </message>
     <message>
         <source>%1 is used as an endpoint of the routing profile and by the started profile at the same time, remove it from one of them</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 используется и как конечная точка профиля маршрутизации, и запускаемым профилем. Уберите его из одного из них</translation>
     </message>
     <message>
         <source>%1 is listed twice in the endpoints of the routing profile</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 указан в конечных точках профиля маршрутизации дважды</translation>
     </message>
     <message>
         <source>Auto-update: running %1</source>
@@ -8189,11 +8258,11 @@ Release note:
     </message>
     <message>
         <source>Static Key</source>
-        <translation type="unfinished"></translation>
+        <translation>Статический ключ</translation>
     </message>
     <message>
         <source>Unverified TLS</source>
-        <translation type="unfinished"></translation>
+        <translation>TLS без проверки</translation>
     </message>
     <message>
         <source>TLS</source>
@@ -8265,7 +8334,7 @@ Release note:
     </message>
     <message>
         <source>OpenVPN or OpenConnect profile</source>
-        <translation type="unfinished"></translation>
+        <translation>Профиль OpenVPN или OpenConnect</translation>
     </message>
     <message>
         <source>filtered out by name</source>
@@ -8281,7 +8350,7 @@ Release note:
     </message>
     <message>
         <source>Xray full config cannot be combined with the group&apos;s proxies</source>
-        <translation type="unfinished"></translation>
+        <translation>Полную конфигурацию Xray нельзя сочетать с прокси группы</translation>
     </message>
     <message>
         <source>never</source>
@@ -8453,7 +8522,7 @@ Release note:
     </message>
     <message>
         <source>Waiting for sign-in</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидание входа</translation>
     </message>
     <message>
         <source>Error</source>
@@ -8465,327 +8534,327 @@ Release note:
     </message>
     <message>
         <source>Too much data to fit in a QR code.</source>
-        <translation type="unfinished"></translation>
+        <translation>Слишком много данных для одного QR-кода.</translation>
     </message>
     <message>
         <source>Copy</source>
-        <translation type="unfinished"></translation>
+        <translation>Копировать</translation>
     </message>
     <message>
         <source>null</source>
-        <translation type="unfinished"></translation>
+        <translation>null</translation>
     </message>
     <message>
         <source>boolean</source>
-        <translation type="unfinished"></translation>
+        <translation>логическое значение</translation>
     </message>
     <message>
         <source>number</source>
-        <translation type="unfinished"></translation>
+        <translation>число</translation>
     </message>
     <message>
         <source>string</source>
-        <translation type="unfinished"></translation>
+        <translation>строка</translation>
     </message>
     <message>
         <source>array</source>
-        <translation type="unfinished"></translation>
+        <translation>массив</translation>
     </message>
     <message>
         <source>object</source>
-        <translation type="unfinished"></translation>
+        <translation>объект</translation>
     </message>
     <message>
         <source>Empty document</source>
-        <translation type="unfinished"></translation>
+        <translation>Пустой документ</translation>
     </message>
     <message>
         <source>Unexpected content after the end of the document</source>
-        <translation type="unfinished"></translation>
+        <translation>Лишний текст после конца документа</translation>
     </message>
     <message>
         <source>The document is nested too deeply</source>
-        <translation type="unfinished"></translation>
+        <translation>Слишком глубокая вложенность документа</translation>
     </message>
     <message>
         <source>Unexpected end of document</source>
-        <translation type="unfinished"></translation>
+        <translation>Документ неожиданно закончился</translation>
     </message>
     <message>
         <source>Expected a property name in quotes</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидалось имя свойства в кавычках</translation>
     </message>
     <message>
         <source>Expected a colon after the property name</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидалось двоеточие после имени свойства</translation>
     </message>
     <message>
         <source>Trailing comma</source>
-        <translation type="unfinished"></translation>
+        <translation>Лишняя запятая в конце</translation>
     </message>
     <message>
         <source>Expected a comma or a closing brace</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидалась запятая или закрывающая фигурная скобка</translation>
     </message>
     <message>
         <source>Expected a comma or a closing bracket</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидалась запятая или закрывающая квадратная скобка</translation>
     </message>
     <message>
         <source>Unterminated string</source>
-        <translation type="unfinished"></translation>
+        <translation>Строка не закрыта кавычкой</translation>
     </message>
     <message>
         <source>Unterminated escape sequence</source>
-        <translation type="unfinished"></translation>
+        <translation>Незавершённая escape-последовательность</translation>
     </message>
     <message>
         <source>Incomplete unicode escape sequence</source>
-        <translation type="unfinished"></translation>
+        <translation>Неполная escape-последовательность Unicode</translation>
     </message>
     <message>
         <source>Invalid unicode escape sequence</source>
-        <translation type="unfinished"></translation>
+        <translation>Неверная escape-последовательность Unicode</translation>
     </message>
     <message>
         <source>Invalid escape sequence</source>
-        <translation type="unfinished"></translation>
+        <translation>Неверная escape-последовательность</translation>
     </message>
     <message>
         <source>Control character in string</source>
-        <translation type="unfinished"></translation>
+        <translation>Управляющий символ в строке</translation>
     </message>
     <message>
         <source>Invalid value</source>
-        <translation type="unfinished"></translation>
+        <translation>Неверное значение</translation>
     </message>
     <message>
         <source>Invalid number</source>
-        <translation type="unfinished"></translation>
+        <translation>Неверное число</translation>
     </message>
     <message>
         <source>The schema is empty</source>
-        <translation type="unfinished"></translation>
+        <translation>Схема пуста</translation>
     </message>
     <message>
         <source>The schema has no definition at %1</source>
-        <translation type="unfinished"></translation>
+        <translation>В схеме нет определения %1</translation>
     </message>
     <message>
         <source>Expected %1, got %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидалось: %1, получено: %2</translation>
     </message>
     <message>
         <source> or </source>
-        <translation type="unfinished"></translation>
+        <translation> или </translation>
     </message>
     <message>
         <source>Expected %1 here</source>
-        <translation type="unfinished"></translation>
+        <translation>Здесь ожидалось: %1</translation>
     </message>
     <message>
         <source>%1 is not valid here (expected: %2)</source>
-        <translation type="unfinished"></translation>
+        <translation>%1 здесь недопустимо (ожидалось: %2)</translation>
     </message>
     <message>
         <source>This option is deprecated</source>
-        <translation type="unfinished"></translation>
+        <translation>Этот параметр устарел</translation>
     </message>
     <message>
         <source>&quot;%1&quot; is not in the expected format</source>
-        <translation type="unfinished"></translation>
+        <translation>«%1» не в ожидаемом формате</translation>
     </message>
     <message>
         <source>Value must be at least %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Значение должно быть не меньше %1</translation>
     </message>
     <message>
         <source>Value must be at most %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Значение должно быть не больше %1</translation>
     </message>
     <message>
         <source>Unknown field &quot;%1&quot;</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестное поле «%1»</translation>
     </message>
     <message>
         <source>Missing required field &quot;%1&quot;</source>
-        <translation type="unfinished"></translation>
+        <translation>Нет обязательного поля «%1»</translation>
     </message>
     <message>
         <source>Unknown %1 %2 (expected: %3)</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестное значение %1 %2 (ожидалось: %3)</translation>
     </message>
     <message>
         <source>Value does not match any accepted form</source>
-        <translation type="unfinished"></translation>
+        <translation>Значение не подходит ни под один допустимый вид</translation>
     </message>
     <message>
         <source>Empty OpenVPN configuration.</source>
-        <translation type="unfinished"></translation>
+        <translation>Пустая конфигурация OpenVPN.</translation>
     </message>
     <message>
         <source>&lt;connection&gt; block without a remote, skipped.</source>
-        <translation type="unfinished"></translation>
+        <translation>Блок &lt;connection&gt; без remote пропущен.</translation>
     </message>
     <message>
         <source>Ignored an unreadable peer fingerprint: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен нечитаемый отпечаток узла: %1</translation>
     </message>
     <message>
         <source>PKCS#12 bundles are not supported; export the CA, certificate and key as PEM.</source>
-        <translation type="unfinished"></translation>
+        <translation>Пакеты PKCS#12 не поддерживаются. Экспортируйте CA, сертификат и ключ в формате PEM.</translation>
     </message>
     <message>
         <source>Ignored inline block: &lt;%1&gt;</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен встроенный блок: &lt;%1&gt;</translation>
     </message>
     <message>
         <source>This is an OpenVPN server configuration (%1), not a client profile.</source>
-        <translation type="unfinished"></translation>
+        <translation>Это конфигурация сервера OpenVPN (%1), а не профиль клиента.</translation>
     </message>
     <message>
         <source>TAP (layer 2) tunnels are not supported; only `dev tun` profiles can be imported.</source>
-        <translation type="unfinished"></translation>
+        <translation>Туннели TAP (уровень 2) не поддерживаются. Импортировать можно только профили с `dev tun`.</translation>
     </message>
     <message>
         <source>This is an OpenVPN server configuration (mode server), not a client profile.</source>
-        <translation type="unfinished"></translation>
+        <translation>Это конфигурация сервера OpenVPN (mode server), а не профиль клиента.</translation>
     </message>
     <message>
         <source>`proto %1` is a server transport.</source>
-        <translation type="unfinished"></translation>
+        <translation>`proto %1` — транспорт для сервера.</translation>
     </message>
     <message>
         <source>Unknown transport: proto %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестный транспорт: proto %1</translation>
     </message>
     <message>
         <source>Ignored an unreadable IPv6 interface address: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен нечитаемый IPv6-адрес интерфейса: %1</translation>
     </message>
     <message>
         <source>Credentials live in %1; enter them in the profile editor.</source>
-        <translation type="unfinished"></translation>
+        <translation>Данные входа лежат в %1. Введите их в редакторе профиля.</translation>
     </message>
     <message>
         <source>A hash-directory CRL is not supported; point `crl-verify` at a PEM or DER file.</source>
-        <translation type="unfinished"></translation>
+        <translation>CRL в виде каталога не поддерживается. Укажите в `crl-verify` файл PEM или DER.</translation>
     </message>
     <message>
         <source>Ignored a symbolic route target: route %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен символьный адрес маршрута: route %1</translation>
     </message>
     <message>
         <source>Ignored an unreadable route: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен нечитаемый маршрут: %1</translation>
     </message>
     <message>
         <source>redirect-gateway flag has no sing-box equivalent: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>У флага redirect-gateway нет аналога в sing-box: %1</translation>
     </message>
     <message>
         <source>Not supported by the OpenVPN endpoint, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Не поддерживается конечной точкой OpenVPN, пропущено: %1</translation>
     </message>
     <message>
         <source>Unknown OpenVPN directive, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестная директива OpenVPN, пропущена: %1</translation>
     </message>
     <message>
         <source>`%1` turns the client certificate off; it was dropped and the server has to accept password login.</source>
-        <translation type="unfinished"></translation>
+        <translation>`%1` отключает клиентский сертификат: он убран, и сервер должен принимать вход по паролю.</translation>
     </message>
     <message>
         <source>`cert` without a `key`: add the private key, or `client-cert-not-required` for password-only login.</source>
-        <translation type="unfinished"></translation>
+        <translation>`cert` без `key`: добавьте закрытый ключ или `client-cert-not-required` для входа только по паролю.</translation>
     </message>
     <message>
         <source>`key` without a `cert`: add the client certificate.</source>
-        <translation type="unfinished"></translation>
+        <translation>`key` без `cert`: добавьте клиентский сертификат.</translation>
     </message>
     <message>
         <source>No `remote` server in the OpenVPN configuration.</source>
-        <translation type="unfinished"></translation>
+        <translation>В конфигурации OpenVPN нет сервера `remote`.</translation>
     </message>
     <message>
         <source>Ignored an unreadable interface address: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен нечитаемый адрес интерфейса: %1</translation>
     </message>
     <message>
         <source>`remote-cert-eku` replaces `remote-cert-tls`; the latter was dropped.</source>
-        <translation type="unfinished"></translation>
+        <translation>`remote-cert-eku` заменяет `remote-cert-tls`, поэтому второй убран.</translation>
     </message>
     <message>
         <source>Unsupported OpenConnect protocol, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неподдерживаемый протокол OpenConnect, пропущен: %1</translation>
     </message>
     <message>
         <source>Unknown compression mode, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестный режим сжатия, пропущен: %1</translation>
     </message>
     <message>
         <source>Unknown reported OS, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестная ОС в настройке, пропущена: %1</translation>
     </message>
     <message>
         <source>Unsupported token mode, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неподдерживаемый режим токена, пропущен: %1</translation>
     </message>
     <message>
         <source>Expected --form-entry=FORM:OPTION=VALUE, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Ожидалось --form-entry=FORM:OPTION=VALUE, пропущено: %1</translation>
     </message>
     <message>
         <source>Configure a proxy through Throne&apos;s chain instead, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Прокси настраивается цепочкой Throne, пропущено: %1</translation>
     </message>
     <message>
         <source>Unknown OpenConnect option, ignored: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестный параметр OpenConnect, пропущен: %1</translation>
     </message>
     <message>
         <source>Unknown OpenConnect option, ignored: -%1</source>
-        <translation type="unfinished"></translation>
+        <translation>Неизвестный параметр OpenConnect, пропущен: -%1</translation>
     </message>
     <message>
         <source>An AnyConnect profile carrying a DTD is not accepted.</source>
-        <translation type="unfinished"></translation>
+        <translation>Профиль AnyConnect с DTD не принимается.</translation>
     </message>
     <message>
         <source>Malformed AnyConnect profile: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Повреждённый профиль AnyConnect: %1</translation>
     </message>
     <message>
         <source>The AnyConnect profile lists no host entry.</source>
-        <translation type="unfinished"></translation>
+        <translation>В профиле AnyConnect нет ни одного хоста.</translation>
     </message>
     <message>
         <source>Skipped a host entry without an address.</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен хост без адреса.</translation>
     </message>
     <message>
         <source>Skipped &quot;%1&quot;: IKEv2/IPsec is not spoken by the OpenConnect endpoint.</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен «%1»: конечная точка OpenConnect не поддерживает IKEv2/IPsec.</translation>
     </message>
     <message>
         <source>Skipped an unreadable host address: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Пропущен нечитаемый адрес хоста: %1</translation>
     </message>
     <message>
         <source>Empty OpenConnect profile.</source>
-        <translation type="unfinished"></translation>
+        <translation>Пустой профиль OpenConnect.</translation>
     </message>
     <message>
         <source>The AnyConnect profile has no host entry this endpoint can use.</source>
-        <translation type="unfinished"></translation>
+        <translation>В профиле AnyConnect нет хоста, который может использовать эта конечная точка.</translation>
     </message>
     <message>
         <source>No OpenConnect options found.</source>
-        <translation type="unfinished"></translation>
+        <translation>Параметры OpenConnect не найдены.</translation>
     </message>
     <message>
         <source>No OpenConnect server address found.</source>
-        <translation type="unfinished"></translation>
+        <translation>Адрес сервера OpenConnect не найден.</translation>
     </message>
     <message>
         <source>Secret is empty</source>
@@ -8801,23 +8870,23 @@ Release note:
     </message>
     <message>
         <source>Digits must be between %1 and %2</source>
-        <translation type="unfinished"></translation>
+        <translation>Число цифр должно быть от %1 до %2</translation>
     </message>
     <message>
         <source>Period must be between %1 and %2 seconds</source>
-        <translation type="unfinished"></translation>
+        <translation>Период должен быть от %1 до %2 секунд</translation>
     </message>
     <message>
         <source>Not a readable OTP export</source>
-        <translation type="unfinished"></translation>
+        <translation>Это не читаемый экспорт OTP</translation>
     </message>
     <message>
         <source>Unreadable migration link</source>
-        <translation type="unfinished"></translation>
+        <translation>Не удалось прочитать ссылку переноса</translation>
     </message>
     <message>
         <source>Not an otpauth link or secret: %1</source>
-        <translation type="unfinished"></translation>
+        <translation>Это не ссылка otpauth и не секрет: %1</translation>
     </message>
     <message>
         <source>Endpoint</source>
@@ -8829,23 +8898,23 @@ Release note:
     </message>
     <message>
         <source>Database error</source>
-        <translation type="unfinished"></translation>
+        <translation>Ошибка базы данных</translation>
     </message>
     <message>
         <source>%1 failed: %2. Details are in the log file.</source>
-        <translation type="unfinished"></translation>
+        <translation>%1: ошибка: %2. Подробности в файле журнала.</translation>
     </message>
     <message>
         <source>Traffic statistics paused</source>
-        <translation type="unfinished"></translation>
+        <translation>Статистика трафика приостановлена</translation>
     </message>
     <message>
         <source>The statistics database is unusable (%1). Statistics are paused for this session and the file will be rebuilt when Throne restarts.</source>
-        <translation type="unfinished"></translation>
+        <translation>База статистики повреждена (%1). Статистика приостановлена до конца сеанса, а файл будет пересоздан при следующем запуске Throne.</translation>
     </message>
     <message>
         <source>Writing statistics keeps failing (%1). Statistics are paused until Throne restarts.</source>
-        <translation type="unfinished"></translation>
+        <translation>Статистику не удаётся записать (%1). Она приостановлена до перезапуска Throne.</translation>
     </message>
     <message>
         <source>Empty</source>
@@ -8901,35 +8970,35 @@ Release note:
     </message>
     <message>
         <source>Settings changed, restart to apply</source>
-        <translation type="unfinished">Настройки изменены, перезапустите для применения</translation>
+        <translation>Настройки изменены, перезапустите для применения</translation>
     </message>
     <message>
         <source>Restart</source>
-        <translation type="unfinished">Перезапустить</translation>
+        <translation>Перезапустить</translation>
     </message>
     <message>
         <source>Ignore</source>
-        <translation type="unfinished">Игнорировать</translation>
+        <translation>Игнорировать</translation>
     </message>
     <message>
         <source>%1: the private key is empty</source>
-        <translation type="unfinished"></translation>
+        <translation>%1: закрытый ключ не задан</translation>
     </message>
     <message>
         <source>%1: no address is set</source>
-        <translation type="unfinished"></translation>
+        <translation>%1: адрес не задан</translation>
     </message>
     <message>
         <source>Failed to reach the core.</source>
-        <translation type="unfinished"></translation>
+        <translation>Ядро не отвечает. Перезапустите программу.</translation>
     </message>
     <message>
         <source>Cloudflare WARP</source>
-        <translation type="unfinished"></translation>
+        <translation>Cloudflare WARP</translation>
     </message>
     <message>
         <source>Generating a WARP identity registers a new device with Cloudflare.&lt;br&gt;&lt;br&gt;Do you accept the &lt;a href=&quot;%1&quot;&gt;Cloudflare WARP terms of service&lt;/a&gt;?</source>
-        <translation type="unfinished"></translation>
+        <translation>Чтобы создать данные WARP, в Cloudflare регистрируется новое устройство.&lt;br&gt;&lt;br&gt;Вы принимаете &lt;a href=&quot;%1&quot;&gt;условия использования Cloudflare WARP&lt;/a&gt;?</translation>
     </message>
     <message>
         <source>Debug Check</source>
@@ -8992,6 +9061,114 @@ Debug info does not contain any personal information.</source>
     <message>
         <source>[UpdateConf] No groups found. Add a subscription group with a URL first.</source>
         <translation>[UpdateConf] Группы не найдены. Сначала добавьте группу подписки с URL.</translation>
+    </message>
+    <message>
+        <source>Internal error</source>
+        <translation>Внутренняя ошибка</translation>
+    </message>
+    <message>
+        <source>DB Error when deleting profiles, data may be corrupted</source>
+        <translation>Ошибка базы данных при удалении профилей, данные могут быть повреждены. Перезапустите программу.</translation>
+    </message>
+    <message>
+        <source>DB Error when deleting profiles, Please try again.</source>
+        <translation>Ошибка базы данных при удалении профилей. Попробуйте ещё раз.</translation>
+    </message>
+    <message>
+        <source>The last subscription update has not exited.</source>
+        <translation>Предыдущее обновление подписки ещё не закончилось.</translation>
+    </message>
+    <message>
+        <source>Subscription task failed: %1</source>
+        <translation>Не удалось обновить подписку: %1</translation>
+    </message>
+    <message>
+        <source>Subscription task failed.</source>
+        <translation>Не удалось обновить подписку.</translation>
+    </message>
+    <message>
+        <source>Extra Core exited, stopping profile...</source>
+        <translation>Дополнительное ядро завершилось, отключаю профиль…</translation>
+    </message>
+    <message>
+        <source>Could not start the core: %1</source>
+        <translation>Не удалось запустить ядро: %1</translation>
+    </message>
+    <message>
+        <source>No connection to the core (code %1)</source>
+        <translation>Нет связи с ядром (код %1)</translation>
+    </message>
+    <message>
+        <source>Failed to query connections: no connection to the core</source>
+        <translation>Не удалось получить список соединений: нет связи с ядром</translation>
+    </message>
+    <message>
+        <source>Config build error: %1</source>
+        <translation>Ошибка сборки конфигурации: %1</translation>
+    </message>
+    <message>
+        <source>Could not reach the core: %1</source>
+        <translation>Нет связи с ядром: %1</translation>
+    </message>
+    <message>
+        <source>Invalid auto selector: %1</source>
+        <translation>Неверный автовыбор: %1</translation>
+    </message>
+    <message>
+        <source>Custom Xray full config is not valid JSON</source>
+        <translation>Полная конфигурация Xray — некорректный JSON</translation>
+    </message>
+    <message>
+        <source>Invalid Xray server %1: %2</source>
+        <translation>Неверный сервер Xray %1: %2</translation>
+    </message>
+    <message>
+        <source>Invalid server %1: %2</source>
+        <translation>Неверный сервер %1: %2</translation>
+    </message>
+    <message>
+        <source>Skipping invalid custom Xray full config: %1</source>
+        <translation>Пропущена неверная полная конфигурация Xray: %1</translation>
+    </message>
+    <message>
+        <source>Custom Xray full config produced no Xray config: %1</source>
+        <translation>Полная конфигурация Xray не дала настроек Xray: %1</translation>
+    </message>
+    <message>
+        <source>Skipping invalid config: %1</source>
+        <translation>Пропущен неверный сервер: %1</translation>
+    </message>
+    <message>
+        <source>TLS errors: %1</source>
+        <translation>Ошибки TLS: %1</translation>
+    </message>
+    <message>
+        <source>TLS errors (ignored): %1</source>
+        <translation>Ошибки TLS (пропущены): %1</translation>
+    </message>
+    <message>
+        <source>Skipped invalid headers: %1</source>
+        <translation>Пропущены неверные заголовки: %1</translation>
+    </message>
+    <message>
+        <source>Failed to parse FinalMask JSON: %1</source>
+        <translation>Не удалось прочитать JSON FinalMask: %1</translation>
+    </message>
+    <message>
+        <source>Skipping an endpoint rule whose endpoint is no longer in the routing profile</source>
+        <translation>Пропущено правило конечной точки, которой больше нет в профиле маршрутизации</translation>
+    </message>
+    <message>
+        <source>Aborted generating routing section, an error has occurred</source>
+        <translation>Не удалось собрать маршрутизацию: произошла ошибка</translation>
+    </message>
+    <message>
+        <source>The outbound described in the rule chain is missing, maybe your data is corrupted</source>
+        <translation>Сервер из правила не найден, возможно, данные повреждены</translation>
+    </message>
+    <message>
+        <source>Could not find group with id %1</source>
+        <translation>Группа с id %1 не найдена</translation>
     </message>
 </context>
 <context>
@@ -9189,7 +9366,7 @@ Your local edits are overwritten on each update.</source>
     </message>
     <message>
         <source>OpenVPN / OpenConnect profiles started alongside this routing profile. Traffic for the networks they advertise goes through them; everything else follows this profile&apos;s rules. Each endpoint gets a rule in the Advanced tab that you can move among your own rules. A chain endpoint can hand out one rule per inner OpenVPN / OpenConnect hop too, so traffic can be routed to a hop before the exit.</source>
-        <translation type="unfinished"></translation>
+        <translation>Профили OpenVPN / OpenConnect, которые запускаются вместе с этим профилем маршрутизации. Трафик к сетям, которые они объявляют, идёт через них, остальное — по правилам этого профиля. Для каждой конечной точки на вкладке «Дополнительно» появляется правило, которое можно двигать среди своих правил. Цепочка может выдать по правилу на каждое внутреннее звено OpenVPN / OpenConnect, чтобы трафик можно было направить на звено до выхода.</translation>
     </message>
     <message>
         <source>Advanced</source>
@@ -9211,15 +9388,15 @@ Your local edits are overwritten on each update.</source>
     </message>
     <message>
         <source>Profile #%1 — deleted, dropped when you save</source>
-        <translation type="unfinished">Профиль #%1 — удалён, будет отброшено при сохранении</translation>
+        <translation>Профиль #%1 — удалён, будет отброшено при сохранении</translation>
     </message>
     <message>
         <source>Allow routing to inner hops</source>
-        <translation type="unfinished"></translation>
+        <translation>Разрешить маршруты к внутренним звеньям</translation>
     </message>
     <message>
         <source>Give each OpenVPN/OpenConnect hop behind the exit its own rule, so traffic can be routed to it as well.</source>
-        <translation type="unfinished"></translation>
+        <translation>Дать каждому звену OpenVPN/OpenConnect за выходом своё правило, чтобы трафик можно было направить и на него.</translation>
     </message>
     <message>
         <source>%1 route prefer</source>
@@ -9243,11 +9420,11 @@ Your local edits are overwritten on each update.</source>
     </message>
     <message>
         <source>%1 endpoint profile(s) no longer exist and were removed from this routing profile.</source>
-        <translation type="unfinished">Профили конечных точек %1 больше не существуют и были удалены из этого профиля маршрутизации.</translation>
+        <translation>Профили конечных точек %1 больше не существуют и были удалены из этого профиля маршрутизации.</translation>
     </message>
     <message>
         <source>Endpoint rule: move it to choose where the endpoint claims traffic. Managed by the Endpoints tab.</source>
-        <translation type="unfinished"></translation>
+        <translation>Правило конечной точки: перемещайте его, чтобы выбрать, где конечная точка забирает трафик. Управляется на вкладке «Конечные точки».</translation>
     </message>
     <message>
         <source>Check attributes to show as tabs; unchecking clears their values.</source>
@@ -9255,7 +9432,7 @@ Your local edits are overwritten on each update.</source>
     </message>
     <message>
         <source>This rule installs a &apos;preferred by&apos; rule so that the networks advertised by the endpoint %1 get routed into the endpoint tunnel.</source>
-        <translation type="unfinished"></translation>
+        <translation>Это правило добавляет правило предпочтения, чтобы сети, объявленные конечной точкой %1, шли в её туннель.</translation>
     </message>
     <message>
         <source>Endpoint rule</source>
@@ -9265,7 +9442,9 @@ Your local edits are overwritten on each update.</source>
         <source>This rule belongs to &quot;%1&quot;, an inner hop of the endpoint &quot;%2&quot;.
 
 Stop routing to that endpoint&apos;s inner hops?</source>
-        <translation type="unfinished"></translation>
+        <translation>Это правило принадлежит «%1» — внутреннему звену конечной точки «%2».
+
+Перестать направлять трафик на внутренние звенья этой конечной точки?</translation>
     </message>
     <message>
         <source>This rule belongs to the endpoint &quot;%1&quot; and cannot be deleted on its own.
@@ -9948,6 +10127,81 @@ Remove that endpoint from this routing profile as well?</source>
     <message>
         <source>Send the error journal to the developers</source>
         <translation>Отправлять журнал ошибок разработчикам</translation>
+    </message>
+</context>
+<context>
+    <name>ShadowlosErrorText</name>
+    <message>
+        <source>Administrator rights are needed for TUN mode. Run the app as administrator or turn TUN mode off.</source>
+        <translation>Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN.</translation>
+    </message>
+    <message>
+        <source>Another VPN is in the way. Close the other VPN and try again.</source>
+        <translation>Мешает другой VPN. Закройте второй VPN и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>Could not turn on TUN mode. Close other VPN apps, restart the app and try again.</source>
+        <translation>Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
+        <translation>Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
+    </message>
+    <message>
+        <source>A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
+        <translation>Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
+    </message>
+    <message>
+        <source>The cache file is busy in another copy of the app. Close the second copy of ShadowLos and try again.</source>
+        <translation>Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>Could not download the routing rule lists. Check the internet connection and try again.</source>
+        <translation>Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>Could not find the server address (DNS error). Check the internet connection or pick another server.</source>
+        <translation>Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер.</translation>
+    </message>
+    <message>
+        <source>Could not set up a secure connection to the server. Pick another server or update the subscription.</source>
+        <translation>Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку.</translation>
+    </message>
+    <message>
+        <source>The server did not answer in time. Check the internet connection or pick another server.</source>
+        <translation>Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер.</translation>
+    </message>
+    <message>
+        <source>The server refused the connection. Pick another server or update the subscription.</source>
+        <translation>Сервер отклонил подключение. Выберите другой сервер или обновите подписку.</translation>
+    </message>
+    <message>
+        <source>The connection was cut off. Check the internet connection and try again.</source>
+        <translation>Соединение оборвалось. Проверьте интернет и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>No internet connection. Check the network and try again.</source>
+        <translation>Нет подключения к интернету. Проверьте сеть и попробуйте снова.</translation>
+    </message>
+    <message>
+        <source>The server answered with an error. Try again later or update the subscription.</source>
+        <translation>Сервер ответил ошибкой. Попробуйте позже или обновите подписку.</translation>
+    </message>
+    <message>
+        <source>The app&apos;s core is not responding. Restart the app.</source>
+        <translation>Ядро программы не отвечает. Перезапустите программу.</translation>
+    </message>
+    <message>
+        <source>A connection is already running. Disconnect and connect again.</source>
+        <translation>Подключение уже запущено. Отключитесь и подключитесь снова.</translation>
+    </message>
+    <message>
+        <source>Could not connect. Try another server or restart the app.</source>
+        <translation>Не удалось подключиться. Попробуйте другой сервер или перезапустите программу.</translation>
+    </message>
+    <message>
+        <source>Could not connect</source>
+        <translation>Не удалось подключиться</translation>
     </message>
 </context>
 </TS>

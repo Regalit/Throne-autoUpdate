@@ -165,7 +165,7 @@ namespace Configs {
                     default:
                         auto prof = Configs::dataManager->profilesRepo->GetProfile(outboundID);
                         if (prof == nullptr) {
-                            MW_show_log("The outbound described in the rule chain is missing, maybe your data is corrupted");
+                            MW_show_log(QObject::tr("The outbound described in the rule chain is missing, maybe your data is corrupted"));
                             return {};
                         }
                         obj["outbound"] = prof->outbound->DisplayName();

@@ -253,13 +253,13 @@ static void WriteCrashArtifacts(EXCEPTION_POINTERS *pException) {
     wchar_t addrHex[17];
     HexPtrW(addrHex, record != nullptr ? record->ExceptionAddress : nullptr);
     wsprintfW(msg,
-              L"Throne %s (%s) crashed.\n\nException: 0x%08X\nAddress: 0x%s\n\n"
-              L"A crash report was saved to:\n%s\n\nPlease attach the .txt file (and the .dmp if you can) to a bug report.",
+              L"Throne %s (%s) аварийно завершилась.\n\nИсключение: 0x%08X\nАдрес: 0x%s\n\n"
+              L"Отчёт о сбое сохранён в:\n%s\n\nПриложите файл .txt (и .dmp, если получится) к сообщению об ошибке.",
               L"" NKR_VERSION, THRONE_ARCH,
               record != nullptr ? record->ExceptionCode : 0,
               addrHex,
               g_dumpPathTemplate);
-    MessageBoxW(nullptr, msg, L"Throne crashed", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+    MessageBoxW(nullptr, msg, L"Throne аварийно завершилась", MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
 }
 
 LONG __stdcall CreateCrashHandler(EXCEPTION_POINTERS *pException) {

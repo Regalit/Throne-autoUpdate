@@ -2384,7 +2384,7 @@ namespace Configs {
 
         auto failed = [&ctx] {
             if (ctx.error.isEmpty()) return false;
-            MW_show_log("Config build error:" + ctx.error);
+            MW_show_log(QObject::tr("Config build error: %1").arg(ctx.error));
             ctx.result->error = ctx.error;
             return true;
         };
@@ -2451,7 +2451,7 @@ namespace Configs {
     bool IsValid(const std::shared_ptr<Profile>& ent, bool *coreUnreachable)
     {
         const auto coreCallFailed = [coreUnreachable](const QString &resp) {
-            MW_show_log("Failed to Call the Core: " + resp);
+            MW_show_log(QObject::tr("Could not reach the core: %1").arg(resp));
             if (coreUnreachable != nullptr) *coreUnreachable = true;
             return false;
         };
@@ -2460,7 +2460,7 @@ namespace Configs {
             const auto plan = PlanAutoSelector(ent);
             if (!plan.error.isEmpty())
             {
-                MW_show_log("Invalid auto selector: " + plan.error);
+                MW_show_log(QObject::tr("Invalid auto selector: %1").arg(plan.error));
                 return false;
             }
             return !plan.build.isEmpty();
@@ -2508,7 +2508,7 @@ namespace Configs {
             {
                 auto xrayConf = QString2QJsonObject(custom->config);
                 if (xrayConf.isEmpty()) {
-                    MW_show_log("Custom Xray full config is not valid JSON");
+                    MW_show_log(QObject::tr("Custom Xray full config is not valid JSON"));
                     return false;
                 }
                 // Throne never runs these; it prepends its own bridge inbound instead.
@@ -2519,7 +2519,7 @@ namespace Configs {
                 if (resp.isEmpty()) return true;
                 // Left to fail at test time so handleXrayGeoAssetError() can name the missing category.
                 if (resp.contains("geoip.dat") || resp.contains("geosite.dat")) return true;
-                MW_show_log("Invalid Xray ent " + ent->outbound->name + ": " + resp);
+                MW_show_log(QObject::tr("Invalid Xray server %1: %2").arg(ent->outbound->name, resp));
                 return false;
             }
         }
@@ -2529,7 +2529,7 @@ namespace Configs {
             auto [out, err] = ent->outbound->BuildXray();
             if (!err.isEmpty())
             {
-                MW_show_log("Invalid Xray ent " + ent->outbound->name + ": " + err);
+                MW_show_log(QObject::tr("Invalid Xray server %1: %2").arg(ent->outbound->name, err));
                 return false;
             }
             QJsonObject xrayConf{
@@ -2539,7 +2539,7 @@ namespace Configs {
             auto resp = API::defaultClient->CheckConfig(&ok, QJsonObject2QString(xrayConf, true), true);
             if (!ok) return coreCallFailed(resp);
             if (resp.isEmpty()) return true;
-            MW_show_log("Invalid Xray ent " + ent->outbound->name + ": " + resp);
+            MW_show_log(QObject::tr("Invalid Xray server %1: %2").arg(ent->outbound->name, resp));
             return false;
         }
         if (!fullConf)
@@ -2556,7 +2556,7 @@ namespace Configs {
         auto resp = API::defaultClient->CheckConfig(&ok, QJsonObject2QString(conf, true));
         if (!ok) return coreCallFailed(resp);
         if (resp.isEmpty()) return true;
-        MW_show_log("Invalid ent " + ent->outbound->name + ": " + resp);
+        MW_show_log(QObject::tr("Invalid server %1: %2").arg(ent->outbound->name, resp));
         return false;
     }
 
@@ -2606,7 +2606,7 @@ namespace Configs {
             if (candidate.kind == testCandidate::XrayFullConfig)
             {
                 if (!IsValid(item)) {
-                    MW_show_log("Skipping invalid custom Xray full config: " + item->outbound->name);
+                    MW_show_log(QObject::tr("Skipping invalid custom Xray full config: %1").arg(item->outbound->name));
                     item->SetLatency(-1);
                     continue;
                 }
@@ -2620,7 +2620,7 @@ namespace Configs {
                     return res;
                 }
                 if (!ctx.result->isXrayNeeded || ctx.result->xrayConfig.isEmpty()) {
-                    MW_show_log("Custom Xray full config produced no Xray config: " + item->outbound->name);
+                    MW_show_log(QObject::tr("Custom Xray full config produced no Xray config: %1").arg(item->outbound->name));
                     item->SetLatency(-1);
                     continue;
                 }
@@ -2632,7 +2632,7 @@ namespace Configs {
                 continue;
             }
             if (!IsValid(item)) {
-                MW_show_log("Skipping invalid config: " + item->outbound->name);
+                MW_show_log(QObject::tr("Skipping invalid config: %1").arg(item->outbound->name));
                 item->SetLatency(-1);
                 continue;
             }

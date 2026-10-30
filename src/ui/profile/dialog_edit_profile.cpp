@@ -222,7 +222,7 @@ bool DialogEditProfile::typeSelected(const QString &newType) {
     }
     const auto factory = editorFactory(editorType);
     if (factory == nullptr) {
-        MessageBoxWarning(newType, "Wrong type");
+        MessageBoxWarning(newType, tr("Wrong type"));
         return false;
     }
 
@@ -327,7 +327,7 @@ void DialogEditProfile::accept() {
 
     QStringList args;
     if (newEnt) {
-        if (!Configs::dataManager->profilesRepo->AddProfile(ent, groupId)) MessageBoxWarning("???", "id exists");
+        if (!Configs::dataManager->profilesRepo->AddProfile(ent, groupId)) MessageBoxWarning(software_name, tr("A profile with this id already exists."));
     } else if (Configs::dataManager->profilesRepo->Save(ent) &&
                (Configs::dataManager->settingsRepo->started_id == ent->id || Configs::RunningUsesProfile(ent->id))) {
         args << MwArg::RestartProxy;

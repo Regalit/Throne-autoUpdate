@@ -27,6 +27,7 @@
 #include "include/global/VpnCredentialOverride.hpp"
 #include "include/ui/profile/dialog_vpn_auth.h"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
 #include "include/sys/Process.hpp"
@@ -231,7 +232,7 @@ void MainWindow::profile_start(int _id) {
 #ifdef Q_OS_LINUX
     if (Configs::dataManager->settingsRepo->enable_dns_server && Configs::dataManager->settingsRepo->dns_server_listen_port <= 1024) {
         if (!get_elevated_permissions()) {
-            MW_show_log(QString("Failed to get admin access, cannot listen on port %1 without it").arg(Configs::dataManager->settingsRepo->dns_server_listen_port));
+            MW_show_log(tr("Failed to get admin access, cannot listen on port %1 without it").arg(Configs::dataManager->settingsRepo->dns_server_listen_port));
             return;
         }
     }
@@ -321,9 +322,12 @@ void MainWindow::profile_start(int _id) {
         // Queued ahead of every dialog below, so none of them can be shown over the prompt.
         runOnUiThread([restartPrompt] { if (restartPrompt) restartPrompt->dismiss(); });
         if (!rpcOK) {
+            Shadowlos::ErrorText::SetConnectError(QStringLiteral("rpc")); // the core did not answer
             return false;
         }
         if (!error.isEmpty()) {
+            // Shadowlos: the status card says what went wrong until the next try.
+            Shadowlos::ErrorText::SetConnectError(error);
             if (dnsTimedOut != nullptr && isDnsTimeoutError(error)) {
                 *dnsTimedOut = true;
                 MW_show_log(error);
@@ -333,6 +337,8 @@ void MainWindow::profile_start(int _id) {
                 return false;
             }
             if (error.contains("Fwpm", Qt::CaseInsensitive)) {
+                // The box gives its own advice; the card's line says the same, not the mapper's.
+                Shadowlos::ErrorText::SetConnectErrorLine(tr("Strict routing unavailable"));
                 runOnUiThread([=, this] {
                     MessageBoxWarning(
                         tr("Strict routing unavailable"),
@@ -343,6 +349,7 @@ void MainWindow::profile_start(int _id) {
                 return false;
             }
             if (error.contains("configure tun interface")) {
+                Shadowlos::ErrorText::SetConnectErrorLine(tr("Tun device misbehaving"));
                 runOnUiThread([=, this] {
 
                     QMessageBox msg(
@@ -365,9 +372,14 @@ void MainWindow::profile_start(int _id) {
                 });
                 return false;
             }
-            runOnUiThread([=, this] { MessageBoxWarning("LoadConfig return error", error); });
+            // Shadowlos: a Russian sentence that says what to do, the core's own text under it.
+            runOnUiThread([=, this] {
+                MessageBoxWarning(Shadowlos::ErrorText::ConnectTitle(),
+                                  Shadowlos::ErrorText::Html(error, Shadowlos::ErrorText::ConnectFallback()));
+            });
             return false;
         }
+        Shadowlos::ErrorText::ClearConnectError(); // started, perhaps on the DNS retry
         Stats::trafficLooper->SetChainGroups(result->chainGroups);
         Stats::trafficLooper->loop_enabled = true;
         Stats::connection_lister->suspend = false;
@@ -453,6 +465,7 @@ void MainWindow::profile_start(int _id) {
         return;
     }
 
+    Shadowlos::ErrorText::ClearConnectError(); // a new try: the last failure's line goes
     const QPointer<RestartPrompt> restartPrompt =
         new RestartPrompt(this, tr("If there is no response for a long time, it is recommended to restart the software."), 10000);
 
@@ -505,7 +518,7 @@ void MainWindow::profile_stop(bool crash, bool block, bool manual) {
         if (testRunner->isTestingCurrent()) {
             bool ok;
             defaultClient->StopTests(&ok);
-            if (!ok) MW_show_log("Failed to stop profile tests!");
+            if (!ok) MW_show_log(tr("Failed to stop profile tests!"));
         }
         if (!crash) {
             bool rpcOK;

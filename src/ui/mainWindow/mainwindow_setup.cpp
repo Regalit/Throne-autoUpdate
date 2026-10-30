@@ -225,7 +225,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             // Hold coreProcessMutex: DS_cores may still be constructing core_process.
             QMutexLocker lock(&coreProcessMutex);
             if (!verify_core_pid(socket)) {
-                MW_show_log("[Warn] IPC connection from unexpected process rejected");
+                MW_show_log("[Warn] " + tr("IPC connection from an unexpected process was rejected"));
                 socket->close();
                 socket->deleteLater();
                 return;
@@ -466,7 +466,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             if (currGroup == nullptr) return;
             if (!currGroup->SortProfiles(action)) {
                 runOnUiThread([=] {
-                    MessageBoxWarning("Action already in progress", "A sort action is already in progress");
+                    MessageBoxWarning(tr("Action already in progress"), tr("A sort action is already in progress"));
                 });
                 return;
             }
@@ -523,7 +523,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 if (currGroup == nullptr) return;
                 if (!currGroup->SortProfiles(action)) {
                     runOnUiThread([=] {
-                        MessageBoxWarning("Action already in progress", "A sort action is already in progress");
+                        MessageBoxWarning(tr("Action already in progress"), tr("A sort action is already in progress"));
                     });
                     return;
                 }
@@ -598,7 +598,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 if (currGroup == nullptr) return;
                 if (!currGroup->SortProfiles(action)) {
                     runOnUiThread([=] {
-                        MessageBoxWarning("Action already in progress", "A sort action is already in progress");
+                        MessageBoxWarning(tr("Action already in progress"), tr("A sort action is already in progress"));
                         });
                     return;
                 }
@@ -642,7 +642,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 if (currGroup == nullptr) return;
                 if (!currGroup->SortProfiles(action)) {
                     runOnUiThread([=] {
-                        MessageBoxWarning("Action already in progress", "A sort action is already in progress");
+                        MessageBoxWarning(tr("Action already in progress"), tr("A sort action is already in progress"));
                         });
                     return;
                 }
@@ -1063,7 +1063,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         auto result = Configs::BuildSingBoxConfig(ent);
         if (!result->error.isEmpty()) {
-            MessageBoxWarning("Build config error", result->error);
+            MessageBoxWarning(tr("Build config error"), result->error);
             return;
         }
         QString config_core = QJsonObject2QString(result->xrayConfig, true);
@@ -1081,7 +1081,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         } else if (msg.clickedButton() == button_2) {
             auto res = Configs::BuildTestConfig({ent});
             if (!res->error.isEmpty()) {
-                MessageBoxWarning("Build Test config error", res->error);
+                MessageBoxWarning(tr("Build Test config error"), res->error);
                 return;
             }
             config_core = QJsonObject2QString(res->xrayConfig, true);

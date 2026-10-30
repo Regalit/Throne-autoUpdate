@@ -1,6 +1,7 @@
 #include "include/configs/sub/GroupUpdater.hpp"
 
 #include "include/configs/generate.h"
+#include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/configs/sub/SubscriptionParser.hpp"
 #include "include/configs/sub/SubscriptionReconcile.hpp"
 #include "include/configs/sub/SubscriptionScan.hpp"
@@ -333,7 +334,7 @@ namespace Subscription {
             if (doomed.isEmpty()) return {};
             const auto outcome = deleteProfiles(doomed);
             if (!outcome.ok) {
-                runOnUiThread([] { MessageBoxWarning("Internal error", "DB Error when deleting profiles, data may be corrupted"); });
+                runOnUiThread([] { MessageBoxWarning(QObject::tr("Internal error"), QObject::tr("DB Error when deleting profiles, data may be corrupted")); });
             }
             report += sections;
             if (!outcome.kept.isEmpty()) report += "\n" + QObject::tr("The running profile was kept.");
@@ -353,7 +354,7 @@ namespace Subscription {
                 if (!doomed.isEmpty()) {
                     const auto outcome = deleteProfiles(doomed);
                     if (!outcome.ok) {
-                        runOnUiThread([] { MessageBoxWarning("Internal error", "DB Error when deleting profiles, data may be corrupted"); });
+                        runOnUiThread([] { MessageBoxWarning(QObject::tr("Internal error"), QObject::tr("DB Error when deleting profiles, data may be corrupted")); });
                     }
                     deleted = outcome.deleted;
                     report += "\n" + QObject::tr("Removed %1 unavailable profiles:").arg(names.size()) + "\n" + notice(names, "[-]", "removed");
@@ -444,7 +445,7 @@ namespace Subscription {
         QMutexLocker locker(&mutex);
         if (pendingBatch > 0) {
             locker.unlock();
-            MW_show_log("The last subscription update has not exited.");
+            MW_show_log(QObject::tr("The last subscription update has not exited."));
             return;
         }
         for (const int gid : Configs::dataManager->groupsRepo->GetGroupsTabOrder()) {
@@ -562,9 +563,9 @@ namespace Subscription {
             try {
                 job.run();
             } catch (const std::exception &ex) {
-                MW_show_log(QString("Subscription task failed: %1").arg(ex.what()));
+                MW_show_log(QObject::tr("Subscription task failed: %1").arg(ex.what()));
             } catch (...) {
-                MW_show_log("Subscription task failed.");
+                MW_show_log(QObject::tr("Subscription task failed."));
             }
             QMutexLocker locker(&mutex);
             if (job.gid >= 0) pending.remove(job.gid);
@@ -582,7 +583,7 @@ namespace Subscription {
         options.http2 = identity.httpVersion != Configs::subHttpVersion::http11;
         auto resp = NetworkRequestHelper::HttpGet(url, options);
         if (!resp.error.isEmpty()) {
-            MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(name, resp.error + "\n" + resp.data));
+            MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(name, Shadowlos::ErrorText::Plain(resp.error) + "\n" + resp.data));
             return false;
         }
         body = std::move(resp.data);
@@ -766,7 +767,7 @@ namespace Subscription {
             }
             const auto outcome = deleteProfiles(doomed);
             if (!outcome.ok) {
-                runOnUiThread([] { MessageBoxWarning("Internal Error", "DB Error when deleting profiles, Please try again."); });
+                runOnUiThread([] { MessageBoxWarning(QObject::tr("Internal error"), QObject::tr("DB Error when deleting profiles, Please try again.")); });
                 return;
             }
             disturbed = outcome.deleted;
@@ -823,7 +824,7 @@ namespace Subscription {
 
             const auto outcome = deleteProfiles(stale);
             if (!outcome.ok) {
-                runOnUiThread([] { MessageBoxWarning("Internal error", "DB Error when deleting profiles, data may be corrupted"); });
+                runOnUiThread([] { MessageBoxWarning(QObject::tr("Internal error"), QObject::tr("DB Error when deleting profiles, data may be corrupted")); });
             }
             disturbed << outcome.deleted;
 

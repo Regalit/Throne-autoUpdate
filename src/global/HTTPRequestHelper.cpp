@@ -62,7 +62,7 @@ namespace Configs_network {
             for (const auto &err: errors) {
                 error_str << err.errorString();
             }
-            MW_show_log(QString("SSL Errors: %1 %2").arg(error_str.join(","), insecure ? "(Ignored)" : ""));
+            MW_show_log((insecure ? QObject::tr("TLS errors (ignored): %1") : QObject::tr("TLS errors: %1")).arg(error_str.join(",")));
         });
         QByteArray body;
         bool tooLarge = false;
@@ -135,7 +135,7 @@ namespace Configs_network {
             for (const auto &err: errors) {
                 error_str << err.errorString();
             }
-            MW_show_log(QString("SSL Errors: %1 %2").arg(error_str.join(","), insecure ? "(Ignored)" : ""));
+            MW_show_log((insecure ? QObject::tr("TLS errors (ignored): %1") : QObject::tr("TLS errors: %1")).arg(error_str.join(",")));
         });
         connect(_reply, &QNetworkReply::downloadProgress, _reply, [&](qint64 bytesReceived, qint64 bytesTotal)
         {

@@ -113,6 +113,8 @@ set(PROJECT_SOURCES
         src/ui/shadowlos/ShadowlosImprove.cpp
         src/ui/shadowlos/ShadowlosTelemetry.cpp
         src/ui/shadowlos/ShadowlosConsent.cpp
+        include/ui/shadowlos/ShadowlosErrorText.hpp
+        src/ui/shadowlos/ShadowlosErrorText.cpp
         src/global/Utils.cpp
         include/global/Logger.hpp
         src/global/Logger.cpp
@@ -653,6 +655,7 @@ set_property(SOURCE src/ui/shadowlos/ShadowlosGeo.cpp PROPERTY SKIP_UNITY_BUILD_
 set_property(SOURCE src/ui/shadowlos/ShadowlosCensus.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 set_property(SOURCE src/ui/shadowlos/ShadowlosTelemetry.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 set_property(SOURCE src/ui/shadowlos/ShadowlosConsent.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
+set_property(SOURCE src/ui/shadowlos/ShadowlosErrorText.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 set_property(SOURCE src/ui/shadowlos/ShadowlosImprove.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 
 # Verified to link. OMIT_VIRTUALTABLE/VIEW/ANALYZE/CTE/WINDOWFUNC/DECLTYPE all break this build.

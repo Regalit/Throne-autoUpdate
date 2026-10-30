@@ -1,7 +1,9 @@
 # Windows client: errors and warnings in Russian
 
-Branch `feat/errors-ru` (based on dev 8bf72fa6). Every user-facing error and warning of the
-ShadowLos Throne Windows client, its Russian text, and where it shows.
+Every user-facing error and warning of the ShadowLos Throne Windows client, its Russian text, and
+where it shows. First done in PR #37 (feat/errors-ru); updated in fix/errors-ru-twice after
+Ivan's notes of 30.10 (lead 1512Z-1516Z): «ShadowLos запущен дважды» texts, a short form for the
+status card, a height-capped raw text in popups, English logs.
 
 Surfaces: message boxes (QMessageBox / MessageBoxWarning), the status card, the updater's status
 line, the log panel (Продвинутый view), the crash box. The client shows no tray notifications
@@ -11,66 +13,56 @@ Language: the Russian text comes from `res/translations/ru_RU.ts`, loaded when t
 language is Russian or the language setting is «Русский». The crash box is a Win32 box written
 before Qt can be trusted, so its text is Russian in place.
 
+## Where a raw core error shows
+
+- **Popup** (a failed connect, the TUN box, the strict-route box, «Обновление наборов правил»,
+  «Ошибка при загрузке Geo-файлов»): the full Russian sentence on top, the original English text
+  small under it, in an area of at most about eight lines that scrolls. A long rule-set error no
+  longer makes a huge window.
+- **Status card line** (under the title, next to the deer, red): the short form, at most about
+  50 characters; it wraps to a second line instead of «…». Hovering it shows the full sentence.
+  It stays until the next connect and is hidden while a test or a subscription update runs.
+- **Log panel and journal**: English and raw, as before; read for analysis. A failed connect
+  now also logs `[Core error] Start: <raw>`, so the raw text is always in the log when a popup
+  shows.
+- The TUN box («Не удалось включить режим TUN», with «Сброс») shows the mapper's sentence for a
+  second copy / another VPN and for missing admin rights, otherwise its own advice to reset the
+  core. The strict-route box keeps its own advice.
+
 ## 0. How raw core errors are recognised
 
-sing-box / xray / Windows / Qt network texts cannot be translated literally. The mapper looks for
-these words (case-insensitive, first match wins) and shows one sentence; anything else falls back
-to «Не удалось подключиться. Попробуйте другой сервер или перезапустите программу.» with the
-original under it.
+sing-box / xray / Windows / Qt network texts cannot be translated literally. The mapper
+(`src/ui/shadowlos/ShadowlosErrorText.cpp`) looks for these words (case-insensitive, first match
+wins). Anything else falls back to «Не удалось подключиться. Попробуйте другой сервер или
+перезапустите программу.» (short: «Не удалось подключиться. Смените сервер»).
 
-| Kind | Raw text it matches (examples) | Russian |
-| --- | --- | --- |
-| Cache file locked | `initialize cache-file: timeout`, `cache.db: ... being used by another process` | Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова. |
-| Rule-set download failed | `initialize rule-set[geoip-ru]: Get "...": dial tcp ...`, `rule-set ... unexpected status: 404` | Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова. |
-| Admin required (TUN) | `requires elevation`; `Access is denied` / `permission denied` / `operation not permitted` only with TUN on or a text about tun / wintun / WFP (else the fallback) | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. |
-| Another VPN | `Fwpm...`, TUN + `already exists` / `file exists` / `in use by another` | Мешает другой VPN. Закройте второй VPN и попробуйте снова. |
-| TUN failed | `configure tun interface`, `open tun`, `wintun` (tun as a word, never inside return / tunnel) | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. |
-| Port in use | `listen tcp 127.0.0.1:2080: bind: Only one usage of each socket address`, `address already in use` | Порт 2080 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. |
-| Already started | `instance already started` | Подключение уже запущено. Отключитесь и подключитесь снова. |
-| No network | `network is unreachable`, `no route to host` | Нет подключения к интернету. Проверьте сеть и попробуйте снова. |
-| DNS failure | `lookup x: no such host`, `Host x not found`, `server misbehaving` | Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер. |
-| TLS handshake | `tls: handshake failure`, `x509: certificate ...`, `reality`, `SSL` | Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку. |
-| Connection refused | `connection refused`, `actively refused it` | Сервер отклонил подключение. Выберите другой сервер или обновите подписку. |
-| Timeout | `i/o timeout`, `context deadline exceeded` (Qt's `Operation canceled` is any abort: fallback) | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. |
-| Connection reset | `connection reset`, `forcibly closed by the remote host`, `unexpected EOF` | Соединение оборвалось. Проверьте интернет и попробуйте снова. |
-| HTTP error | `server replied: Forbidden`, `unexpected status`, `status code 502`, `HTTP 403`, `HTTP/1.1 404` (never a port or a URL) | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. |
-| Core not responding | `IPC call failed`, RPC without answer | Ядро программы не отвечает. Перезапустите программу. |
+| Kind | Raw text it matches (examples) | Russian (popup, tooltip) | Short form (status card line) |
+| --- | --- | --- | --- |
+| Cache file locked | `initialize cache-file: timeout`, `cache.db: ... being used by another process` | Возможно, ShadowLos запущен дважды. Закройте все копии ShadowLos и запустите снова. | ShadowLos запущен дважды. Закройте лишние копии |
+| GeoIP / rule-set download failed | `initialize rule-set[geoip-ru]: Get "...": dial tcp ...`, `rule-set ... unexpected status: 404` | Не удалось загрузить базу GeoIP (списки регионов для маршрутизации). Проверьте интернет и попробуйте снова. | База GeoIP не загрузилась. Проверьте интернет |
+| Admin required (TUN) | `requires elevation`; `Access is denied` / `permission denied` / `operation not permitted` only with TUN on or a text about tun / wintun / WFP (else the fallback) | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. | Для режима TUN нужны права администратора |
+| ShadowLos or another VPN twice | `Fwpm...`, TUN + `already exists` / `file exists` / `in use by another` | Возможно, ShadowLos или другой VPN запущен дважды. Закройте все копии ShadowLos и другие VPN, затем запустите ShadowLos снова. | ShadowLos или VPN запущен дважды. Закройте лишнее |
+| TUN failed | `configure tun interface`, `open tun`, `wintun` (tun as a word, never inside return / tunnel) | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. | Режим TUN не включился. Перезапустите программу |
+| Port in use | `listen tcp 127.0.0.1:2080: bind: Only one usage of each socket address`, `address already in use` | Возможно, ShadowLos запущен дважды. Порт 2080 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | Порт 2080 занят. Возможно, ShadowLos запущен дважды |
+| Already started | `instance already started` | Подключение уже запущено. Отключитесь и подключитесь снова. | Уже подключено. Отключитесь и подключитесь снова |
+| No network | `network is unreachable`, `no route to host` | Нет подключения к интернету. Проверьте сеть и попробуйте снова. | Нет интернета. Проверьте сеть |
+| DNS failure | `lookup x: no such host`, `Host x not found`, `server misbehaving` | Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер. | Ошибка DNS. Проверьте интернет или смените сервер |
+| TLS handshake | `tls: handshake failure`, `x509: certificate ...`, `reality`, `SSL` | Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку. | Ошибка защищённого соединения. Смените сервер |
+| Connection refused | `connection refused`, `actively refused it` | Сервер отклонил подключение. Выберите другой сервер или обновите подписку. | Сервер отклонил подключение. Смените сервер |
+| Timeout | `i/o timeout`, `context deadline exceeded` (Qt's `Operation canceled` is any abort: fallback) | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. | Сервер не отвечает. Смените сервер |
+| Connection reset | `connection reset`, `forcibly closed by the remote host`, `unexpected EOF` | Соединение оборвалось. Проверьте интернет и попробуйте снова. | Соединение оборвалось. Проверьте интернет |
+| HTTP error | `server replied: Forbidden`, `unexpected status`, `status code 502`, `HTTP 403`, `HTTP/1.1 404` (never a port or a URL) | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. | Сервер ответил ошибкой. Попробуйте позже |
+| Core not responding | `IPC call failed`, RPC without answer | Ядро программы не отвечает. Перезапустите программу. | Ядро не отвечает. Перезапустите программу |
+| Strict route (own box) | `Fwpm...` at connect | Windows не удалось включить строгую маршрутизацию. Откройте «Настройки режима TUN», отключите «Строгий маршрут» и снова запустите профиль. Отключение строгой маршрутизации может привести к утечкам DNS. | Строгая маршрутизация недоступна |
+
+New box texts in MainWindow: «Не удалось включить режим TUN. Нажмите «Сброс», чтобы перезапустить
+ядро, и подключитесь снова.» (TUN box, other causes), «Не удалось скачать гео-файлы. Проверьте
+интернет и попробуйте снова.» (Xray geo files), «Не удалось обновить списки правил. Проверьте
+интернет и попробуйте снова.» (Маршруты > Обновить наборы правил).
 
 The self-test (`ShadowLosThroneDev.exe --journal-selftest`, line «error text mapper») checks each
-kind against real wording.
-
-Where the sentence shows: a failed connect opens «Не удалось подключиться» with the sentence and
-the original in small text, and the status card keeps the sentence as its red line until the next
-try. A start error that names the TUN adapter keeps upstream's own box («Не удалось включить режим
-TUN», with «Сброс» to restart the core), and strict route (Fwpm) errors keep theirs: both boxes
-give their own advice in Russian with the raw error after «Ошибка:», and the status card line is
-the box's title. Subscription errors in the log read «sentence (original)»; `[Core error]` lines
-read «[Core error] method: original — sentence», raw first so the journal keeps it.
-
-## 1. Raw core errors: the mapper (src/ui/shadowlos/ShadowlosErrorText.cpp)
-
-Shown as the Russian sentence with the original error in small text under it (message box), as the red line of the status card after a failed connect, and as «sentence (original)» in the log line of a failed subscription or core call.
-
-| Original | Russian | Where it shows |
-| --- | --- | --- |
-| Administrator rights are needed for TUN mode. Run the app as administrator or turn TUN mode off. | Для режима TUN нужны права администратора. Запустите программу от имени администратора или выключите режим TUN. | src/ui/shadowlos/ShadowlosErrorText.cpp:104 (connect error box + status card) |
-| Another VPN is in the way. Close the other VPN and try again. | Мешает другой VPN. Закройте второй VPN и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:106 (connect error box + status card) |
-| Could not turn on TUN mode. Close other VPN apps, restart the app and try again. | Не удалось включить режим TUN. Закройте другие VPN, перезапустите программу и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:108 (connect error box + status card) |
-| Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings. | Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | src/ui/shadowlos/ShadowlosErrorText.cpp:112 (connect error box + status card) |
-| A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings. | Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках. | src/ui/shadowlos/ShadowlosErrorText.cpp:113 (connect error box + status card) |
-| The cache file is busy in another copy of the app. Close the second copy of ShadowLos and try again. | Файл кэша занят другой копией программы. Закройте вторую копию ShadowLos и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:116 (connect error box + status card) |
-| Could not download the routing rule lists. Check the internet connection and try again. | Не удалось скачать списки правил маршрутизации. Проверьте интернет и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:118 (connect error box + status card) |
-| Could not find the server address (DNS error). Check the internet connection or pick another server. | Не удалось найти адрес сервера (ошибка DNS). Проверьте интернет или выберите другой сервер. | src/ui/shadowlos/ShadowlosErrorText.cpp:120 (connect error box + status card) |
-| Could not set up a secure connection to the server. Pick another server or update the subscription. | Не удалось установить защищённое соединение с сервером. Выберите другой сервер или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:122 (connect error box + status card) |
-| The server did not answer in time. Check the internet connection or pick another server. | Сервер не ответил вовремя. Проверьте интернет или выберите другой сервер. | src/ui/shadowlos/ShadowlosErrorText.cpp:124 (connect error box + status card) |
-| The server refused the connection. Pick another server or update the subscription. | Сервер отклонил подключение. Выберите другой сервер или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:126 (connect error box + status card) |
-| The connection was cut off. Check the internet connection and try again. | Соединение оборвалось. Проверьте интернет и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:128 (connect error box + status card) |
-| No internet connection. Check the network and try again. | Нет подключения к интернету. Проверьте сеть и попробуйте снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:130 (connect error box + status card) |
-| The server answered with an error. Try again later or update the subscription. | Сервер ответил ошибкой. Попробуйте позже или обновите подписку. | src/ui/shadowlos/ShadowlosErrorText.cpp:132 (connect error box + status card) |
-| The app's core is not responding. Restart the app. | Ядро программы не отвечает. Перезапустите программу. | src/ui/shadowlos/ShadowlosErrorText.cpp:134 (connect error box + status card) |
-| A connection is already running. Disconnect and connect again. | Подключение уже запущено. Отключитесь и подключитесь снова. | src/ui/shadowlos/ShadowlosErrorText.cpp:136 (connect error box + status card) |
-| Could not connect. Try another server or restart the app. | Не удалось подключиться. Попробуйте другой сервер или перезапустите программу. | src/ui/shadowlos/ShadowlosErrorText.cpp:159 (connect error box + status card) |
-| Could not connect | Не удалось подключиться | src/ui/shadowlos/ShadowlosErrorText.cpp:159 (connect error box + status card); src/ui/shadowlos/ShadowlosErrorText.cpp:163 (connect error box + status card) |
+kind against real wording, that every kind has both forms, that the short form is at most 55
+characters and never carries the raw text.
 
 ## 2. Fixed poor translations (ru_RU.ts)
 
@@ -357,8 +349,8 @@ narrow slot next to «Обновить», a longer hint would be cut off.
 
 ## 7. Left in English, on purpose
 
-- Raw sing-box / xray lines in the log panel (the mapper's sentence goes on the message box and
-  the status card; the log keeps the original for support).
+- The log panel and the journal: raw and English, for analysis (Ivan, 30.10). The mapper's text
+  is only on popups and the status card.
 - The journal markers `[Core error]`, `[Fatal]`, `[ERROR]`, `[Warn]` at the start of log lines:
   the dev journal sorts lines by them.
 - Internal invariant lines nobody should see (generate.cpp «Corrupted data ...», «INVALID ENT TYPE»,
@@ -380,3 +372,17 @@ enable_tun=false, Russian UI.
 | 3 | Subscription DNS failure | real: subscription URL on a non-existent .invalid host | 3-subscription-dns-before.png, -after.png (log panel) |
 | 4 | Admin rights for TUN | demo switch SHADOWLOS_UI_DEMO=err-admin (dev only); no before: TUN was off on purpose | 4-tun-admin-after-demo.png |
 | 5 | Another VPN | demo switch SHADOWLOS_UI_DEMO=err-vpn (dev only); no before | 5-another-vpn-after-demo.png |
+
+## 9. Screenshots v2 (fix/errors-ru-twice)
+
+After only, 1.0.15-dev of this branch, demo switch `SHADOWLOS_UI_DEMO=err-...` (dev only): the
+popup is the real connect popup, the status card line the real one.
+
+| File | What |
+| --- | --- |
+| port-in-use-v2.png | popup: port busy, «Возможно, ShadowLos запущен дважды.» first |
+| cache-locked-v2.png | popup: cache file locked |
+| another-vpn-v2.png | popup: TUN already exists |
+| geoip-v2.png | popup: the long GeoIP rule-set error, raw text capped and scrolling |
+| status-line-normal-v2.png | status card line, Обычный, normal width |
+| status-line-min-v2.png | status card line, Обычный, minimum width (wraps, no «…») |

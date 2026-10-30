@@ -2,16 +2,20 @@
 
 #include <QString>
 
-// Raw core errors (sing-box, xray, Qt network) as a short Russian sentence that says what to
-// do. The raw text cannot be translated word for word, so the common causes are recognised by
-// their wording and the rest fall back to a generic sentence; the original is always kept and
-// shown in small text under the sentence.
+class QMessageBox;
+
+// Raw core errors (sing-box, xray, Qt network) in Russian for the user. The raw text cannot be
+// translated word for word, so the common causes are recognised by their wording and the rest
+// fall back to a generic sentence. Each cause has a full sentence that says what to do (the
+// popup, the tooltip) and a short form of about 50 characters (the status card's line).
+// Popups show the raw text small under the sentence, in a height-capped area; the log and the
+// journal keep it in English as it was.
 namespace Shadowlos::ErrorText {
 
     enum class Kind {
         Unknown,
         AdminRequired,  // TUN without administrator rights
-        AnotherVpn,     // another VPN holds the routes or the firewall
+        AnotherVpn,     // another VPN or a second ShadowLos holds the TUN adapter or the firewall
         TunFailed,      // the TUN adapter could not be set up
         PortInUse,      // a listen port is taken
         CacheLocked,    // cache.db held by another copy
@@ -31,27 +35,34 @@ namespace Shadowlos::ErrorText {
     // means missing administrator rights only for TUN.
     Kind Classify(const QString &raw, int tunOn = -1);
 
-    // The sentence for [raw]; [fallback] when nothing is recognised (empty: none).
+    // The full sentence for [raw] (popup, tooltip); [fallback] when nothing is recognised.
     QString Sentence(const QString &raw, const QString &fallback = {});
 
-    // For a message box: the sentence, then the original in small text.
-    QString Html(const QString &raw, const QString &fallback = {});
+    // The short form for [raw] (status card line, about 50 characters); [fallback] when unknown.
+    QString Short(const QString &raw, const QString &fallback = {});
 
-    // For one line (the log): «sentence (original)», or the original alone when unknown.
-    QString Plain(const QString &raw);
+    // Puts [raw] small under the box's text, in a scrolling area of at most about eight lines.
+    // Call it last, once the box has its text and buttons.
+    void AttachRaw(QMessageBox *box, const QString &raw);
 
-    // The generic sentence of a failed connect, and the title of its message box.
+    // A modal warning: [sentence], then [raw] small under it (see AttachRaw).
+    int ShowError(const QString &title, const QString &sentence, const QString &raw);
+
+    // The generic sentence of a failed connect, its short form, and the popup's title.
     QString ConnectFallback();
+    QString ConnectFallbackShort();
     QString ConnectTitle();
 
     // The status card's line after a failed connect: set on failure, cleared on the next try.
     void SetConnectError(const QString &raw);
-    // A line of the caller's own (a box that gives its own advice).
-    void SetConnectErrorLine(const QString &line);
+    // A line of the caller's own (a box that gives its own advice): the short form and the
+    // full sentence for the tooltip.
+    void SetConnectErrorLine(const QString &shortLine, const QString &full);
     void ClearConnectError();
     QString ConnectErrorLine();
+    QString ConnectErrorTooltip();
 
-    // Dev builds: a canned raw error per demo token (err-port, err-tun, ...) for screenshots.
+    // Dev builds: a canned raw error per demo token (err-port, err-vpn, ...) for screenshots.
     QString DemoRaw(const QString &token);
 
     // For `--journal-selftest`: empty when every case maps as expected, else what failed.

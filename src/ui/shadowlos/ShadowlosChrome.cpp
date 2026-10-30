@@ -704,6 +704,26 @@ namespace Shadowlos::ChromeImpl {
         QString m_floor;
     };
 
+    // The status card's problem line: never cut with «…». A short form fits one line; a longer
+    // one wraps to the next. Its tooltip carries the full sentence.
+    class WrapLabel final : public QLabel {
+    public:
+        WrapLabel(QWidget *parent, const char *role) : QLabel(parent) {
+            setProperty("slRole", role);
+            setTextFormat(Qt::PlainText);
+            setWordWrap(true);
+            setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+        }
+
+        void setFullText(const QString &text, const QString &tip = {}) {
+            if (text != this->text()) setText(text);
+            if (tip != toolTip()) setToolTip(tip);
+        }
+
+        // Any width: the line wraps instead of widening the card or the window.
+        QSize minimumSizeHint() const override { return {0, QLabel::minimumSizeHint().height()}; }
+    };
+
     // What the data view shows, in plain words: a busy panel (a test or a download) with its
     // progress, the restart notice, and a note (VPN endpoint, auto selector).
     struct DataPanel {
@@ -889,7 +909,7 @@ namespace Shadowlos::ChromeImpl {
             text->addLayout(titleRow);
             m_detail = new ElideLabel(this, "statusDetail", translate("Add a config or select one server"));
             text->addWidget(m_detail);
-            m_extra = new ElideLabel(this, "statusDetail");
+            m_extra = new WrapLabel(this, "statusDetail");
             m_extra->hide();
             text->addWidget(m_extra);
             m_action = new QLabel(this);
@@ -987,7 +1007,7 @@ namespace Shadowlos::ChromeImpl {
             auto *power = static_cast<StartStopButton *>(m_ui->toolButton_startstop);
             const auto st = power->state();
             const auto *settings = Configs::dataManager->settingsRepo.get();
-            QString title, detail, extra;
+            QString title, detail, extra, extraTip;
             bool problem = false;
             qint64 done = 0, total = 0;
 
@@ -1024,6 +1044,7 @@ namespace Shadowlos::ChromeImpl {
                     detail = translate("Press the button to connect");
                     // The last connect failed: its sentence on the problem line until the next try.
                     extra = Shadowlos::ErrorText::ConnectErrorLine();
+                    extraTip = Shadowlos::ErrorText::ConnectErrorTooltip();
                     problem = !extra.isEmpty();
                     break;
             }
@@ -1035,6 +1056,7 @@ namespace Shadowlos::ChromeImpl {
                 total = p.total;
                 // A test or a subscription update: the card shows only that, not the last failure.
                 extra.clear();
+                extraTip.clear();
                 problem = false;
             }
             // Only a problem gets a line of its own (the VPN endpoint cannot be reached).
@@ -1093,7 +1115,7 @@ namespace Shadowlos::ChromeImpl {
             m_title->setFullText(title);
             m_detail->setFullText(detail);
             m_detail->setVisible(!detail.isEmpty());
-            m_extra->setFullText(extra);
+            m_extra->setFullText(extra, extraTip);
             m_extra->setVisible(!extra.isEmpty() && !m_minimal);
             if (m_extra->property("slError").toBool() != problem) {
                 m_extra->setProperty("slError", problem);
@@ -1181,7 +1203,7 @@ namespace Shadowlos::ChromeImpl {
         QHBoxLayout *m_titleRow = nullptr;
         ElideLabel *m_title = nullptr;
         ElideLabel *m_detail = nullptr;
-        ElideLabel *m_extra = nullptr;
+        WrapLabel *m_extra = nullptr;
         QLabel *m_action = nullptr;
         QProgressBar *m_progress = nullptr;
         Mascot *m_mascot = nullptr;
@@ -1949,8 +1971,9 @@ namespace Shadowlos::Chrome {
                 if (const QString raw = Shadowlos::ErrorText::DemoRaw(errToken); !raw.isEmpty()) {
                     Shadowlos::ErrorText::SetConnectError(raw);
                     auto *box = new QMessageBox(QMessageBox::Warning, Shadowlos::ErrorText::ConnectTitle(),
-                                                Shadowlos::ErrorText::Html(raw, Shadowlos::ErrorText::ConnectFallback()),
+                                                Shadowlos::ErrorText::Sentence(raw, Shadowlos::ErrorText::ConnectFallback()),
                                                 QMessageBox::Ok, window);
+                    Shadowlos::ErrorText::AttachRaw(box, raw);
                     box->setAttribute(Qt::WA_ShowWithoutActivating, true);
                     box->setAttribute(Qt::WA_DeleteOnClose, true);
                     box->show();

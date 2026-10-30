@@ -213,7 +213,9 @@ bool MainWindow::handleXrayGeoAssetError(const QString& error, const QString& co
                 runOnUiThread([=, this] {
                     m_xrayGeoAssetBusy = false;
                     if (!dlErr.isEmpty()) {
-                        MessageBoxWarning(tr("Geo asset download failed"), dlErr);
+                        Shadowlos::ErrorText::ShowError(tr("Geo asset download failed"),
+                                                        Shadowlos::ErrorText::Sentence(dlErr, tr("Could not download the geo files. Check the internet connection and try again.")),
+                                                        dlErr);
                     } else {
                         MW_show_log(tr("Downloaded Xray geo asset files."));
                         QMessageBox::information(this, tr("Geo assets installed"),
@@ -336,26 +338,32 @@ void MainWindow::profile_start(int _id) {
             if (handleXrayGeoAssetError(error, ent->outbound->DisplayTypeAndName())) {
                 return false;
             }
+            // Shadowlos: the raw error in the log (English, for analysis); the user sees Russian.
+            MW_show_log("[Core error] Start: " + error);
             if (error.contains("Fwpm", Qt::CaseInsensitive)) {
                 // The box gives its own advice; the card's line says the same, not the mapper's.
-                Shadowlos::ErrorText::SetConnectErrorLine(tr("Strict routing unavailable"));
+                const QString advice = tr("Windows could not enable strict routing. Open Tun Settings, "
+                                          "disable Strict Route, and start the profile again.\n\n"
+                                          "Disabling Strict Route may cause DNS leaks.");
+                Shadowlos::ErrorText::SetConnectErrorLine(tr("Strict routing unavailable"), advice);
                 runOnUiThread([=, this] {
-                    MessageBoxWarning(
-                        tr("Strict routing unavailable"),
-                        tr("Windows could not enable strict routing. Open Tun Settings, "
-                           "disable Strict Route, and start the profile again.\n\n"
-                           "Disabling Strict Route may cause DNS leaks.\n\nError: %1").arg(error));
+                    Shadowlos::ErrorText::ShowError(tr("Strict routing unavailable"), advice, error);
                 });
                 return false;
             }
             if (error.contains("configure tun interface")) {
-                Shadowlos::ErrorText::SetConnectErrorLine(tr("Tun device misbehaving"));
+                // A second copy or missing rights get the mapper's sentence; anything else the
+                // box's own advice to reset the core.
+                const auto kind = Shadowlos::ErrorText::Classify(error);
+                const bool known = kind == Shadowlos::ErrorText::Kind::AnotherVpn || kind == Shadowlos::ErrorText::Kind::AdminRequired;
+                const QString advice = known ? Shadowlos::ErrorText::Sentence(error)
+                                             : tr("Could not turn on TUN mode. Press Reset to restart the core, then connect again.");
                 runOnUiThread([=, this] {
 
                     QMessageBox msg(
                         QMessageBox::Information,
                         tr("Tun device misbehaving"),
-                        tr("If you have trouble starting VPN, you can force reset Core process here and then try starting the profile again. The error is %1").arg(error),
+                        advice,
                         QMessageBox::NoButton,
                         this
                     );
@@ -364,6 +372,7 @@ void MainWindow::profile_start(int _id) {
 
                     msg.setDefaultButton(cancel);
                     msg.setEscapeButton(cancel);
+                    Shadowlos::ErrorText::AttachRaw(&msg, error);
 
                     msg.exec();
                     if (msg.clickedButton() == reset) {
@@ -372,10 +381,11 @@ void MainWindow::profile_start(int _id) {
                 });
                 return false;
             }
-            // Shadowlos: a Russian sentence that says what to do, the core's own text under it.
+            // Shadowlos: a Russian sentence that says what to do, the core's own text small under it.
             runOnUiThread([=, this] {
-                MessageBoxWarning(Shadowlos::ErrorText::ConnectTitle(),
-                                  Shadowlos::ErrorText::Html(error, Shadowlos::ErrorText::ConnectFallback()));
+                Shadowlos::ErrorText::ShowError(Shadowlos::ErrorText::ConnectTitle(),
+                                                Shadowlos::ErrorText::Sentence(error, Shadowlos::ErrorText::ConnectFallback()),
+                                                error);
             });
             return false;
         }

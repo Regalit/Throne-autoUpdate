@@ -115,6 +115,8 @@ set(PROJECT_SOURCES
         src/ui/shadowlos/ShadowlosConsent.cpp
         include/ui/shadowlos/ShadowlosErrorText.hpp
         src/ui/shadowlos/ShadowlosErrorText.cpp
+        include/ui/shadowlos/ShadowlosFitScreen.hpp
+        src/ui/shadowlos/ShadowlosFitScreen.cpp
         src/global/Utils.cpp
         include/global/Logger.hpp
         src/global/Logger.cpp

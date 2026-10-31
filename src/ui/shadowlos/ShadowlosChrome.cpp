@@ -1,6 +1,7 @@
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosUpdater.hpp"
 #include "include/ui/shadowlos/ShadowlosErrorText.hpp"
+#include "include/ui/shadowlos/ShadowlosFitScreen.hpp"
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
 #include "include/ui/shadowlos/ShadowlosRouting.hpp"
 #include "include/global/ShadowlosBootstrap.hpp"
@@ -182,6 +183,7 @@ namespace Shadowlos::ChromeImpl {
                     break;
                 case QEvent::Show:
                     if (auto *w = qobject_cast<QWidget *>(watched); w != nullptr && w->isWindow()) {
+                        Shadowlos::FitScreen::BeforeShow(w);
                         applyCaption(w);
                     }
                     break;

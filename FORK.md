@@ -107,6 +107,32 @@ checkboxes, `data_view`, `splitter`, the three status labels, or the layouts
 `horizontalLayout_2`, `verticalLayout_3`, `verticalLayout_4`, `horizontalLayout`), the
 build fails there rather than at runtime — fix `Install()` to match.
 
+## How shadowlos gets our builds
+
+Shadowlos (the server and bot, repo `Regalit/shadowlos`) does not keep Throne
+binaries in git. Its client Docker build downloads them from a release on this
+repo and checks a pinned SHA-256:
+
+- Release tag `X.Y.Z`, assets `shadowlos-throne-X.Y.Z-windows-amd64.tgz` and
+  `shadowlos-throne-X.Y.Z-linux-amd64.tgz`, plus `SHA256SUMS`. Each `.tgz` unpacks
+  to `Shadowlos/`: Windows `ShadowLosThrone.exe`, `ThroneCore.exe`; Linux
+  (system-Qt build) `Throne`, `ThroneCore`, `Throne.png`. No `.debug` files.
+- Shadowlos pins the tag and both hashes in `client/throne-release.env`
+  (`client/fetch-throne.sh` does the download). It only reads releases, so the
+  asset names and the `Shadowlos/` layout are a contract: change them and
+  shadowlos' fetch script changes too.
+- To ship a new build: run the "Shadowlos desktop artifacts" workflow (`prod` channel,
+  tag `X.Y.Z`), repack the Windows and Linux (system Qt) artifacts as above, create
+  the release (`--prerelease` like the others), then bump the tag and hashes in
+  shadowlos. The workflow's own `publish` option attaches the raw `Throne-<tag>-<target>.tgz`
+  artifacts instead, which include `Throne.debug` (about 226 MB) and a different layout,
+  so shadowlos cannot use them as they are.
+- The 1.0.16 release was packed by hand: Linux from CI run 41196483225, Windows from
+  the 1.0.16 prod build shadowlos already shipped, because the Windows CI job failed
+  on that commit.
+- Releases are public. They hold no per-user data: shadowlos adds the subscription
+  config when it builds each user's zip.
+
 ## Bumping to a new upstream release
 
 ```bash

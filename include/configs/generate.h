@@ -113,6 +113,17 @@ namespace Configs
     std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile> &ent,
                                                           const QString &directDnsOverride = {});
 
+    // Shadowlos: where Throne keeps its own copy of a .srs rule set. A fresh copy is used instead of
+    // the core's download on the next build.
+    QString LocalRuleSetPath(const QString &url);
+
+    // Shadowlos: downloads the .srs rule sets the core was told to download (coreConfig from
+    // BuildSingBoxConfig) over the user's own network, the way a browser does, and saves them at
+    // LocalRuleSetPath. For when the core's own download failed (e.g. TUN mode binding the wrong
+    // adapter: "The requested address is not valid in its context"). Blocks; not on the UI thread.
+    // Empty when every one was saved, otherwise the first error.
+    QString FetchRuleSetFiles(const QJsonObject &coreConfig);
+
     // coreUnreachable is set when a false came from a failed core call rather than from the config.
     bool IsValid(const std::shared_ptr<Profile> &ent, bool *coreUnreachable = nullptr);
 

@@ -4,7 +4,10 @@
 #include "include/global/Configs.hpp"
 
 #include <QApplication>
+#include <QDateTime>
+#include <QDir>
 #include <QFileInfo>
+#include <QSaveFile>
 #include <QHostAddress>
 #include <QMutex>
 #include <QRegularExpression>
@@ -18,6 +21,7 @@
 
 
 #include "include/database/entities/Profile.h"
+#include "include/global/HTTPRequestHelper.hpp"
 #include "include/global/VpnCredentialOverride.hpp"
 #ifdef Q_OS_LINUX
 #include "include/sys/linux/systemChecks.h"
@@ -1928,10 +1932,26 @@ namespace Configs {
 
         // --------------------------------------------------------------- route
 
+        // A week: older copies go back to the core's download, which refreshes them.
+        constexpr qint64 localRuleSetMaxAgeSecs = 7 * 24 * 3600;
+
         QJsonArray buildRuleSetArray(const BuildContext &ctx) {
             QJsonArray ruleSetArray;
             for (const auto &item: ctx.prerequisites.routing.neededRuleSets) {
                 if (auto url = QUrl(item); url.isValid() && url.fileName().contains(".srs")) {
+                    // Shadowlos: a copy Throne fetched itself (FetchRuleSetFiles) wins while fresh, so a
+                    // core that cannot download (see below) still starts.
+                    if (const QFileInfo local(LocalRuleSetPath(item));
+                        local.exists() && local.size() > 0 &&
+                        local.lastModified().secsTo(QDateTime::currentDateTime()) < localRuleSetMaxAgeSecs) {
+                        ruleSetArray += QJsonObject{
+                                    {"type", "local"},
+                                    {"tag", get_rule_set_name(item)},
+                                    {"format", "binary"},
+                                    {"path", local.absoluteFilePath()},
+                                };
+                        continue;
+                    }
                     // Shadowlos: a rule set that is not cached yet is downloaded while the core starts,
                     // and one failure aborts the whole start. With no detour set the download rides the
                     // default outbound, i.e. the proxy, before any routing rule exists. Our exit nodes
@@ -2712,5 +2732,53 @@ namespace Configs {
         res->isXrayNeeded = ctx.result->isXrayNeeded;
 
         return res;
+    }
+    QString LocalRuleSetPath(const QString &url) {
+        // The working directory is the config dir (main.cpp), next to cache.db.
+        // By the URL's file name (geoip-ru.srs), so a copy shipped in the archive can sit there too.
+        return QDir::current().absoluteFilePath(QStringLiteral("rule_sets/") + QUrl(url).fileName());
+    }
+
+    QString FetchRuleSetFiles(const QJsonObject &coreConfig) {
+        const auto ruleSets = coreConfig.value("route").toObject().value("rule_set").toArray();
+        QString firstError;
+        int fetched = 0;
+        for (const auto &value : ruleSets) {
+            const auto rs = value.toObject();
+            // Only ours (buildRuleSetArray: .srs over the direct outbound), not jsDelivr lists.
+            if (rs.value("type").toString() != "remote" || rs.value("download_detour").toString() != tags::direct) continue;
+            const QString url = rs.value("url").toString();
+            HttpGetOptions options;
+            options.direct = true;   // the user's own network, as a browser goes
+            options.strictTls = true;
+            options.maxBytes = 32LL * 1024 * 1024;
+            const auto reply = NetworkRequestHelper::HttpGet(url, options);
+            QString error = reply.error;
+            if (error.isEmpty() && reply.data.isEmpty()) error = QStringLiteral("empty response");
+            if (error.isEmpty()) {
+                const QString path = LocalRuleSetPath(url);
+                QDir().mkpath(QFileInfo(path).absolutePath());
+                QSaveFile file(path);
+                if (!file.open(QIODevice::WriteOnly) || file.write(reply.data) != reply.data.size() || !file.commit()) {
+                    error = file.errorString();
+                }
+            }
+            if (!error.isEmpty()) {
+                // An old copy beats no start: keep using it for another week, then the core tries again.
+                QFile old(LocalRuleSetPath(url));
+                if (old.exists() && old.size() > 0 && old.open(QIODevice::ReadWrite) &&
+                    old.setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime)) {
+                    MW_show_log("[Rule sets] " + url + ": " + error + ", keeping the saved copy");
+                    error.clear();
+                }
+            }
+            if (error.isEmpty()) {
+                fetched++;
+            } else if (firstError.isEmpty()) {
+                firstError = url + ": " + error;
+            }
+        }
+        if (fetched == 0 && firstError.isEmpty()) firstError = QStringLiteral("no remote rule sets to fetch");
+        return firstError;
     }
 }

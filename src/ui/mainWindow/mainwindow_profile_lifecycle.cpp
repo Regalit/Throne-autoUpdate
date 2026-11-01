@@ -290,9 +290,10 @@ void MainWindow::profile_start(int _id) {
         return;
     }
     // dnsTimedOut, when given, takes a DNS timeout instead of the error dialog so the caller can retry.
+    // ruleSetError, when given, likewise takes a failed rule-set download (its raw text).
     auto profile_start_stage2 = [=, this](const QPointer<RestartPrompt> &restartPrompt,
                                           const std::shared_ptr<Configs::BuildConfigResult> &result,
-                                          bool *dnsTimedOut) {
+                                          bool *dnsTimedOut, QString *ruleSetError) {
         libcore::LoadConfigReq req;
         req.core_config = QJsonObject2QString(result->coreConfig, true).toStdString();
         req.tun_ipv4_cidr = result->tunIPv4CIDR.toStdString();
@@ -333,6 +334,11 @@ void MainWindow::profile_start(int _id) {
             if (dnsTimedOut != nullptr && isDnsTimeoutError(error)) {
                 *dnsTimedOut = true;
                 MW_show_log(error);
+                return false;
+            }
+            if (ruleSetError != nullptr && Shadowlos::ErrorText::Classify(error) == Shadowlos::ErrorText::Kind::RuleSet) {
+                *ruleSetError = error;
+                MW_show_log("[Core error] Start: " + error);
                 return false;
             }
             if (handleXrayGeoAssetError(error, ent->outbound->DisplayTypeAndName())) {
@@ -494,15 +500,44 @@ void MainWindow::profile_start(int _id) {
         Shadowlos::Journal::ConnectProfile(ent); // Shadowlos: summary error counts (protocol label, server country)
         Shadowlos::Journal::ConnectStart(ent->outbound->DisplayTypeAndName(), _id < 0); // Shadowlos: connect state (geo, census, summary); dev journal
         bool dnsTimedOut = false;
-        bool started = profile_start_stage2(restartPrompt, builtResult, usesSystemDirectDns() ? &dnsTimedOut : nullptr);
+        QString ruleSetError;
+        QString directDns; // empty: the setting
+        auto lastResult = builtResult;
+        bool started = profile_start_stage2(restartPrompt, builtResult, usesSystemDirectDns() ? &dnsTimedOut : nullptr, &ruleSetError);
         if (!started && dnsTimedOut) {
             MW_show_log(tr("System DNS did not answer, retrying with %1").arg(fallbackDirectDns));
+            directDns = fallbackDirectDns;
             std::shared_ptr<Configs::BuildConfigResult> retryResult;
             runOnUiThread([&] { retryResult = Configs::BuildSingBoxConfig(ent, fallbackDirectDns); }, true);
             if (!retryResult->error.isEmpty()) {
                 runOnUiThread([=, this] { MessageBoxWarning(tr("BuildConfig return error"), retryResult->error); });
             } else {
-                started = profile_start_stage2(restartPrompt, retryResult, nullptr);
+                lastResult = retryResult;
+                started = profile_start_stage2(restartPrompt, retryResult, nullptr, &ruleSetError);
+            }
+        }
+        // Shadowlos: the core could not download the rule sets (in TUN mode it binds its download to
+        // the adapter it takes for the main one, which fails on some PCs). Throne fetches them over
+        // the user's network like a browser, then starts again on the saved copies.
+        if (!started && !ruleSetError.isEmpty()) {
+            MW_show_log(tr("Rule sets did not download in the core, fetching them directly"));
+            const QString fetchError = Configs::FetchRuleSetFiles(lastResult->coreConfig);
+            std::shared_ptr<Configs::BuildConfigResult> retryResult;
+            if (fetchError.isEmpty()) {
+                runOnUiThread([&] { retryResult = Configs::BuildSingBoxConfig(ent, directDns); }, true);
+            } else {
+                MW_show_log("[Rule sets] " + fetchError);
+            }
+            if (retryResult != nullptr && retryResult->error.isEmpty()) {
+                started = profile_start_stage2(restartPrompt, retryResult, nullptr, nullptr);
+            } else {
+                // Neither way worked: the same box the core's error would have shown.
+                const QString error = ruleSetError;
+                runOnUiThread([=, this] {
+                    Shadowlos::ErrorText::ShowError(Shadowlos::ErrorText::ConnectTitle(),
+                                                    Shadowlos::ErrorText::Sentence(error, Shadowlos::ErrorText::ConnectFallback()),
+                                                    error);
+                });
             }
         }
         if (!started) {

@@ -2,8 +2,10 @@ package boxmain
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,6 +39,51 @@ func Create(configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*o
 
 // CreateWithRole is Create for a box that is not the running profile (a latency or speed test).
 func CreateWithRole(role string, configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*option.Options)) (*boxbox.Box, context.CancelFunc, error) {
+	deadline := time.Now().Add(cacheFileBusyWait)
+	for {
+		instance, cancel, err := createOnce(role, configContent, onCreated, adjust...)
+		if err == nil || !IsCacheFileBusy(err) || time.Now().Add(cacheFileBusyRetry).After(deadline) {
+			return instance, cancel, err
+		}
+		log.Warn("cache file still in use, starting again in ", cacheFileBusyRetry, ": ", err)
+		time.Sleep(cacheFileBusyRetry)
+	}
+}
+
+// A server switch stops the old box and starts the new one 5 ms later. Stop returns only once the old box
+// has closed cache.db, yet Windows can still refuse the open for a moment ("being used by another
+// process"): a scanner or indexer opens the file the instant it is released. The start fails before
+// anything else is up, so it is simply tried again for a short while.
+const (
+	cacheFileBusyWait  = 3 * time.Second
+	cacheFileBusyRetry = 100 * time.Millisecond
+)
+
+// ERROR_SHARING_VIOLATION and ERROR_LOCK_VIOLATION.
+const (
+	errorSharingViolation = syscall.Errno(32)
+	errorLockViolation    = syscall.Errno(33)
+)
+
+// IsCacheFileBusy reports whether a start failed only because cache.db was held by someone else.
+func IsCacheFileBusy(err error) bool {
+	if err == nil {
+		return false
+	}
+	text := err.Error()
+	if !strings.Contains(text, "cache-file") {
+		return false
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && (errno == errorSharingViolation || errno == errorLockViolation) {
+		return true
+	}
+	// The errno is lost where a layer flattens the error into text.
+	return strings.Contains(text, "being used by another process") ||
+		strings.Contains(text, "another process has locked a portion of the file")
+}
+
+func createOnce(role string, configContent []byte, onCreated func(*boxbox.Box), adjust ...func(*option.Options)) (*boxbox.Box, context.CancelFunc, error) {
 	// Fresh context per call: concurrent boxes sharing one service.Registry clobber each other's OutboundManager.
 	ctx := newBoxContext(role)
 	options, err := parseConfig(ctx, configContent)

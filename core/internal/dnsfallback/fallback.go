@@ -14,6 +14,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/dns"
 	"github.com/sagernet/sing-box/dns/transport"
+	"github.com/sagernet/sing-box/dns/transport/local"
+	"github.com/sagernet/sing-box/dns/transport/local/systemconfig"
+	"github.com/sagernet/sing-box/dns/transport/mdns"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -41,6 +45,24 @@ const BlockedFor = 10 * time.Minute
 // One fallback DoH that drops packets silently must not use up the whole lookup budget: the next server
 // (in the end the system resolver) still needs time to answer.
 const fallbackAttemptTimeout = 2 * time.Second
+
+// How long a dns-direct on the system resolver gets, on top of the resolver's own per-server timeout
+// (systemconfig: 5 s on Windows), before the DoH servers are asked. The first remote rule-set download at
+// start resolves through dns-direct, and the start waits on it: a system resolver that never answered ran
+// that lookup into its deadline and failed the start, and the GUI's DoH retry came only after that. The
+// budget stays above the per-server timeout, so a PC whose first DNS server is dead still gets its answer
+// from the second one instead of being moved to DoH.
+const systemAttemptMargin = time.Second
+
+// Used when the system configuration cannot be read.
+const systemDefaultTimeout = 5 * time.Second
+
+// How long a system resolver that did not answer is skipped. Shorter than BlockedFor: a silent resolver
+// is usually a network change or a waking adapter, not a standing block.
+const SystemSkippedFor = time.Minute
+
+// SystemKey names the system resolver at the head of dns-direct's chain, in the block list and the log.
+const SystemKey = "system"
 
 // Tried in this order after the configured DoH, each only when the one before was refused locally.
 var alternateServers = []string{"8.8.8.8", "9.9.9.9"}
@@ -66,6 +88,7 @@ func IsAccessDenied(err error) bool {
 // Register wraps the https DNS type so that a dns-direct DoH to an IP falls back as described above.
 // role tags this box's DNS errors in the log ("profile", "test"), so a journal line says which config failed.
 func Register(registry *dns.TransportRegistry, role string) {
+	registerSystem(registry, role)
 	dns.RegisterTransport[option.RemoteHTTPSDNSServerOptions](registry, C.DNSTypeHTTPS,
 		func(ctx context.Context, logger log.ContextLogger, tag string, options option.RemoteHTTPSDNSServerOptions) (adapter.DNSTransport, error) {
 			primary, err := transport.NewHTTPS(ctx, logger, tag, options)
@@ -98,7 +121,9 @@ func Register(registry *dns.TransportRegistry, role string) {
 				}
 				return local
 			}})
-			return newTransport(primary, logger, role, members, defaultBlocked), nil
+			t := newTransport(primary, logger, role, members, defaultBlocked)
+			t.blockPrefix = "doh-chain/"
+			return t, nil
 		})
 }
 
@@ -110,6 +135,143 @@ func applies(tag string, options option.RemoteHTTPSDNSServerOptions) bool {
 	}
 	_, err := netip.ParseAddr(options.Server)
 	return err == nil
+}
+
+// registerSystem wraps the local DNS type so that a dns-direct on the system resolver ("local" as the
+// GUI's direct DNS) moves on to DoH 1.1.1.1 > 8.8.8.8 > 9.9.9.9 when the system resolver gives no answer
+// within its budget. Only while the box starts (the initial rule-set downloads): once it has started,
+// every lookup goes to the system resolver alone. Local names (*.local, the resolver's preferred domains)
+// never leave the system resolver. dns-local stays as it is: it is the DoH chain's own last resort.
+func registerSystem(registry *dns.TransportRegistry, role string) {
+	dns.RegisterTransport[option.LocalDNSServerOptions](registry, C.DNSTypeLocal,
+		func(ctx context.Context, logger log.ContextLogger, tag string, options option.LocalDNSServerOptions) (adapter.DNSTransport, error) {
+			primary, err := local.NewTransport(ctx, logger, tag, options)
+			if err != nil || tag != DirectTag || options.Detour != "" {
+				return primary, err
+			}
+			members := []member{{key: SystemKey, transport: primary, owned: true}}
+			for _, server := range systemAlternates {
+				var alternate option.RemoteHTTPSDNSServerOptions
+				// Same dialer settings (bind interface, routing mark) as the system resolver.
+				alternate.RawLocalDNSServerOptions = options.RawLocalDNSServerOptions
+				alternate.Server = server
+				altTransport, altErr := transport.NewHTTPS(ctx, logger, tag, alternate)
+				if altErr != nil {
+					logger.Warn(tag, ": fallback DNS ", server, " skipped: ", altErr)
+					continue
+				}
+				members = append(members, member{key: serverKey(server, 0), transport: altTransport, owned: true})
+			}
+			st := newSystemTransport(primary, logger, role, members, defaultBlocked)
+			source := systemconfig.NewSource(ctx)
+			st.closeSource = source.Close
+			st.primaryTimeout = 0 // per lookup, from the live configuration
+			st.budget = func() time.Duration {
+				timeout := systemDefaultTimeout
+				if config := source.Configuration(); config != nil && config.Timeout > 0 {
+					timeout = config.Timeout
+				}
+				return timeout + systemAttemptMargin
+			}
+			return st, nil
+		})
+}
+
+// The DoH servers behind the system resolver, in order: the GUI's own retry server first.
+var systemAlternates = []string{"1.1.1.1", "8.8.8.8", "9.9.9.9"}
+
+func newSystemTransport(primary adapter.DNSTransport, logger log.ContextLogger, role string, members []member, blocks *blockList) *systemTransport {
+	t := newTransport(primary, logger, role, members, blocks)
+	t.primaryTimeout = systemDefaultTimeout + systemAttemptMargin
+	t.primarySkipFor = SystemSkippedFor
+	t.primaryMovesOn = systemFailed
+	t.primaryIsLastResort = true
+	t.switchReason = "did not answer"
+	t.blockPrefix = "system-chain/"
+	return &systemTransport{fallbackTransport: t}
+}
+
+// systemFailed: anything but an answer from the resolver (an NXDOMAIN is one) is worth asking DoH.
+func systemFailed(err error) bool {
+	var rcode dns.RcodeError
+	return !errors.As(err, &rcode)
+}
+
+// systemTransport keeps the local transport's optional interfaces: its preferred domains (neighbors,
+// .local) and its environment, which keys the DNS cache to the network an answer came from.
+type systemTransport struct {
+	*fallbackTransport
+	// Set once the box has started: from then on the system resolver alone answers.
+	started atomic.Bool
+	// The primary's budget per lookup (nil: primaryTimeout), from the system's own DNS timeout.
+	budget      func() time.Duration
+	closeSource func() error
+}
+
+func (t *systemTransport) Start(stage adapter.StartStage) error {
+	if err := t.fallbackTransport.Start(stage); err != nil {
+		return err
+	}
+	if stage == adapter.StartStateStarted {
+		t.started.Store(true)
+	}
+	return nil
+}
+
+func (t *systemTransport) Close() error {
+	err := t.fallbackTransport.Close()
+	if t.closeSource != nil {
+		err = E.Append(err, t.closeSource(), func(err error) error { return err })
+	}
+	return err
+}
+
+// bypass: the lookups that only the system resolver may answer.
+func (t *systemTransport) bypass(message *mDNS.Msg) bool {
+	if t.started.Load() || len(message.Question) == 0 {
+		return true
+	}
+	name := message.Question[0].Name
+	return mdns.IsLocalDomain(name) || t.PreferredDomain(name)
+}
+
+func (t *systemTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+	if t.bypass(message) {
+		return t.primary.Exchange(ctx, message)
+	}
+	if t.budget != nil {
+		return t.exchangeWithin(ctx, message, t.budget())
+	}
+	return t.fallbackTransport.Exchange(ctx, message)
+}
+
+func (t *systemTransport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
+	if t.bypass(message) {
+		t.primary.ExchangeAsync(ctx, message, callback)
+		return
+	}
+	go func() {
+		callback(t.Exchange(ctx, message))
+	}()
+}
+
+var (
+	_ adapter.DNSTransportWithPreferredDomain = (*systemTransport)(nil)
+	_ adapter.DNSTransportWithEnvironment     = (*systemTransport)(nil)
+)
+
+func (t *systemTransport) PreferredDomain(domain string) bool {
+	if p, ok := t.primary.(adapter.DNSTransportWithPreferredDomain); ok {
+		return p.PreferredDomain(domain)
+	}
+	return false
+}
+
+func (t *systemTransport) Environment() []string {
+	if e, ok := t.primary.(adapter.DNSTransportWithEnvironment); ok {
+		return e.Environment()
+	}
+	return nil
 }
 
 func alternatesFor(server string) []string {
@@ -159,11 +321,15 @@ func (b *blockList) blocked(key string) bool {
 
 // mark reports whether key was not blocked already, so the caller logs a block once.
 func (b *blockList) mark(key string) bool {
+	return b.markFor(key, BlockedFor)
+}
+
+func (b *blockList) markFor(key string, d time.Duration) bool {
 	b.access.Lock()
 	defer b.access.Unlock()
 	now := b.now()
 	until, ok := b.until[key]
-	b.until[key] = now.Add(BlockedFor)
+	b.until[key] = now.Add(d)
 	return !ok || !now.Before(until)
 }
 
@@ -196,12 +362,26 @@ type fallbackTransport struct {
 	announced      string
 	// Logs the switch at warn: the dev journal keeps a warning as ok, it is not a failure. Swapped in tests.
 	announce func(ctx context.Context, line string)
+
+	// The primary's own budget (0: the whole lookup), how long it is skipped once it failed (0: BlockedFor),
+	// and which of its failures move on to the next server (a local refusal, for a DoH primary).
+	primaryTimeout time.Duration
+	primarySkipFor time.Duration
+	primaryMovesOn func(error) bool
+	// With every server skipped, the primary is the one still dialed rather than the last member.
+	primaryIsLastResort bool
+	// How the switch line words the primary's failure.
+	switchReason string
+	// Keeps each chain's memo of skipped servers apart in the shared block list: a DoH that timed out
+	// behind the system resolver must not hide the same server as another chain's configured primary.
+	blockPrefix string
 }
 
 var _ adapter.DNSTransport = (*fallbackTransport)(nil)
 
 func newTransport(primary adapter.DNSTransport, logger log.ContextLogger, role string, members []member, blocks *blockList) *fallbackTransport {
-	t := &fallbackTransport{primary: primary, logger: logger, role: role, members: members, blocks: blocks}
+	t := &fallbackTransport{primary: primary, logger: logger, role: role, members: members, blocks: blocks,
+		primaryMovesOn: IsAccessDenied, switchReason: "blocked locally"}
 	t.announce = func(ctx context.Context, line string) {
 		if t.logger != nil {
 			t.logger.WarnContext(ctx, line)
@@ -260,12 +440,15 @@ func (t *fallbackTransport) candidates() []member {
 		}
 		m.transport = tr
 		available = append(available, m)
-		if !t.blocks.blocked(m.key) {
+		if !t.blocks.blocked(t.blockPrefix + m.key) {
 			open = append(open, m)
 		}
 	}
 	if len(open) == 0 && len(available) > 0 {
 		open = available[len(available)-1:]
+		if t.primaryIsLastResort && available[0].key == t.members[0].key {
+			open = available[:1]
+		}
 	}
 	return open
 }
@@ -274,6 +457,11 @@ func (t *fallbackTransport) candidates() []member {
 // block, and the next server would be no likelier to answer. Once past it (refused now, or remembered as
 // refused), any failure of a fallback server moves on, up to the system resolver, and is remembered too.
 func (t *fallbackTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+	return t.exchangeWithin(ctx, message, t.primaryTimeout)
+}
+
+// exchangeWithin is Exchange with the primary's budget given (0: the whole lookup).
+func (t *fallbackTransport) exchangeWithin(ctx context.Context, message *mDNS.Msg, primaryTimeout time.Duration) (*mDNS.Msg, error) {
 	candidates := t.candidates()
 	primaryKey := t.members[0].key
 	var lastErr error
@@ -284,9 +472,13 @@ func (t *fallbackTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*m
 		isPrimary := m.key == primaryKey
 		last := i == len(candidates)-1
 		attemptCtx := ctx
-		if !isPrimary && !last {
+		timeout := fallbackAttemptTimeout
+		if isPrimary {
+			timeout = primaryTimeout
+		}
+		if timeout > 0 && !last {
 			var cancel context.CancelFunc
-			attemptCtx, cancel = context.WithTimeout(ctx, fallbackAttemptTimeout)
+			attemptCtx, cancel = context.WithTimeout(ctx, timeout)
 			defer cancel()
 		}
 		response, err := m.transport.Exchange(attemptCtx, message)
@@ -295,12 +487,16 @@ func (t *fallbackTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*m
 			return response, nil
 		}
 		lastErr = err
-		if isPrimary && !IsAccessDenied(err) {
+		if isPrimary && (ctx.Err() != nil || !t.primaryMovesOn(err)) {
 			break
 		}
-		if t.blocks.mark(m.key) && t.logger != nil {
+		skipFor := BlockedFor
+		if isPrimary && t.primarySkipFor > 0 {
+			skipFor = t.primarySkipFor
+		}
+		if t.blocks.markFor(t.blockPrefix+m.key, skipFor) && t.logger != nil {
 			t.logger.DebugContext(ctx, t.Tag(), " [", t.role, "]: ", m.key, " failed (", err,
-				"), trying the next DNS server; skipped for ", BlockedFor)
+				"), trying the next DNS server; skipped for ", skipFor)
 		}
 	}
 	if lastErr == nil {
@@ -319,6 +515,6 @@ func (t *fallbackTransport) announceSwitch(ctx context.Context, blocked, using s
 	t.announced = using
 	t.announceAccess.Unlock()
 	if changed && using != "" {
-		t.announce(ctx, t.Tag()+" ["+t.role+"]: "+blocked+" blocked locally, using "+using)
+		t.announce(ctx, t.Tag()+" ["+t.role+"]: "+blocked+" "+t.switchReason+", using "+using)
 	}
 }

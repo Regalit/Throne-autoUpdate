@@ -28,6 +28,8 @@ type fakeTransport struct {
 	name  string
 	err   error
 	calls *[]string
+	// silent: no answer until the caller gives up, like a system resolver that drops the query.
+	silent bool
 }
 
 func (f *fakeTransport) Type() string                                                     { return "https" }
@@ -37,8 +39,12 @@ func (f *fakeTransport) Start(adapter.StartStage) error                         
 func (f *fakeTransport) Close() error                                                     { return nil }
 func (f *fakeTransport) Reset()                                                           {}
 func (f *fakeTransport) ExchangeAsync(context.Context, *mDNS.Msg, func(*mDNS.Msg, error)) {}
-func (f *fakeTransport) Exchange(_ context.Context, m *mDNS.Msg) (*mDNS.Msg, error) {
+func (f *fakeTransport) Exchange(ctx context.Context, m *mDNS.Msg) (*mDNS.Msg, error) {
 	*f.calls = append(*f.calls, f.name)
+	if f.silent {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -51,6 +57,8 @@ func (c *clock) now() time.Time { return c.t }
 
 type chain struct {
 	transport *fallbackTransport
+	// What exchange goes through: the transport itself, or the system wrapper around it.
+	front     adapter.DNSTransport
 	calls     []string
 	fakes     map[string]*fakeTransport
 	clock     *clock
@@ -82,7 +90,17 @@ func newChain(withLocal bool) *chain {
 func (c *chain) exchange(t *testing.T) error {
 	t.Helper()
 	c.calls = nil
-	_, err := c.transport.Exchange(context.Background(), new(mDNS.Msg).SetQuestion("example.com.", mDNS.TypeA))
+	return c.exchangeName(t, "example.com.")
+}
+
+func (c *chain) exchangeName(t *testing.T, name string) error {
+	t.Helper()
+	c.calls = nil
+	front := c.front
+	if front == nil {
+		front = c.transport
+	}
+	_, err := front.Exchange(context.Background(), new(mDNS.Msg).SetQuestion(name, mDNS.TypeA))
 	return err
 }
 

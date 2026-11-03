@@ -57,6 +57,8 @@ func (c *clock) now() time.Time { return c.t }
 
 type chain struct {
 	transport *fallbackTransport
+	// What exchange goes through: the transport itself, or the system wrapper around it.
+	front     adapter.DNSTransport
 	calls     []string
 	fakes     map[string]*fakeTransport
 	clock     *clock
@@ -88,7 +90,17 @@ func newChain(withLocal bool) *chain {
 func (c *chain) exchange(t *testing.T) error {
 	t.Helper()
 	c.calls = nil
-	_, err := c.transport.Exchange(context.Background(), new(mDNS.Msg).SetQuestion("example.com.", mDNS.TypeA))
+	return c.exchangeName(t, "example.com.")
+}
+
+func (c *chain) exchangeName(t *testing.T, name string) error {
+	t.Helper()
+	c.calls = nil
+	front := c.front
+	if front == nil {
+		front = c.transport
+	}
+	_, err := front.Exchange(context.Background(), new(mDNS.Msg).SetQuestion(name, mDNS.TypeA))
 	return err
 }
 

@@ -2,6 +2,7 @@ package dnsfallback_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"ThroneCore/internal/boxmain"
@@ -46,5 +47,45 @@ func TestRegisterWrapsOnlyDirectDoH(t *testing.T) {
 	}
 	if got := fmt.Sprintf("%T", other); got == "*dnsfallback.fallbackTransport" {
 		t.Fatal("only dns-direct is wrapped")
+	}
+}
+
+// GUI direct DNS "local": dns-direct on the system resolver gets the DoH chain behind it; dns-local,
+// the DoH chain's own last resort, stays plain.
+const systemBoxConfig = `{
+  "log": {"disabled": true},
+  "dns": {
+    "servers": [
+      {"type": "local", "tag": "dns-direct", "domain_resolver": "dns-local"},
+      {"type": "local", "tag": "dns-local"}
+    ],
+    "final": "dns-direct"
+  },
+  "outbounds": [{"type": "direct", "tag": "direct"}]
+}`
+
+func TestRegisterWrapsOnlyDirectSystem(t *testing.T) {
+	box, cancel, err := boxmain.CreateWithRole(boxmain.RoleTest, []byte(systemBoxConfig), nil)
+	if err != nil {
+		t.Fatalf("create box: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = box.Close()
+		cancel()
+	})
+	manager := service.FromContext[adapter.DNSTransportManager](box.Context())
+	direct, _ := manager.Transport(dnsfallback.DirectTag)
+	local, _ := manager.Transport(dnsfallback.LocalTag)
+	if got := fmt.Sprintf("%T", direct); got != "*dnsfallback.systemTransport" {
+		t.Fatalf("dns-direct is %s", got)
+	}
+	if direct.Type() != "local" || direct.Tag() != dnsfallback.DirectTag {
+		t.Fatalf("wrapper must keep type and tag: %s %s", direct.Type(), direct.Tag())
+	}
+	if _, ok := direct.(adapter.DNSTransportWithEnvironment); !ok {
+		t.Fatal("the system resolver's environment must stay visible to the DNS cache")
+	}
+	if got := fmt.Sprintf("%T", local); strings.Contains(got, "dnsfallback") {
+		t.Fatalf("dns-local must stay plain, is %s", got)
 	}
 }

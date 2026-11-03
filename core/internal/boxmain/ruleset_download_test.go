@@ -9,6 +9,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/sagernet/sing-box/common/srs"
 	C "github.com/sagernet/sing-box/constant"
@@ -46,7 +47,7 @@ func rulesetConfig(t *testing.T, url string, ruleSetExtra map[string]any) []byte
 	return raw
 }
 
-func serveRuleSet(t *testing.T) string {
+func ruleSetBytes(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
 	plain := option.PlainRuleSet{Rules: []option.HeadlessRule{{
@@ -56,8 +57,14 @@ func serveRuleSet(t *testing.T) string {
 	if err := srs.Write(&buf, plain, C.RuleSetVersion1); err != nil {
 		t.Fatal(err)
 	}
+	return buf.Bytes()
+}
+
+func serveRuleSet(t *testing.T) string {
+	t.Helper()
+	body := ruleSetBytes(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write(buf.Bytes())
+		_, _ = w.Write(body)
 	}))
 	t.Cleanup(srv.Close)
 	return srv.URL + "/x.srs"
@@ -108,4 +115,46 @@ func windowsRefused(err error, want string) bool {
 		return false
 	}
 	return errors.Is(err, syscall.Errno(10061)) || strings.Contains(err.Error(), "actively refused")
+}
+
+// A rule set already in cache.db must not be downloaded again at start: with the mirror gone (or no DNS
+// answering) the core still starts on the cached copy at once.
+func TestCachedRuleSetStartsOffline(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(body)
+	}))
+	body = ruleSetBytes(t)
+	url := srv.URL + "/x.srs"
+	t.Chdir(t.TempDir())
+
+	var cfg map[string]any
+	if err := json.Unmarshal(rulesetConfig(t, url, map[string]any{"download_detour": "direct"}), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	cfg["experimental"] = map[string]any{"cache_file": map[string]any{"enabled": true}}
+	config, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inst, cancel, err := Create(config, nil)
+	if err != nil {
+		srv.Close()
+		t.Fatalf("first start (download): %v", err)
+	}
+	inst.CloseWithTimeout(cancel, 2*time.Second, func(...any) {}, true)
+
+	// Same URL (the cache is keyed by it), but nothing answers there any more.
+	srv.Close()
+	start := time.Now()
+	inst, cancel, err = Create(config, nil)
+	if err != nil {
+		t.Fatalf("start on the cached rule set failed: %v", err)
+	}
+	_ = inst.Close()
+	cancel()
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("start on the cached rule set took %v", took)
+	}
 }

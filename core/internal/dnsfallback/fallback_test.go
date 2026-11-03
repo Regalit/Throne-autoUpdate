@@ -28,6 +28,8 @@ type fakeTransport struct {
 	name  string
 	err   error
 	calls *[]string
+	// silent: no answer until the caller gives up, like a system resolver that drops the query.
+	silent bool
 }
 
 func (f *fakeTransport) Type() string                                                     { return "https" }
@@ -37,8 +39,12 @@ func (f *fakeTransport) Start(adapter.StartStage) error                         
 func (f *fakeTransport) Close() error                                                     { return nil }
 func (f *fakeTransport) Reset()                                                           {}
 func (f *fakeTransport) ExchangeAsync(context.Context, *mDNS.Msg, func(*mDNS.Msg, error)) {}
-func (f *fakeTransport) Exchange(_ context.Context, m *mDNS.Msg) (*mDNS.Msg, error) {
+func (f *fakeTransport) Exchange(ctx context.Context, m *mDNS.Msg) (*mDNS.Msg, error) {
 	*f.calls = append(*f.calls, f.name)
+	if f.silent {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	if f.err != nil {
 		return nil, f.err
 	}

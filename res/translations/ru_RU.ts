@@ -10124,6 +10124,26 @@ Remove that endpoint from this routing profile as well?</source>
         <source>Could not start the update</source>
         <translation>Не удалось запустить обновление</translation>
     </message>
+    <message>
+        <source>This version is out of date. Update to keep using the VPN.</source>
+        <translation>Эта версия устарела. Обновитесь, чтобы VPN продолжил работать.</translation>
+    </message>
+    <message>
+        <source>Update %1 is ready.</source>
+        <translation>Готово обновление %1.</translation>
+    </message>
+    <message>
+        <source>What is new:</source>
+        <translation>Что нового:</translation>
+    </message>
+    <message>
+        <source>Update</source>
+        <translation>Обновить</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Позже</translation>
+    </message>
 </context>
 <context>
     <name>ShadowlosRouting</name>

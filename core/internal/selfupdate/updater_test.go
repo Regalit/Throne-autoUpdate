@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -69,6 +71,7 @@ type fakeServer struct {
 	rel       Release
 	pkg       []byte
 	cutAfter  int64 // >0: the first full download stops after this many bytes
+	cutAlways bool  // every download is closed before a byte of the body
 	downloads atomic.Int32
 	ranges    []string
 }
@@ -81,6 +84,15 @@ func (f *fakeServer) start(t *testing.T) string {
 		case strings.HasSuffix(r.URL.Path, "/download"):
 			n := f.downloads.Add(1)
 			f.ranges = append(f.ranges, r.Header.Get("Range"))
+			if f.cutAlways {
+				w.Header().Set("Content-Length", "999999")
+				w.(http.Flusher).Flush()
+				if hj, ok := w.(http.Hijacker); ok {
+					c, _, _ := hj.Hijack()
+					c.Close()
+				}
+				return
+			}
 			if n == 1 && f.cutAfter > 0 && r.Header.Get("Range") == "" {
 				w.Header().Set("Content-Length", "999999")
 				w.Write(f.pkg[:f.cutAfter])
@@ -176,14 +188,72 @@ func TestCheckResumesCutDownload(t *testing.T) {
 	pkg := makeZip(t, map[string][]byte{"App.exe": bytes.Repeat([]byte("x"), 200000)})
 	f := &fakeServer{pkg: pkg, rel: release(pkg, 10001, testPriv), cutAfter: 100}
 	base, work := f.start(t), t.TempDir()
-	if res := check(http.DefaultClient, base, "shadowlos-throne-dev", 10000, work); res.State != "error" {
-		t.Fatalf("cut download: got %+v", res)
-	}
-	if res := check(http.DefaultClient, base, "shadowlos-throne-dev", 10000, work); res.State != "ready" {
-		t.Fatalf("resume: got %+v", res)
+	// The broken connection is resumed inside the same check, not at the next one.
+	res := check(http.DefaultClient, base, "shadowlos-throne-dev", 10000, work)
+	if res.State != "ready" {
+		t.Fatalf("got %+v", res)
 	}
 	if len(f.ranges) != 2 || f.ranges[1] != "bytes=100-" {
 		t.Fatalf("second download did not resume: ranges %q", f.ranges)
+	}
+	if d := res.Download; d == nil || d.Attempts != 2 || d.Done != int64(len(pkg)) || d.Route != "direct" {
+		t.Fatalf("stats %+v", res.Download)
+	}
+}
+
+func TestCheckCutsFrozenDownloadAndResumes(t *testing.T) {
+	useTestKey(t)
+	old := stallTimeout
+	stallTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { stallTimeout = old })
+	pkg := makeZip(t, map[string][]byte{"App.exe": bytes.Repeat([]byte("x"), 200000)})
+	rel := release(pkg, 10001, testPriv)
+	var downloads atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/latest") {
+			json.NewEncoder(w).Encode(rel)
+			return
+		}
+		// The first connection carries 100 bytes and then nothing, as a filter does.
+		if downloads.Add(1) == 1 {
+			w.Header().Set("Content-Length", strconv.Itoa(len(pkg)))
+			w.Write(pkg[:100])
+			w.(http.Flusher).Flush()
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
+		}
+		http.ServeContent(w, r, "pkg.zip", time.Time{}, bytes.NewReader(pkg))
+	}))
+	t.Cleanup(func() { close(release); srv.Close() })
+
+	res := check(http.DefaultClient, srv.URL, "shadowlos-throne-dev", 10000, t.TempDir())
+	if res.State != "ready" {
+		t.Fatalf("got %+v", res)
+	}
+	if d := res.Download; d == nil || d.Stalls != 1 || d.Attempts != 2 {
+		t.Fatalf("stats %+v", res.Download)
+	}
+}
+
+func TestCheckFallsBackToNextRoute(t *testing.T) {
+	useTestKey(t)
+	pkg := makeZip(t, map[string][]byte{"App.exe": []byte("new")})
+	f := &fakeServer{pkg: pkg, rel: release(pkg, 10001, testPriv)}
+	base, work := f.start(t), t.TempDir()
+	// A proxy that is not there: the tunnel route brings nothing.
+	gone, _ := url.Parse("http://127.0.0.1:1")
+	tunnel := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(gone)}}
+	routes := []route{{"tunnel", tunnel}, {"direct", http.DefaultClient}}
+	res := checkRoutes(http.DefaultClient, routes, base, "shadowlos-throne-dev", 10000, work, nil)
+	if res.State != "ready" {
+		t.Fatalf("got %+v", res)
+	}
+	if d := res.Download; d == nil || d.Route != "direct" || d.Attempts != 3 {
+		t.Fatalf("stats %+v", res.Download)
 	}
 }
 

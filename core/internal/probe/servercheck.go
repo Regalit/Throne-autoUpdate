@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -35,10 +37,13 @@ type checkService struct {
 	// Refused: text of the page a service shows when it turns this exit's country away. Such a
 	// page is a normal HTTP answer, so only its text tells it from the service itself.
 	Refused []string
+	// Probes: more addresses of the same service asked only for the journal note, to find out
+	// which of them tells a refused country apart. They never change the verdict.
+	Probes []string
 }
 
 const (
-	checkServiceBodyLimit = 256 * 1024
+	checkServiceBodyLimit = 2 * 1024 * 1024
 	// Sites answer a bare client differently from a browser; ask the way a browser does.
 	checkUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
@@ -56,7 +61,12 @@ var checkServices = []checkService{
 	{Name: "Facebook", URL: "https://www.facebook.com/"},
 	{Name: "WhatsApp", URL: "https://web.whatsapp.com/"},
 	{Name: "X", URL: "https://x.com/"},
-	{Name: "Gemini", URL: "https://gemini.google.com/app", Refused: []string{"supported in your country"}},
+	{Name: "Gemini", URL: "https://gemini.google.com/app", Refused: []string{"supported in your country"}, Probes: []string{
+		"https://generativelanguage.googleapis.com/v1beta/models?key=AIzaSyD-region-probe-not-a-real-key-000000",
+		"https://generativelanguage.googleapis.com/v1beta/models",
+		"https://aistudio.google.com/",
+		"https://gemini.google.com/",
+	}},
 	{Name: "ChatGPT", URL: "https://api.openai.com/compliance/cookie_requirements", Refused: []string{"unsupported_country"}},
 }
 
@@ -191,20 +201,32 @@ func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) 
 	if !marked {
 		return resp.StatusCode < 500, ""
 	}
+	probes := make([]string, len(svc.Probes))
+	var wg sync.WaitGroup
+	for idx, u := range svc.Probes {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			probes[idx] = probeNote(ctx, client, u)
+		}()
+	}
 	// A cut body is not a refusal: the service did answer.
 	body, readErr := io.ReadAll(io.LimitReader(resp.Body, checkServiceBodyLimit))
-	note := fmt.Sprintf("status=%d len=%d at=%s%s", resp.StatusCode, len(body),
-		resp.Request.URL.Host, noteText(resp.Request.URL.Path, 60))
+	wg.Wait()
+	note := fmt.Sprintf("status=%d len=%d at=%s", resp.StatusCode, len(body), noteURL(resp.Request.URL))
 	if readErr != nil {
 		note += " cut=" + noteText(readErr.Error(), 60)
 	}
 	if title := between(body, "<title", "</title>"); title != "" {
 		note += " title=" + noteText(title, 80)
 	}
-	for _, word := range []string{"country", "region"} {
-		if near := around(body, word, 60); near != "" {
-			note += " " + word + "=" + noteText(near, 130)
+	for _, word := range []string{"country", "region", "nsupported", "not available", "t available", "location", "eligib"} {
+		if near := around(body, word, 50); near != "" {
+			note += " [" + word + "]=" + noteText(near, 110)
 		}
+	}
+	for idx, p := range probes {
+		note += fmt.Sprintf(" p%d=%s", idx+1, p)
 	}
 	if resp.StatusCode >= 500 {
 		return false, note
@@ -215,6 +237,34 @@ func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) 
 		}
 	}
 	return true, note
+}
+
+// noteURL writes an address the journal will not take for a private one and blank out.
+func noteURL(u *url.URL) string {
+	return noteText(strings.ReplaceAll(u.Host, ".", ",")+u.Path, 90)
+}
+
+// probeNote asks one more address and says what came back: status, final address, body start.
+func probeNote(ctx context.Context, client *http.Client, address string) string {
+	req, err := http.NewRequestWithContext(ctx, "GET", address, nil)
+	if err != nil {
+		return "err"
+	}
+	req.Header.Set("User-Agent", checkUserAgent)
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "err=" + noteText(err.Error(), 60)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	text := string(bytes.ToValidUTF8(body, nil))
+	if i := strings.Index(text, "\"message\""); i >= 0 {
+		text = text[i:]
+	} else if title := between(body, "<title", "</title>"); title != "" {
+		text = title
+	}
+	return fmt.Sprintf("%d,%s,%s", resp.StatusCode, noteURL(resp.Request.URL), noteText(text, 110))
 }
 
 // noteText keeps a piece of an answer on one journal line: no line breaks or quotes, cut to max.

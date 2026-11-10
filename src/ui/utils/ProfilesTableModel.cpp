@@ -121,6 +121,8 @@ QVariant ProfilesTableModel::data(const QModelIndex &index, int role) const {
             && profile->outbound && profile->outbound->GetSecurity().isDangerous()) {
             return tr("This config's traffic is not properly protected.");
         }
+        // Shadowlos: "does not open: ..." can be longer than the column.
+        if (index.column() == ColTestResult) return profile->DisplayTestResult();
         return {};
     }
     if (role == Qt::ForegroundRole) {

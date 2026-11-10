@@ -63,11 +63,13 @@ namespace Configs {
 
         QString runningCountryInfo; // volatile, not saved to db
 
-        // Shadowlos, volatile: the last full server check of this run. Only a full check made
-        // on the network the PC is on now is shown as a result ("green means it opens").
-        bool fullChecked = false;
-        QString checkFailed;   // services that did not answer, e.g. "Instagram, Facebook"
-        QByteArray checkNet;   // Journal::FreshNetworkKey when it was made
+        // Shadowlos: the last full server check of this run is kept outside the entity, by id:
+        // the repo holds entities weakly, so a row that is not on screen is reloaded from the
+        // database and would lose it. Only a full check made on the network the PC is on now
+        // is shown as a result ("green means it opens").
+        void SetServerCheck(bool full, const QString &failed, const QByteArray &net) const;
+        // Services that did not answer, e.g. "Instagram, Facebook".
+        [[nodiscard]] QString CheckFailed() const;
 
         Profile() = default;
         Profile(Configs::outbound *outbound, const QString &type_);

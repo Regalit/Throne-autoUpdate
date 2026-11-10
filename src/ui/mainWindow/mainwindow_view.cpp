@@ -334,6 +334,24 @@ void MainWindow::refresh_proxy_list_column_size() {
             }
             ui->profilesTableView->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
         }
+        // Shadowlos: a server check result ("213 ms, does not open: Instagram") must not be cut:
+        // neither a width saved by the user nor one measured before the check may be narrower.
+        int want = 0;
+        {
+            const auto *model = ui->profilesTableView->model();
+            const QFontMetrics metrics(ui->profilesTableView->font());
+            const int rows = model == nullptr ? 0 : qMin(model->rowCount(), 500);
+            for (int row = 0; row < rows; row++) {
+                const auto text = model->index(row, ProfilesTableModel::ColTestResult).data().toString();
+                want = qMax(want, metrics.horizontalAdvance(text));
+            }
+            if (want > 0) want += 24; // cell padding
+        }
+        if (want > hHeader->sectionSize(ProfilesTableModel::ColTestResult)) {
+            hHeader->resizeSection(ProfilesTableModel::ColTestResult, want);
+            if (group->calculated_column_width.size() > ProfilesTableModel::ColTestResult)
+                group->calculated_column_width[ProfilesTableModel::ColTestResult] = want;
+        }
         hHeader->adjustPositions();
         hHeader->blockSignals(false);
         vBar->blockSignals(vBarBlocked);

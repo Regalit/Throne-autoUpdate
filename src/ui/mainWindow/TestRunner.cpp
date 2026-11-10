@@ -150,9 +150,8 @@ void TestRunner::applyUrlResult(const std::shared_ptr<Configs::Profile>& ent, co
         MW_show_log(MainWindow::tr("[%1] test error: %2").arg(ent->outbound->DisplayTypeAndName(), error));
     }
     // A full check that ran to a verdict; an aborted one leaves the server unchecked.
-    ent->fullChecked = fullCheck && ent->latency != 0 && (!error.isEmpty() || !check.isEmpty());
-    ent->checkFailed = failed.join(QStringLiteral(", "));
-    ent->checkNet = checkNet_;
+    ent->SetServerCheck(fullCheck && ent->latency != 0 && (!error.isEmpty() || !check.isEmpty()),
+                        failed.join(QStringLiteral(", ")), checkNet_);
     Configs::dataManager->profilesRepo->Save(ent);
 }
 

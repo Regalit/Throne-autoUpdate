@@ -1,6 +1,8 @@
 #include <include/database/entities/Profile.h>
 
+#include <QHash>
 #include <QJsonDocument>
+#include <QMutex>
 #include <QSet>
 
 #include "include/database/GroupsRepo.h"
@@ -9,6 +11,34 @@
 
 namespace Configs
 {
+    namespace {
+        struct ServerCheckVerdict {
+            bool full = false;
+            QString failed;
+            QByteArray net; // Journal::FreshNetworkKey when it was made
+        };
+        QMutex serverCheckMutex;
+        QHash<int, ServerCheckVerdict> serverChecks;
+
+        ServerCheckVerdict serverCheckOf(int id) {
+            QMutexLocker locker(&serverCheckMutex);
+            return serverChecks.value(id);
+        }
+    }
+
+    void Profile::SetServerCheck(bool full, const QString &failed, const QByteArray &net) const {
+        QMutexLocker locker(&serverCheckMutex);
+        if (!full) {
+            serverChecks.remove(id);
+            return;
+        }
+        serverChecks.insert(id, {true, failed, net});
+    }
+
+    QString Profile::CheckFailed() const {
+        return serverCheckOf(id).failed;
+    }
+
     Profile::Profile(Configs::outbound *outbound, const QString &type_)
     {
         if (!type_.isEmpty()) this->type = type_;
@@ -24,8 +54,7 @@ namespace Configs
         ip_out.clear();
         latency = 0;
         latency_at = 0;
-        fullChecked = false;
-        checkFailed.clear();
+        SetServerCheck(false, {}, {});
         dl_speed.clear();
         ul_speed.clear();
     }
@@ -37,9 +66,11 @@ namespace Configs
     }
 
     bool Profile::HasFreshServerCheck() const {
-        if (!fullChecked || latency == 0) return false;
+        if (latency == 0) return false;
+        const auto verdict = serverCheckOf(id);
+        if (!verdict.full) return false;
         if (QDateTime::currentSecsSinceEpoch() - latency_at > kServerCheckFreshSecs) return false;
-        return checkNet == Shadowlos::Journal::CurrentNetworkKey();
+        return verdict.net == Shadowlos::Journal::CurrentNetworkKey();
     }
 
     QString Profile::DisplayTestResult() const {
@@ -57,7 +88,7 @@ namespace Configs
         if (latency == kLatencyBlocked) return QObject::tr("blocked");
         if (latency < 0) return QObject::tr("no answer");
         result += QString("%1 ms").arg(latency);
-        if (!checkFailed.isEmpty()) result += ", " + QObject::tr("does not open: %1").arg(checkFailed);
+        if (const auto failed = CheckFailed(); !failed.isEmpty()) result += ", " + QObject::tr("does not open: %1").arg(failed);
         bool showSpeed = group->test_items_to_show == testShowItems::all || group->test_items_to_show == testShowItems::speedOnly;
         bool showIP = group->test_items_to_show == testShowItems::all || group->test_items_to_show == testShowItems::ipOnly;
         if (!dl_speed.isEmpty() && dl_speed != "N/A" && showSpeed) result += " ↓" + dl_speed;
@@ -69,7 +100,7 @@ namespace Configs
     QColor Profile::DisplayLatencyColor() const {
         if (latency == kLatencyConnectOnly) return Qt::darkCyan;
         if (!HasFreshServerCheck() || latency < 0) return Qt::darkGray;
-        return checkFailed.isEmpty() ? Qt::darkGreen : Qt::darkYellow;
+        return CheckFailed().isEmpty() ? Qt::darkGreen : Qt::darkYellow;
     }
 
     QString Profile::DisplayTraffic() const {

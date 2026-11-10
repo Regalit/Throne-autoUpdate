@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -223,6 +225,15 @@ func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) 
 	for _, word := range []string{"country", "region", "nsupported", "not available", "t available", "location", "eligib"} {
 		if near := around(body, word, 50); near != "" {
 			note += " [" + word + "]=" + noteText(near, 110)
+		}
+	}
+	// Dev diagnostics: keep the page itself, named by its length (the note carries the same
+	// length next to the server's name), so a refused exit can be compared with a good one.
+	if dir, err := os.Getwd(); err == nil && len(body) > 0 {
+		dump := filepath.Join(dir, "svc-dump")
+		if os.MkdirAll(dump, 0o755) == nil {
+			_ = os.WriteFile(filepath.Join(dump, fmt.Sprintf("%s-%d.html", svc.Name, len(body))), body, 0o644)
+			note += " dump=1"
 		}
 	}
 	for idx, p := range probes {

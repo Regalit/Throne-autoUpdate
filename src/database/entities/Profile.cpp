@@ -5,6 +5,7 @@
 
 #include "include/database/GroupsRepo.h"
 #include "include/global/Configs.hpp"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
 namespace Configs
 {
@@ -23,6 +24,8 @@ namespace Configs
         ip_out.clear();
         latency = 0;
         latency_at = 0;
+        fullChecked = false;
+        checkFailed.clear();
         dl_speed.clear();
         ul_speed.clear();
     }
@@ -33,6 +36,12 @@ namespace Configs
         latency_at = ms == 0 ? 0 : QDateTime::currentSecsSinceEpoch();
     }
 
+    bool Profile::HasFreshServerCheck() const {
+        if (!fullChecked || latency == 0) return false;
+        if (QDateTime::currentSecsSinceEpoch() - latency_at > kServerCheckFreshSecs) return false;
+        return checkNet == Shadowlos::Journal::CurrentNetworkKey();
+    }
+
     QString Profile::DisplayTestResult() const {
         auto group = dataManager->groupsRepo->GetGroup(gid);
         if (group == nullptr) return "";
@@ -41,12 +50,14 @@ namespace Configs
         if (latency == kLatencyConnectOnly) {
             result = QObject::tr("Connect OK");
             return result;
-        } else if (latency < 0) {
-            result = QObject::tr("Unavailable");
-            return result;
-        } else if (latency > 0) {
-            result += QString("%1 ms").arg(latency);
         }
+        // Shadowlos: a number only for a full check that still holds; a quick latency answer or
+        // an old result says nothing about whether sites open.
+        if (!HasFreshServerCheck()) return QObject::tr("check");
+        if (latency == kLatencyBlocked) return QObject::tr("blocked");
+        if (latency < 0) return QObject::tr("no answer");
+        result += QString("%1 ms").arg(latency);
+        if (!checkFailed.isEmpty()) result += ", " + QObject::tr("does not open: %1").arg(checkFailed);
         bool showSpeed = group->test_items_to_show == testShowItems::all || group->test_items_to_show == testShowItems::speedOnly;
         bool showIP = group->test_items_to_show == testShowItems::all || group->test_items_to_show == testShowItems::ipOnly;
         if (!dl_speed.isEmpty() && dl_speed != "N/A" && showSpeed) result += " ↓" + dl_speed;
@@ -56,22 +67,9 @@ namespace Configs
     }
 
     QColor Profile::DisplayLatencyColor() const {
-        if (latency == kLatencyConnectOnly) {
-            return Qt::darkCyan;
-        } else if (latency < 0) {
-            return Qt::darkGray;
-        } else if (latency > 0) {
-            if (latency <= 100) {
-                return Qt::darkGreen;
-            } else if (latency <= 300)
-            {
-                return Qt::darkYellow;
-            } else {
-                return Qt::red;
-            }
-        } else {
-            return {};
-        }
+        if (latency == kLatencyConnectOnly) return Qt::darkCyan;
+        if (!HasFreshServerCheck() || latency < 0) return Qt::darkGray;
+        return checkFailed.isEmpty() ? Qt::darkGreen : Qt::darkYellow;
     }
 
     QString Profile::DisplayTraffic() const {

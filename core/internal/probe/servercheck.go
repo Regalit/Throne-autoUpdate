@@ -1,0 +1,154 @@
+package probe
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"sync"
+	"time"
+)
+
+// Shadowlos: "green means it opens". A latency answer alone (a 204 of a few hundred bytes) passes
+// through filters that let the first 15-20 KB of a connection go and then freeze it, and through
+// exits that reach Cloudflare but not YouTube or Instagram. After the latency step a full check
+// also moves real volume and asks the services people open; the rule is shared with the Android
+// client (server-check spec, 2026-11-10).
+const (
+	CheckOK      = "ok"      // volume and every service passed
+	CheckBlocked = "blocked" // latency answered, the volume did not get through
+	CheckService = "service" // volume passed, at least one service did not answer
+
+	checkBulkBytes      = 128 * 1024
+	checkBulkTimeout    = 8 * time.Second
+	checkServiceTimeout = 5 * time.Second
+	// Volume and services together; with the 3 s latency step one server stays within 12 s.
+	checkBudget = 9 * time.Second
+	// Full checks at once: each one moves ~150 KB and marks the user online on that server.
+	checkMaxConcurrency = 4
+)
+
+type checkService struct {
+	Name string
+	URL  string
+}
+
+// Tried in order; one full download is enough.
+var checkBulkURLs = []string{
+	"https://speed.cloudflare.com/__down?bytes=131072",
+}
+
+var checkServices = []checkService{
+	{"YouTube", "https://www.youtube.com/generate_204"},
+	{"Instagram", "https://www.instagram.com/"},
+	{"Facebook", "https://www.facebook.com/"},
+}
+
+// ServerCheck is the outcome of the volume and service steps for one server.
+type ServerCheck struct {
+	State     string
+	Failed    []string // service names that did not answer, in checkServices order
+	BulkBytes int64
+	BulkMs    int64
+}
+
+func serverCheck(ctx context.Context, client *http.Client) *ServerCheck {
+	return runServerCheck(ctx, client, checkBulkURLs, checkServices)
+}
+
+// runServerCheck runs the volume step and the service step side by side, so a blocked server
+// costs no more time than a good one.
+func runServerCheck(ctx context.Context, client *http.Client, bulkURLs []string, services []checkService) *ServerCheck {
+	ctx, cancel := context.WithTimeout(ctx, checkBudget)
+	defer cancel()
+
+	check := &ServerCheck{}
+	ok := make([]bool, len(services))
+	var wg sync.WaitGroup
+	for idx, svc := range services {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ok[idx] = serviceAnswers(ctx, client, svc.URL)
+		}()
+	}
+	begin := time.Now()
+	bulkOK := false
+	for _, u := range bulkURLs {
+		n, err := downloadBulk(ctx, client, u)
+		if n > check.BulkBytes {
+			check.BulkBytes = n
+		}
+		if err == nil {
+			bulkOK = true
+			break
+		}
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	check.BulkMs = time.Since(begin).Milliseconds()
+	if !bulkOK {
+		// The services no longer matter: without volume nothing opens.
+		cancel()
+	}
+	wg.Wait()
+
+	if !bulkOK {
+		check.State = CheckBlocked
+		return check
+	}
+	for idx, svc := range services {
+		if !ok[idx] {
+			check.Failed = append(check.Failed, svc.Name)
+		}
+	}
+	check.State = CheckOK
+	if len(check.Failed) > 0 {
+		check.State = CheckService
+	}
+	return check
+}
+
+// downloadBulk passes only when the whole volume arrived in time; it returns what did arrive.
+func downloadBulk(ctx context.Context, client *http.Client, url string) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, checkBulkTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return 0, fmt.Errorf("%s: status %s", url, resp.Status)
+	}
+	n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, checkBulkBytes))
+	if err != nil {
+		return n, err
+	}
+	if n < checkBulkBytes {
+		return n, fmt.Errorf("%s: %d of %d bytes", url, n, checkBulkBytes)
+	}
+	return n, nil
+}
+
+// serviceAnswers is true on any HTTP answer but a 5xx: over HTTPS the answer proves the service
+// itself was reached through this exit, and a 4xx or a redirect still is the service talking.
+func serviceAnswers(ctx context.Context, client *http.Client, url string) bool {
+	ctx, cancel := context.WithTimeout(ctx, checkServiceTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode < 500
+}

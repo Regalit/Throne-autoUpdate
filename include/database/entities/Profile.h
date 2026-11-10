@@ -35,6 +35,11 @@
 namespace Configs {
     // `latency` sentinel: egress probe failed, but the core reports the tunnel up.
     constexpr int kLatencyConnectOnly = -2;
+    // Shadowlos `latency` sentinel: the latency step answered but 128 KB did not get through
+    // (a full server check, core probe/servercheck.go). Counts as unavailable.
+    constexpr int kLatencyBlocked = -3;
+    // Shadowlos: a full check older than this is shown as "check" again, not as a result.
+    constexpr qint64 kServerCheckFreshSecs = 10 * 60;
 
     class Profile {
     public:
@@ -58,6 +63,12 @@ namespace Configs {
 
         QString runningCountryInfo; // volatile, not saved to db
 
+        // Shadowlos, volatile: the last full server check of this run. Only a full check made
+        // on the network the PC is on now is shown as a result ("green means it opens").
+        bool fullChecked = false;
+        QString checkFailed;   // services that did not answer, e.g. "Instagram, Facebook"
+        QByteArray checkNet;   // Journal::FreshNetworkKey when it was made
+
         Profile() = default;
         Profile(Configs::outbound *outbound, const QString &type_);
 
@@ -65,6 +76,9 @@ namespace Configs {
 
         // Always set latency through here: it also stamps latency_at.
         void SetLatency(int ms);
+
+        // Shadowlos: a full check from this run, at most kServerCheckFreshSecs old, on this network.
+        [[nodiscard]] bool HasFreshServerCheck() const;
 
         // Untested profiles are neither; a kLatencyConnectOnly tunnel counts as working.
         [[nodiscard]] bool IsWorking() const { return latency > 0 || latency == kLatencyConnectOnly; }

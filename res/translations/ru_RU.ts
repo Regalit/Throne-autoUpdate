@@ -8511,6 +8511,22 @@ Release note:
         <translation>Недоступен</translation>
     </message>
     <message>
+        <source>check</source>
+        <translation>проверить</translation>
+    </message>
+    <message>
+        <source>blocked</source>
+        <translation>блокируется</translation>
+    </message>
+    <message>
+        <source>no answer</source>
+        <translation>нет ответа</translation>
+    </message>
+    <message>
+        <source>does not open: %1</source>
+        <translation>не открывается: %1</translation>
+    </message>
+    <message>
         <source>%1 route prefer</source>
         <translation type="unfinished"></translation>
     </message>

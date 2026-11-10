@@ -88,6 +88,12 @@ message URLTestResp {
   optional string outbound_tag = 1 [default = ""];
   optional int32 latency_ms = 2 [default = 0 ];
   optional string error = 3 [default = ""];
+  // Shadowlos full check (TestReq.full_check), only when the latency step passed:
+  // "ok" | "blocked" (volume did not get through) | "service" (failed_services did not answer).
+  optional string check = 4 [default = ""];
+  repeated string failed_services = 5;
+  optional int32 bulk_bytes = 6 [default = 0];
+  optional int32 bulk_ms = 7 [default = 0];
 }
 
 message TestReq {
@@ -111,6 +117,9 @@ message TestReq {
   reserved "xray_outbound_dns_address";
   // See LoadConfigReq; empty leaves the Xray on the OS resolver, which a running TUN owns.
   optional string xray_outbound_dns_strategy = 14 [default = ""];
+  // Shadowlos: after the latency step also download 128 KB and ask YouTube, Instagram and
+  // Facebook through each outbound (internal/probe/servercheck.go).
+  optional bool full_check = 15 [default = false];
 }
 
 message TestResp {

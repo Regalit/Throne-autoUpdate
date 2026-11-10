@@ -1,4 +1,5 @@
 #include "include/ui/mainwindow.h"
+#include "include/ui/mainWindow/TestRunner.h"
 #include "NkrVersion.h"
 
 #include <QApplication>
@@ -420,12 +421,14 @@ void MainWindow::url_test_current() {
         libcore::TestReq req;
         req.test_current = true;
         req.url = Configs::dataManager->settingsRepo->test_latency_url.toStdString();
+        req.full_check = true; // Shadowlos: the number means sites open, not just that the server answers
 
         bool rpcOK;
-        auto result = API::defaultClient->Test(&rpcOK, req);
+        auto result = API::defaultClient->Test(&rpcOK, req, nullptr, 30000);
         if (!rpcOK || result.results.empty()) return;
 
         auto latency = result.results[0].latency_ms.value();
+        const auto checkText = TestRunner::serverCheckText(result.results[0]);
         last_test_time = QDateTime::currentSecsSinceEpoch();
         // Blocking RPC, so it has to resolve here rather than on the UI thread.
         const auto vpnText = latency <= 0 ? liveVpnStateText() : QString();
@@ -437,7 +440,7 @@ void MainWindow::url_test_current() {
             if (latency <= 0) {
                 ui->label_running->setText(tr("Test Result") + ": " + (vpnText.isEmpty() ? tr("Unavailable") : vpnText));
             } else if (latency > 0) {
-                ui->label_running->setText(tr("Test Result") + ": " + QString("%1 ms").arg(latency));
+                ui->label_running->setText(tr("Test Result") + ": " + checkText);
             }
         });
     });

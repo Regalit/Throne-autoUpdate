@@ -1009,10 +1009,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         refresh_proxy_list();
     });
     connect(ui->actionUrl_Test_Selected, &QAction::triggered, this, [=,this]() {
-        testRunner->runUrlTests(get_now_selected_list());
+        testRunner->runServerChecks(get_now_selected_list());
     });
     connect(ui->actionUrl_Test_Group, &QAction::triggered, this, [=,this]() {
-        testRunner->runUrlTests(Configs::dataManager->groupsRepo->CurrentGroup()->Profiles());
+        testRunner->runServerChecks(Configs::dataManager->groupsRepo->CurrentGroup()->Profiles());
     });
     connect(ui->actionSpeedtest_Current, &QAction::triggered, this, [=,this]()
     {

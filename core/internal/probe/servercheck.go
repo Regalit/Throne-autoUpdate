@@ -1,6 +1,7 @@
 package probe
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -31,23 +32,46 @@ const (
 type checkService struct {
 	Name string
 	URL  string
+	// Refused: text of the page a service shows when it turns this exit's country away. Such a
+	// page is a normal HTTP answer, so only its text tells it from the service itself.
+	Refused []string
 }
+
+const (
+	checkServiceBodyLimit = 256 * 1024
+	// Sites answer a bare client differently from a browser; ask the way a browser does.
+	checkUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+)
 
 // Tried in order; one full download is enough.
 var checkBulkURLs = []string{
 	"https://speed.cloudflare.com/__down?bytes=131072",
 }
 
+// The list and its order are what the server list shows, one column per service
+// (Configs::kCheckServices in the GUI).
 var checkServices = []checkService{
-	{"YouTube", "https://www.youtube.com/generate_204"},
-	{"Instagram", "https://www.instagram.com/"},
-	{"Facebook", "https://www.facebook.com/"},
+	{Name: "YouTube", URL: "https://www.youtube.com/generate_204"},
+	{Name: "Instagram", URL: "https://www.instagram.com/"},
+	{Name: "Facebook", URL: "https://www.facebook.com/"},
+	{Name: "WhatsApp", URL: "https://web.whatsapp.com/"},
+	{Name: "X", URL: "https://x.com/"},
+	{Name: "Gemini", URL: "https://gemini.google.com/app", Refused: []string{"supported in your country"}},
+	{Name: "ChatGPT", URL: "https://api.openai.com/compliance/cookie_requirements", Refused: []string{"unsupported_country"}},
+}
+
+// ServiceResult is one service asked through one server.
+type ServiceResult struct {
+	Name string
+	OK   bool
+	Ms   int64 // time to the answer; meaningful only when OK
 }
 
 // ServerCheck is the outcome of the volume and service steps for one server.
 type ServerCheck struct {
 	State     string
 	Failed    []string // service names that did not answer, in checkServices order
+	Services  []ServiceResult // every service asked, in checkServices order; empty when blocked
 	BulkBytes int64
 	BulkMs    int64
 }
@@ -63,13 +87,15 @@ func runServerCheck(ctx context.Context, client *http.Client, bulkURLs []string,
 	defer cancel()
 
 	check := &ServerCheck{}
-	ok := make([]bool, len(services))
+	results := make([]ServiceResult, len(services))
 	var wg sync.WaitGroup
 	for idx, svc := range services {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ok[idx] = serviceAnswers(ctx, client, svc.URL)
+			started := time.Now()
+			ok := serviceAnswers(ctx, client, svc)
+			results[idx] = ServiceResult{Name: svc.Name, OK: ok, Ms: time.Since(started).Milliseconds()}
 		}()
 	}
 	begin := time.Now()
@@ -98,9 +124,10 @@ func runServerCheck(ctx context.Context, client *http.Client, bulkURLs []string,
 		check.State = CheckBlocked
 		return check
 	}
-	for idx, svc := range services {
-		if !ok[idx] {
-			check.Failed = append(check.Failed, svc.Name)
+	check.Services = results
+	for _, res := range results {
+		if !res.OK {
+			check.Failed = append(check.Failed, res.Name)
 		}
 	}
 	check.State = CheckOK
@@ -138,17 +165,33 @@ func downloadBulk(ctx context.Context, client *http.Client, url string) (int64, 
 
 // serviceAnswers is true on any HTTP answer but a 5xx: over HTTPS the answer proves the service
 // itself was reached through this exit, and a 4xx or a redirect still is the service talking.
-func serviceAnswers(ctx context.Context, client *http.Client, url string) bool {
+// A service that names its refusal page fails when that page is what came back.
+func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) bool {
 	ctx, cancel := context.WithTimeout(ctx, checkServiceTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", svc.URL, nil)
 	if err != nil {
 		return false
 	}
+	req.Header.Set("User-Agent", checkUserAgent)
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
-	_ = resp.Body.Close()
-	return resp.StatusCode < 500
+	defer resp.Body.Close()
+	if resp.StatusCode >= 500 {
+		return false
+	}
+	if len(svc.Refused) == 0 {
+		return true
+	}
+	// A cut body is not a refusal: the service did answer.
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, checkServiceBodyLimit))
+	for _, mark := range svc.Refused {
+		if bytes.Contains(body, []byte(mark)) {
+			return false
+		}
+	}
+	return true
 }

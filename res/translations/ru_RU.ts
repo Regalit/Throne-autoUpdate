@@ -7818,6 +7818,18 @@ Disabling Strict Route may cause DNS leaks.</source>
 <context>
     <name>ProfilesTableModel</name>
     <message>
+        <source>%1 opens</source>
+        <translation>%1 открывается</translation>
+    </message>
+    <message>
+        <source>%1 opens slowly</source>
+        <translation>%1 открывается медленно</translation>
+    </message>
+    <message>
+        <source>%1 does not open</source>
+        <translation>%1 не открывается</translation>
+    </message>
+    <message>
         <source>This config&apos;s traffic is not properly protected.</source>
         <translation>Трафик этой конфигурации не защищен должным образом.</translation>
     </message>

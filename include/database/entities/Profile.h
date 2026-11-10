@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QHash>
+#include <QStringList>
+
 #include <include/configs/outbounds/tailscale.h>
 #include <include/configs/outbounds/wireguard.h>
 
@@ -40,6 +43,14 @@ namespace Configs {
     constexpr int kLatencyBlocked = -3;
     // Shadowlos: a full check older than this is shown as "check" again, not as a result.
     constexpr qint64 kServerCheckFreshSecs = 10 * 60;
+    // Shadowlos: the services a full check asks through each server, one list column each, in
+    // this order (core probe/servercheck.go checkServices).
+    inline const QStringList kCheckServices = {
+        QStringLiteral("YouTube"), QStringLiteral("Instagram"), QStringLiteral("Facebook"),
+        QStringLiteral("WhatsApp"), QStringLiteral("X"), QStringLiteral("Gemini"), QStringLiteral("ChatGPT")};
+    // An answer slower than this is shown yellow: it opens, but slowly.
+    constexpr int kServiceSlowMs = 2500;
+    enum class ServiceState { Unknown, Opens, Slow, Fails };
 
     class Profile {
     public:
@@ -67,7 +78,12 @@ namespace Configs {
         // the repo holds entities weakly, so a row that is not on screen is reloaded from the
         // database and would lose it. Only a full check made on the network the PC is on now
         // is shown as a result ("green means it opens").
-        void SetServerCheck(bool full, const QString &failed, const QByteArray &net) const;
+        // `services`: time to each service's answer in ms, -1 when it did not open.
+        void SetServerCheck(bool full, const QString &failed, const QByteArray &net,
+                            const QHash<QString, int> &services = {}) const;
+        // What the last fresh full check says about one service; Unknown when there is none
+        // or the server itself did not pass.
+        [[nodiscard]] ServiceState CheckService(const QString &name) const;
         // Services that did not answer, e.g. "Instagram, Facebook".
         [[nodiscard]] QString CheckFailed() const;
 

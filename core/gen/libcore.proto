@@ -94,6 +94,10 @@ message URLTestResp {
   repeated string failed_services = 5;
   optional int32 bulk_bytes = 6 [default = 0];
   optional int32 bulk_ms = 7 [default = 0];
+  // Every service asked, in the order shown, and the time to its answer in ms (-1 = did not
+  // open). Empty when the check stopped at "blocked".
+  repeated string services = 8;
+  repeated int32 service_ms = 9;
 }
 
 message TestReq {

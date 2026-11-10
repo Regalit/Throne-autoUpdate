@@ -150,8 +150,12 @@ void TestRunner::applyUrlResult(const std::shared_ptr<Configs::Profile>& ent, co
         MW_show_log(MainWindow::tr("[%1] test error: %2").arg(ent->outbound->DisplayTypeAndName(), error));
     }
     // A full check that ran to a verdict; an aborted one leaves the server unchecked.
+    QHash<QString, int> services;
+    for (size_t i = 0; i < res.services.size() && i < res.service_ms.size(); i++) {
+        services.insert(QString::fromStdString(res.services[i]), res.service_ms[i]);
+    }
     ent->SetServerCheck(fullCheck && ent->latency != 0 && (!error.isEmpty() || !check.isEmpty()),
-                        failed.join(QStringLiteral(", ")), checkNet_);
+                        failed.join(QStringLiteral(", ")), checkNet_, services);
     Configs::dataManager->profilesRepo->Save(ent);
 }
 
@@ -168,12 +172,14 @@ namespace {
             if (check != QStringLiteral("ok") && check != QStringLiteral("service")) return QStringLiteral("none");
             return failed.contains(QLatin1String(name)) ? QStringLiteral("fail") : QStringLiteral("ok");
         };
-        const QString d = QStringLiteral("label=%1 net=%2 rtt_ms=%3 bulk=%4 bytes=%5 ms=%6 yt=%7 ig=%8 fb=%9 trigger=refresh")
+        const QString d = QStringLiteral("label=%1 net=%2 rtt_ms=%3 bulk=%4 bytes=%5 ms=%6 yt=%7 ig=%8 fb=%9")
             .arg(ent->outbound->name, netType.isEmpty() ? QStringLiteral("none") : netType,
                  answered ? QString::number(res.latency_ms.value()) : QStringLiteral("none"),
                  !answered ? QStringLiteral("none") : check == QStringLiteral("blocked") ? QStringLiteral("fail") : QStringLiteral("ok"))
             .arg(res.bulk_bytes.value()).arg(res.bulk_ms.value())
-            .arg(service("YouTube"), service("Instagram"), service("Facebook"));
+            .arg(service("YouTube"), service("Instagram"), service("Facebook"))
+            + QStringLiteral(" wa=%1 x=%2 gm=%3 gpt=%4 trigger=refresh")
+                  .arg(service("WhatsApp"), service("X"), service("Gemini"), service("ChatGPT"));
         Shadowlos::Journal::Event("app", "server-check", check == QStringLiteral("ok") ? "ok" : "fail", d);
     }
 }

@@ -16,6 +16,7 @@ namespace Configs
             bool full = false;
             QString failed;
             QByteArray net; // Journal::FreshNetworkKey when it was made
+            QHash<QString, int> services; // ms to the answer, -1 = did not open
         };
         QMutex serverCheckMutex;
         QHash<int, ServerCheckVerdict> serverChecks;
@@ -26,13 +27,23 @@ namespace Configs
         }
     }
 
-    void Profile::SetServerCheck(bool full, const QString &failed, const QByteArray &net) const {
+    void Profile::SetServerCheck(bool full, const QString &failed, const QByteArray &net,
+                                 const QHash<QString, int> &services) const {
         QMutexLocker locker(&serverCheckMutex);
         if (!full) {
             serverChecks.remove(id);
             return;
         }
-        serverChecks.insert(id, {true, failed, net});
+        serverChecks.insert(id, {true, failed, net, services});
+    }
+
+    ServiceState Profile::CheckService(const QString &name) const {
+        if (latency <= 0 || !HasFreshServerCheck()) return ServiceState::Unknown;
+        const auto services = serverCheckOf(id).services;
+        const auto it = services.constFind(name);
+        if (it == services.constEnd()) return ServiceState::Unknown;
+        if (*it < 0) return ServiceState::Fails;
+        return *it > kServiceSlowMs ? ServiceState::Slow : ServiceState::Opens;
     }
 
     QString Profile::CheckFailed() const {
@@ -88,7 +99,6 @@ namespace Configs
         if (latency == kLatencyBlocked) return QObject::tr("blocked");
         if (latency < 0) return QObject::tr("no answer");
         result += QString("%1 ms").arg(latency);
-        if (const auto failed = CheckFailed(); !failed.isEmpty()) result += ", " + QObject::tr("does not open: %1").arg(failed);
         bool showSpeed = group->test_items_to_show == testShowItems::all || group->test_items_to_show == testShowItems::speedOnly;
         bool showIP = group->test_items_to_show == testShowItems::all || group->test_items_to_show == testShowItems::ipOnly;
         if (!dl_speed.isEmpty() && dl_speed != "N/A" && showSpeed) result += " ↓" + dl_speed;

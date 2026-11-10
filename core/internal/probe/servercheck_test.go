@@ -19,6 +19,9 @@ func checkServer(t *testing.T) *httptest.Server {
 	})
 	mux.HandleFunc("/ok", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	mux.HandleFunc("/login", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusForbidden) })
+	mux.HandleFunc("/refused", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("<p>Gemini isn't currently supported in your country.</p>"))
+	})
 	mux.HandleFunc("/down", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -38,21 +41,27 @@ func TestServerCheck(t *testing.T) {
 		failed   []string
 	}{
 		{"all pass", []string{srv.URL + "/bulk"},
-			[]checkService{{"A", srv.URL + "/ok"}, {"B", srv.URL + "/login"}}, CheckOK, nil},
+			[]checkService{{Name: "A", URL: srv.URL + "/ok"}, {Name: "B", URL: srv.URL + "/login"}}, CheckOK, nil},
 		{"second bulk target passes", []string{dead.URL + "/bulk", srv.URL + "/bulk"},
-			[]checkService{{"A", srv.URL + "/ok"}}, CheckOK, nil},
+			[]checkService{{Name: "A", URL: srv.URL + "/ok"}}, CheckOK, nil},
 		{"short volume is blocked", []string{srv.URL + "/short"},
-			[]checkService{{"A", srv.URL + "/ok"}}, CheckBlocked, nil},
+			[]checkService{{Name: "A", URL: srv.URL + "/ok"}}, CheckBlocked, nil},
 		{"no volume is blocked", []string{dead.URL + "/bulk"},
-			[]checkService{{"A", srv.URL + "/ok"}}, CheckBlocked, nil},
+			[]checkService{{Name: "A", URL: srv.URL + "/ok"}}, CheckBlocked, nil},
 		{"one service down", []string{srv.URL + "/bulk"},
-			[]checkService{{"A", srv.URL + "/ok"}, {"B", srv.URL + "/down"}, {"C", dead.URL + "/"}}, CheckService, []string{"B", "C"}},
+			[]checkService{{Name: "A", URL: srv.URL + "/ok"}, {Name: "B", URL: srv.URL + "/down"}, {Name: "C", URL: dead.URL + "/"}}, CheckService, []string{"B", "C"}},
+		{"refusal page is not the service", []string{srv.URL + "/bulk"},
+			[]checkService{{Name: "A", URL: srv.URL + "/refused", Refused: []string{"supported in your country"}},
+				{Name: "B", URL: srv.URL + "/refused"}}, CheckService, []string{"A"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := runServerCheck(context.Background(), srv.Client(), tc.bulk, tc.services)
 			if got.State != tc.state || !reflect.DeepEqual(got.Failed, tc.failed) {
 				t.Fatalf("got %s %v, want %s %v", got.State, got.Failed, tc.state, tc.failed)
+			}
+			if tc.state != CheckBlocked && len(got.Services) != len(tc.services) {
+				t.Fatalf("services %v", got.Services)
 			}
 			if tc.state != CheckBlocked && got.BulkBytes != checkBulkBytes {
 				t.Fatalf("bulk bytes %d", got.BulkBytes)

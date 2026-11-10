@@ -69,6 +69,14 @@ func withCheck(resp *gen.URLTestResp, check *probe.ServerCheck) *gen.URLTestResp
 		resp.FailedServices = check.Failed
 		resp.BulkBytes = To(int32(check.BulkBytes))
 		resp.BulkMs = To(int32(check.BulkMs))
+		for _, svc := range check.Services {
+			resp.Services = append(resp.Services, svc.Name)
+			ms := int32(-1)
+			if svc.OK {
+				ms = int32(svc.Ms)
+			}
+			resp.ServiceMs = append(resp.ServiceMs, ms)
+		}
 	}
 	return resp
 }

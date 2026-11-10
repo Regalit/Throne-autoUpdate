@@ -1768,6 +1768,15 @@ namespace Shadowlos::Chrome {
         const int viewport = table->viewport()->width();
         const int test = fit(ProfilesTableModel::ColTestResult);
         int traffic = fit(ProfilesTableModel::ColTraffic);
+        // The service columns hold one dot each: as wide as their title, all the same.
+        int service = 0;
+        for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col)
+            service = std::max(service, header->sectionSizeHint(col) + (simple ? 20 : 8));
+        int services = 0;
+        for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col) {
+            setWidth(col, service);
+            services += service;
+        }
         int others = 0;
         for (int col = 0; col < header->count(); ++col)
             if (col != ProfilesTableModel::ColName && col != ProfilesTableModel::ColTestResult &&
@@ -1775,8 +1784,9 @@ namespace Shadowlos::Chrome {
                 others += header->sectionSize(col);
         int name;
         if (simple) {
-            name = std::clamp(fit(ProfilesTableModel::ColName), 240, std::max(240, viewport - test - traffic));
-            traffic = std::max(traffic, viewport - name - test);
+            name = std::clamp(fit(ProfilesTableModel::ColName), 240,
+                              std::max(240, viewport - test - services - traffic));
+            traffic = std::max(traffic, viewport - name - test - services);
         } else {
             name = std::max(160, viewport - others - test - traffic);
         }

@@ -94,8 +94,8 @@ namespace Configs
             return result;
         }
         // Shadowlos: a number only for a full check that still holds; a quick latency answer or
-        // an old result says nothing about whether sites open.
-        if (!HasFreshServerCheck()) return QObject::tr("check");
+        // an old result says nothing about whether sites open. Until then the cell stays empty.
+        if (!HasFreshServerCheck()) return "";
         if (latency == kLatencyBlocked) return QObject::tr("blocked");
         if (latency < 0) return QObject::tr("no answer");
         result += QString("%1 ms").arg(latency);

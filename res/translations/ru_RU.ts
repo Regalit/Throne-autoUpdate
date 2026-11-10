@@ -8523,10 +8523,6 @@ Release note:
         <translation>Недоступен</translation>
     </message>
     <message>
-        <source>check</source>
-        <translation>проверить</translation>
-    </message>
-    <message>
         <source>blocked</source>
         <translation>блокируется</translation>
     </message>

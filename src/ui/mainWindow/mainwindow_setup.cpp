@@ -462,6 +462,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             action.method = GroupSortMethod::ByTestResult;
         } else if (logicalIndex == ProfilesTableModel::ColTraffic) {
             action.method = GroupSortMethod::ByTraffic;
+        } else if (ProfilesTableModel::isServiceColumn(logicalIndex)) {
+            action.method = GroupSortMethod::ByService;
+            action.service = Configs::kCheckServices.value(logicalIndex - ProfilesTableModel::ColServiceFirst);
         } else {
             return;
         }

@@ -8524,7 +8524,7 @@ Release note:
     </message>
     <message>
         <source>blocked</source>
-        <translation>блокируется</translation>
+        <translation>недоступно</translation>
     </message>
     <message>
         <source>no answer</source>

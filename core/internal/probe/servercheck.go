@@ -65,12 +65,16 @@ type ServiceResult struct {
 	Name string
 	OK   bool
 	Ms   int64 // time to the answer; meaningful only when OK
+	// Note says what came back from a service that has a refusal page (status, final address,
+	// page title, the words around "country" or "region"), for the journal: the refusal text
+	// differs by exit country and can only be learnt from real answers.
+	Note string
 }
 
 // ServerCheck is the outcome of the volume and service steps for one server.
 type ServerCheck struct {
 	State     string
-	Failed    []string // service names that did not answer, in checkServices order
+	Failed    []string        // service names that did not answer, in checkServices order
 	Services  []ServiceResult // every service asked, in checkServices order; empty when blocked
 	BulkBytes int64
 	BulkMs    int64
@@ -94,8 +98,8 @@ func runServerCheck(ctx context.Context, client *http.Client, bulkURLs []string,
 		go func() {
 			defer wg.Done()
 			started := time.Now()
-			ok := serviceAnswers(ctx, client, svc)
-			results[idx] = ServiceResult{Name: svc.Name, OK: ok, Ms: time.Since(started).Milliseconds()}
+			ok, note := serviceAnswers(ctx, client, svc)
+			results[idx] = ServiceResult{Name: svc.Name, OK: ok, Ms: time.Since(started).Milliseconds(), Note: note}
 		}()
 	}
 	begin := time.Now()
@@ -166,32 +170,98 @@ func downloadBulk(ctx context.Context, client *http.Client, url string) (int64, 
 // serviceAnswers is true on any HTTP answer but a 5xx: over HTTPS the answer proves the service
 // itself was reached through this exit, and a 4xx or a redirect still is the service talking.
 // A service that names its refusal page fails when that page is what came back.
-func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) bool {
+func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) (bool, string) {
 	ctx, cancel := context.WithTimeout(ctx, checkServiceTimeout)
 	defer cancel()
+	marked := len(svc.Refused) > 0
 	req, err := http.NewRequestWithContext(ctx, "GET", svc.URL, nil)
 	if err != nil {
-		return false
+		return false, ""
 	}
 	req.Header.Set("User-Agent", checkUserAgent)
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
 	resp, err := client.Do(req)
 	if err != nil {
-		return false
+		if marked {
+			return false, "err=" + noteText(err.Error(), 120)
+		}
+		return false, ""
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode >= 500 {
-		return false
-	}
-	if len(svc.Refused) == 0 {
-		return true
+	if !marked {
+		return resp.StatusCode < 500, ""
 	}
 	// A cut body is not a refusal: the service did answer.
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, checkServiceBodyLimit))
-	for _, mark := range svc.Refused {
-		if bytes.Contains(body, []byte(mark)) {
-			return false
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, checkServiceBodyLimit))
+	note := fmt.Sprintf("status=%d len=%d at=%s%s", resp.StatusCode, len(body),
+		resp.Request.URL.Host, noteText(resp.Request.URL.Path, 60))
+	if readErr != nil {
+		note += " cut=" + noteText(readErr.Error(), 60)
+	}
+	if title := between(body, "<title", "</title>"); title != "" {
+		note += " title=" + noteText(title, 80)
+	}
+	for _, word := range []string{"country", "region"} {
+		if near := around(body, word, 60); near != "" {
+			note += " " + word + "=" + noteText(near, 130)
 		}
 	}
-	return true
+	if resp.StatusCode >= 500 {
+		return false, note
+	}
+	for _, mark := range svc.Refused {
+		if bytes.Contains(body, []byte(mark)) {
+			return false, note + " refused=1"
+		}
+	}
+	return true, note
+}
+
+// noteText keeps a piece of an answer on one journal line: no line breaks or quotes, cut to max.
+func noteText(s string, max int) string {
+	out := make([]rune, 0, max)
+	for _, r := range s {
+		if len(out) >= max {
+			break
+		}
+		if r < 0x20 || r == '"' || r == '\\' {
+			r = ' '
+		}
+		out = append(out, r)
+	}
+	return "'" + string(out) + "'"
+}
+
+func between(body []byte, open, end string) string {
+	i := bytes.Index(body, []byte(open))
+	if i < 0 {
+		return ""
+	}
+	rest := body[i:]
+	gt := bytes.IndexByte(rest, '>')
+	if gt < 0 {
+		return ""
+	}
+	rest = rest[gt+1:]
+	j := bytes.Index(rest, []byte(end))
+	if j < 0 {
+		return ""
+	}
+	return string(rest[:j])
+}
+
+// around returns the text on both sides of the first word, pad bytes each way.
+func around(body []byte, word string, pad int) string {
+	i := bytes.Index(body, []byte(word))
+	if i < 0 {
+		return ""
+	}
+	from, to := i-pad, i+len(word)+pad
+	if from < 0 {
+		from = 0
+	}
+	if to > len(body) {
+		to = len(body)
+	}
+	return string(bytes.ToValidUTF8(body[from:to], nil))
 }

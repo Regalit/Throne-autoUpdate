@@ -76,6 +76,7 @@ func withCheck(resp *gen.URLTestResp, check *probe.ServerCheck) *gen.URLTestResp
 				ms = int32(svc.Ms)
 			}
 			resp.ServiceMs = append(resp.ServiceMs, ms)
+			resp.ServiceNotes = append(resp.ServiceNotes, svc.Note)
 		}
 	}
 	return resp

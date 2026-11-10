@@ -181,6 +181,14 @@ namespace {
             + QStringLiteral(" wa=%1 x=%2 gm=%3 gpt=%4 trigger=refresh")
                   .arg(service("WhatsApp"), service("X"), service("Gemini"), service("ChatGPT"));
         Shadowlos::Journal::Event("app", "server-check", check == QStringLiteral("ok") ? "ok" : "fail", d);
+        // What the services with a refusal page really answered: the refusal text is learnt from here.
+        for (size_t i = 0; i < res.services.size() && i < res.service_notes.size(); i++) {
+            if (res.service_notes[i].empty()) continue;
+            Shadowlos::Journal::Event("app", "server-check-note", "ok",
+                                      QStringLiteral("label=%1 service=%2 %3")
+                                          .arg(ent->outbound->name, QString::fromStdString(res.services[i]),
+                                               QString::fromStdString(res.service_notes[i])));
+        }
     }
 }
 

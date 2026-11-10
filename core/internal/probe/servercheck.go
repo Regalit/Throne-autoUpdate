@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -39,13 +36,15 @@ type checkService struct {
 	// Refused: text of the page a service shows when it turns this exit's country away. Such a
 	// page is a normal HTTP answer, so only its text tells it from the service itself.
 	Refused []string
-	// Probes: more addresses of the same service asked only for the journal note, to find out
-	// which of them tells a refused country apart. They never change the verdict.
-	Probes []string
+	// Country finds, in the page, the country the service takes this exit for; Closed lists the
+	// countries it does not serve. For a service that hands every country the same page and
+	// refuses only later, inside the page, this is the one place the refusal shows.
+	Country *regexp.Regexp
+	Closed  []string
 }
 
 const (
-	checkServiceBodyLimit = 2 * 1024 * 1024
+	checkServiceBodyLimit = 384 * 1024
 	// Sites answer a bare client differently from a browser; ask the way a browser does.
 	checkUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 )
@@ -63,12 +62,11 @@ var checkServices = []checkService{
 	{Name: "Facebook", URL: "https://www.facebook.com/"},
 	{Name: "WhatsApp", URL: "https://web.whatsapp.com/"},
 	{Name: "X", URL: "https://x.com/"},
-	{Name: "Gemini", URL: "https://gemini.google.com/app", Refused: []string{"supported in your country"}, Probes: []string{
-		"https://generativelanguage.googleapis.com/v1beta/models?key=AIzaSyD-region-probe-not-a-real-key-000000",
-		"https://generativelanguage.googleapis.com/v1beta/models",
-		"https://aistudio.google.com/",
-		"https://gemini.google.com/",
-	}},
+	// Gemini: the app page is the same everywhere; its page data carries the country Google sees
+	// (about 140 KB in), and the app then refuses the countries outside Google's supported list.
+	{Name: "Gemini", URL: "https://gemini.google.com/app",
+		Country: regexp.MustCompile(`"vXmutd":"%\.@\.\\"([A-Z]{2})\\"`),
+		Closed:  []string{"RU", "BY", "CN", "HK", "MO", "IR", "KP", "CU", "SY"}},
 	{Name: "ChatGPT", URL: "https://api.openai.com/compliance/cookie_requirements", Refused: []string{"unsupported_country"}},
 }
 
@@ -77,9 +75,8 @@ type ServiceResult struct {
 	Name string
 	OK   bool
 	Ms   int64 // time to the answer; meaningful only when OK
-	// Note says what came back from a service that has a refusal page (status, final address,
-	// page title, the words around "country" or "region"), for the journal: the refusal text
-	// differs by exit country and can only be learnt from real answers.
+	// Note says what came back from a service that can refuse a country (status, the country it
+	// saw, whether it refused), for the journal.
 	Note string
 }
 
@@ -185,7 +182,7 @@ func downloadBulk(ctx context.Context, client *http.Client, url string) (int64, 
 func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) (bool, string) {
 	ctx, cancel := context.WithTimeout(ctx, checkServiceTimeout)
 	defer cancel()
-	marked := len(svc.Refused) > 0
+	marked := len(svc.Refused) > 0 || svc.Country != nil
 	req, err := http.NewRequestWithContext(ctx, "GET", svc.URL, nil)
 	if err != nil {
 		return false, ""
@@ -203,42 +200,9 @@ func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) 
 	if !marked {
 		return resp.StatusCode < 500, ""
 	}
-	probes := make([]string, len(svc.Probes))
-	var wg sync.WaitGroup
-	for idx, u := range svc.Probes {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			probes[idx] = probeNote(ctx, client, u)
-		}()
-	}
 	// A cut body is not a refusal: the service did answer.
-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, checkServiceBodyLimit))
-	wg.Wait()
-	note := fmt.Sprintf("status=%d len=%d at=%s", resp.StatusCode, len(body), noteURL(resp.Request.URL))
-	if readErr != nil {
-		note += " cut=" + noteText(readErr.Error(), 60)
-	}
-	if title := between(body, "<title", "</title>"); title != "" {
-		note += " title=" + noteText(title, 80)
-	}
-	for _, word := range []string{"country", "region", "nsupported", "not available", "t available", "location", "eligib"} {
-		if near := around(body, word, 50); near != "" {
-			note += " [" + word + "]=" + noteText(near, 110)
-		}
-	}
-	// Dev diagnostics: keep the page itself, named by its length (the note carries the same
-	// length next to the server's name), so a refused exit can be compared with a good one.
-	if dir, err := os.Getwd(); err == nil && len(body) > 0 {
-		dump := filepath.Join(dir, "svc-dump")
-		if os.MkdirAll(dump, 0o755) == nil {
-			_ = os.WriteFile(filepath.Join(dump, fmt.Sprintf("%s-%d.html", svc.Name, len(body))), body, 0o644)
-			note += " dump=1"
-		}
-	}
-	for idx, p := range probes {
-		note += fmt.Sprintf(" p%d=%s", idx+1, p)
-	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, checkServiceBodyLimit))
+	note := fmt.Sprintf("status=%d", resp.StatusCode)
 	if resp.StatusCode >= 500 {
 		return false, note
 	}
@@ -247,35 +211,21 @@ func serviceAnswers(ctx context.Context, client *http.Client, svc checkService) 
 			return false, note + " refused=1"
 		}
 	}
+	if svc.Country != nil {
+		found := svc.Country.FindSubmatch(body)
+		if found == nil {
+			// The page changed or was cut: nothing says the country is refused.
+			return true, note + " country=none"
+		}
+		country := string(found[1])
+		note += " country=" + country
+		for _, closed := range svc.Closed {
+			if country == closed {
+				return false, note + " refused=1"
+			}
+		}
+	}
 	return true, note
-}
-
-// noteURL writes an address the journal will not take for a private one and blank out.
-func noteURL(u *url.URL) string {
-	return noteText(strings.ReplaceAll(u.Host, ".", ",")+u.Path, 90)
-}
-
-// probeNote asks one more address and says what came back: status, final address, body start.
-func probeNote(ctx context.Context, client *http.Client, address string) string {
-	req, err := http.NewRequestWithContext(ctx, "GET", address, nil)
-	if err != nil {
-		return "err"
-	}
-	req.Header.Set("User-Agent", checkUserAgent)
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	resp, err := client.Do(req)
-	if err != nil {
-		return "err=" + noteText(err.Error(), 60)
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	text := string(bytes.ToValidUTF8(body, nil))
-	if i := strings.Index(text, "\"message\""); i >= 0 {
-		text = text[i:]
-	} else if title := between(body, "<title", "</title>"); title != "" {
-		text = title
-	}
-	return fmt.Sprintf("%d,%s,%s", resp.StatusCode, noteURL(resp.Request.URL), noteText(text, 110))
 }
 
 // noteText keeps a piece of an answer on one journal line: no line breaks or quotes, cut to max.
@@ -291,38 +241,4 @@ func noteText(s string, max int) string {
 		out = append(out, r)
 	}
 	return "'" + string(out) + "'"
-}
-
-func between(body []byte, open, end string) string {
-	i := bytes.Index(body, []byte(open))
-	if i < 0 {
-		return ""
-	}
-	rest := body[i:]
-	gt := bytes.IndexByte(rest, '>')
-	if gt < 0 {
-		return ""
-	}
-	rest = rest[gt+1:]
-	j := bytes.Index(rest, []byte(end))
-	if j < 0 {
-		return ""
-	}
-	return string(rest[:j])
-}
-
-// around returns the text on both sides of the first word, pad bytes each way.
-func around(body []byte, word string, pad int) string {
-	i := bytes.Index(body, []byte(word))
-	if i < 0 {
-		return ""
-	}
-	from, to := i-pad, i+len(word)+pad
-	if from < 0 {
-		from = 0
-	}
-	if to > len(body) {
-		to = len(body)
-	}
-	return string(bytes.ToValidUTF8(body[from:to], nil))
 }

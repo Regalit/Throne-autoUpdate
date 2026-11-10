@@ -22,6 +22,9 @@ func checkServer(t *testing.T) *httptest.Server {
 	mux.HandleFunc("/refused", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("<p>Gemini isn't currently supported in your country.</p>"))
 	})
+	mux.HandleFunc("/country", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"v7udBe":"","vXmutd":"%.@.\"RU\",\"ZZ\",\"qHH+GA\\u003d\\u003d\"]","wM456e":false}`))
+	})
 	mux.HandleFunc("/down", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusBadGateway) })
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -53,6 +56,10 @@ func TestServerCheck(t *testing.T) {
 		{"refusal page is not the service", []string{srv.URL + "/bulk"},
 			[]checkService{{Name: "A", URL: srv.URL + "/refused", Refused: []string{"supported in your country"}},
 				{Name: "B", URL: srv.URL + "/refused"}}, CheckService, []string{"A"}},
+		{"a country the service does not serve", []string{srv.URL + "/bulk"},
+			[]checkService{{Name: "A", URL: srv.URL + "/country", Country: checkServices[5].Country, Closed: []string{"RU"}},
+				{Name: "B", URL: srv.URL + "/country", Country: checkServices[5].Country, Closed: []string{"BY"}},
+				{Name: "C", URL: srv.URL + "/ok", Country: checkServices[5].Country, Closed: []string{"RU"}}}, CheckService, []string{"A"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

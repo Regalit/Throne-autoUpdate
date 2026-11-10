@@ -545,6 +545,10 @@ void MainWindow::profile_start(int _id) {
         }
         Shadowlos::Journal::ConnectEnd(started); // Shadowlos: connect state (geo, census, summary); dev journal
         mu_starting.unlock();
+        // Shadowlos: the start ran on saved rule sets; renew the old ones now that nothing waits on it.
+        if (started && lastResult && !lastResult->localRuleSetUrls.isEmpty()) {
+            runOnNewThread([urls = lastResult->localRuleSetUrls] { Configs::RefreshRuleSetFiles(urls); });
+        }
         runOnUiThread([=, this] {
             if (restartPrompt) restartPrompt->dismiss();
             m_profileConnecting = false;

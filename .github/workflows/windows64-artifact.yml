@@ -280,6 +280,24 @@ jobs:
           for target in windows-amd64 linux-amd64-system-qt; do
             cp "artifacts/Throne-${{ github.sha }}-${target}/artifacts.tgz" "out/Throne-${{ inputs.tag }}-${target}.tgz"
           done
+          # A prod build also gets the archives shadowlos's client image pins
+          # (client/throne-release.env, fetch-throne.sh): each unpacks to Shadowlos/ with
+          # only what the users' archive ships, plus their SHA256SUMS.
+          if [ "${{ inputs.channel }}" = prod ]; then
+            for target in windows-amd64 linux-amd64-system-qt; do
+              rm -rf pkg && mkdir -p pkg/Shadowlos src
+              tar xzf "artifacts/Throne-${{ github.sha }}-${target}/artifacts.tgz" -C src
+              case $target in
+                windows-amd64) cp src/deployment/$target/ShadowLosThrone.exe src/deployment/$target/ThroneCore.exe pkg/Shadowlos/
+                               name=windows ;;
+                *)             cp src/deployment/$target/Throne src/deployment/$target/ThroneCore src/deployment/$target/Throne.png pkg/Shadowlos/
+                               name=linux ;;
+              esac
+              tar czf "out/shadowlos-throne-${{ inputs.tag }}-$name-amd64.tgz" -C pkg Shadowlos
+              rm -rf src
+            done
+            (cd out && sha256sum shadowlos-throne-* > SHA256SUMS)
+          fi
           gh release create "${{ inputs.tag }}" out/* --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" --prerelease --title "${{ inputs.tag }}" \
             --notes "Shadowlos desktop build from ${{ github.sha }}."

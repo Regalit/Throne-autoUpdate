@@ -18,11 +18,16 @@ type URLTestResult struct {
 	Duration time.Duration
 	Tag      string
 	Error    error
+	// Shadowlos: set by a full check when the latency step passed (servercheck.go).
+	Check *ServerCheck
 }
 
-func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string, maxConcurrency int, twice bool, timeout time.Duration) []*URLTestResult {
+func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string, maxConcurrency int, twice bool, timeout time.Duration, full bool) []*URLTestResult {
 	if timeout <= 0 {
 		timeout = URLTestTimeout
+	}
+	if full && (maxConcurrency <= 0 || maxConcurrency > checkMaxConcurrency) {
+		maxConcurrency = checkMaxConcurrency
 	}
 
 	results := runBatch(ctx, i, outboundTags, maxConcurrency, batchProbe[URLTestResult]{
@@ -33,7 +38,11 @@ func BatchURLTest(ctx context.Context, i Box, outboundTags []string, url string,
 			client, closeClient := outboundHTTPClient(ctx, outbound)
 			defer closeClient()
 			duration, err := measureURLTest(ctx, client, testTargets(url), firstRequestTimeout(i, tag, twice, timeout), timeout, twice)
-			return &URLTestResult{Duration: duration, Tag: tag, Error: err}
+			result := &URLTestResult{Duration: duration, Tag: tag, Error: err}
+			if full && err == nil {
+				result.Check = serverCheck(ctx, client)
+			}
+			return result
 		},
 		fail: func(tag string, err error) *URLTestResult {
 			return &URLTestResult{Tag: tag, Error: err}

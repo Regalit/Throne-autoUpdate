@@ -7818,6 +7818,18 @@ Disabling Strict Route may cause DNS leaks.</source>
 <context>
     <name>ProfilesTableModel</name>
     <message>
+        <source>%1 opens</source>
+        <translation>%1 открывается</translation>
+    </message>
+    <message>
+        <source>%1 opens slowly</source>
+        <translation>%1 открывается медленно</translation>
+    </message>
+    <message>
+        <source>%1 does not open</source>
+        <translation>%1 не открывается</translation>
+    </message>
+    <message>
         <source>This config&apos;s traffic is not properly protected.</source>
         <translation>Трафик этой конфигурации не защищен должным образом.</translation>
     </message>
@@ -8509,6 +8521,18 @@ Release note:
     <message>
         <source>Unavailable</source>
         <translation>Недоступен</translation>
+    </message>
+    <message>
+        <source>blocked</source>
+        <translation>недоступно</translation>
+    </message>
+    <message>
+        <source>no answer</source>
+        <translation>нет ответа</translation>
+    </message>
+    <message>
+        <source>does not open: %1</source>
+        <translation>не открывается: %1</translation>
     </message>
     <message>
         <source>%1 route prefer</source>
@@ -10107,6 +10131,26 @@ Remove that endpoint from this routing profile as well?</source>
     <message>
         <source>Could not start the update</source>
         <translation>Не удалось запустить обновление</translation>
+    </message>
+    <message>
+        <source>This version is out of date. Update to keep using the VPN.</source>
+        <translation>Эта версия устарела. Обновитесь, чтобы VPN продолжил работать.</translation>
+    </message>
+    <message>
+        <source>Update %1 is ready.</source>
+        <translation>Готово обновление %1.</translation>
+    </message>
+    <message>
+        <source>What is new:</source>
+        <translation>Что нового:</translation>
+    </message>
+    <message>
+        <source>Update</source>
+        <translation>Обновить</translation>
+    </message>
+    <message>
+        <source>Later</source>
+        <translation>Позже</translation>
     </message>
 </context>
 <context>

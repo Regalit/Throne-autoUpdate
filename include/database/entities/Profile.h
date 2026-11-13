@@ -1,5 +1,8 @@
 #pragma once
 
+#include <QHash>
+#include <QStringList>
+
 #include <include/configs/outbounds/tailscale.h>
 #include <include/configs/outbounds/wireguard.h>
 
@@ -35,6 +38,17 @@
 namespace Configs {
     // `latency` sentinel: egress probe failed, but the core reports the tunnel up.
     constexpr int kLatencyConnectOnly = -2;
+    // Shadowlos `latency` sentinel: the latency step answered but 128 KB did not get through
+    // (a full server check, core probe/servercheck.go). Counts as unavailable.
+    constexpr int kLatencyBlocked = -3;
+    // Shadowlos: the services a full check asks through each server, one list column each, in
+    // this order (core probe/servercheck.go checkServices).
+    inline const QStringList kCheckServices = {
+        QStringLiteral("YouTube"), QStringLiteral("Instagram"), QStringLiteral("Facebook"),
+        QStringLiteral("WhatsApp"), QStringLiteral("X"), QStringLiteral("Gemini"), QStringLiteral("ChatGPT")};
+    // An answer slower than this is shown yellow: it opens, but slowly.
+    constexpr int kServiceSlowMs = 2500;
+    enum class ServiceState { Unknown, Opens, Slow, Fails };
 
     class Profile {
     public:
@@ -58,6 +72,20 @@ namespace Configs {
 
         QString runningCountryInfo; // volatile, not saved to db
 
+        // Shadowlos: the last full server check is kept outside the entity, by id, and in
+        // config/server-checks.json, so it survives a restart. Quick latency tests (auto
+        // selector, subscription update) do not touch it. Records `latency` as the check's answer.
+        // `services`: time to each service's answer in ms, -1 when it did not open.
+        void SetServerCheck(const QString &failed, const QHash<QString, int> &services = {}) const;
+        void ClearServerCheck() const;
+        // The latency the last full check got (0 = none).
+        [[nodiscard]] int CheckLatency() const;
+        // What the last full check says about one service; Unknown when there is none
+        // or the server itself did not pass.
+        [[nodiscard]] ServiceState CheckService(const QString &name) const;
+        // Services that did not answer, e.g. "Instagram, Facebook".
+        [[nodiscard]] QString CheckFailed() const;
+
         Profile() = default;
         Profile(Configs::outbound *outbound, const QString &type_);
 
@@ -65,6 +93,9 @@ namespace Configs {
 
         // Always set latency through here: it also stamps latency_at.
         void SetLatency(int ms);
+
+        // Shadowlos: there is a full check result for this server (from any run).
+        [[nodiscard]] bool HasServerCheck() const;
 
         // Untested profiles are neither; a kLatencyConnectOnly tunnel counts as working.
         [[nodiscard]] bool IsWorking() const { return latency > 0 || latency == kLatencyConnectOnly; }

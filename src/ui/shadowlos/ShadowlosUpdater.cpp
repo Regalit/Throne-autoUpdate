@@ -11,8 +11,10 @@
 #include <algorithm>
 #include <memory>
 
+#include <QAbstractButton>
 #include <QApplication>
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
@@ -21,11 +23,13 @@
 #include <QJsonObject>
 #include <QBoxLayout>
 #include <QLabel>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QPushButton>
 #include <QStandardPaths>
 #include <QStyle>
 #include <QTimer>
@@ -45,6 +49,10 @@ namespace Shadowlos::Updater {
         // Dev builds follow a channel that moves several times a day: an app left running
         // (closing the window only hides it to the tray) must not wait 6 h to see a release.
         constexpr int kCheckEveryMs = SHADOWLOS_DEV ? 20 * 60 * 1000 : 6 * 60 * 60 * 1000;
+        // How often a downloaded update looks for its moment: the VPN going off installs it.
+        constexpr int kReadyLookMs = 60 * 1000;
+        // «Готово обновление» comes back this often while the update stays uninstalled.
+        constexpr qint64 kRemindEverySecs = 24 * 3600;
 
         QString translate(const char *text) {
             return QCoreApplication::translate("ShadowlosUpdater", text);
@@ -244,6 +252,12 @@ namespace Shadowlos::Updater {
             // event loop), so nothing may start a second exit, check or UAC prompt.
             bool applying = false;
             QString ready;          // version whose verified package is downloaded
+            QString notes;          // the release's «что нового», may be empty
+            // The channel's min_supported_code from the last check that reached it; a build
+            // below it has to update (0: nothing is required).
+            int minCode = 0;
+            qint64 remindedAt = 0;  // when «Готово обновление» was last shown, secs
+            QPointer<QMessageBox> reminder;
             QString progressText;   // the last line worth showing of the check under way
         };
 
@@ -351,6 +365,51 @@ namespace Shadowlos::Updater {
             });
         }
 
+        bool outdated() {
+            return state().minCode > SHADOWLOS_VERSION_CODE;
+        }
+
+        bool vpnOn() {
+            auto *mw = GetMainWindow();
+            return mw && !mw->GetRunningConfigName().isEmpty();
+        }
+
+        // «Готово обновление»: what is new and one button. Not modal, never touches the VPN.
+        void remind() {
+            auto &st = state();
+            if (st.reminder || st.applying) return;
+            st.remindedAt = QDateTime::currentSecsSinceEpoch();
+            QString text = outdated() ? translate("This version is out of date. Update to keep using the VPN.")
+                                      : translate("Update %1 is ready.").arg(st.ready);
+            if (!st.notes.trimmed().isEmpty()) text += QStringLiteral("\n\n") + translate("What is new:") + QStringLiteral("\n") + st.notes.trimmed();
+            auto *box = new QMessageBox(QMessageBox::Information, QStringLiteral(SHADOWLOS_EXE_NAME), text,
+                                        QMessageBox::NoButton, GetMainWindow());
+            box->setAttribute(Qt::WA_DeleteOnClose);
+            box->setModal(false);
+            auto *update = box->addButton(translate("Update"), QMessageBox::AcceptRole);
+            if (!outdated()) box->addButton(translate("Later"), QMessageBox::RejectRole);
+            QObject::connect(box, &QMessageBox::buttonClicked, box, [update](QAbstractButton *pressed) {
+                if (pressed == update && packageReady()) installNow();
+            });
+            st.reminder = box;
+            box->show();
+        }
+
+        // A downloaded update takes its moment: with the VPN off it installs by itself (the
+        // restart interrupts nothing); with the VPN on, or where installing would ask for UAC,
+        // it only reminds, at start and then once a day.
+        void lookAtReady() {
+            auto &st = state();
+            if (st.applying || st.ready.isEmpty() || currentCheck() || !packageReady()) return;
+            const bool quiet = !vpnOn() && !QApplication::activeModalWidget() && workDir() == localWorkDir();
+            if (quiet) {
+                LOG_INFO(QStringLiteral("[update] the VPN is off: installing %1").arg(st.ready));
+                installNow();
+                return;
+            }
+            if (QDateTime::currentSecsSinceEpoch() - st.remindedAt >= kRemindEverySecs) remind();
+        }
+
         // One JSON line of `selfupdate check`: progress, or the result.
         void onProgress(const QJsonObject &line) {
             const qint64 done = line.value(QStringLiteral("done")).toInteger();
@@ -369,14 +428,27 @@ namespace Shadowlos::Updater {
             st.manual = false;
             st.progressText.clear();
             const QString result = res.value(QStringLiteral("state")).toString();
+            // A check that reached the channel says what it requires; one that did not keeps the last word.
+            if (result == QStringLiteral("none")) st.minCode = 0;
+            else if (res.contains(QStringLiteral("min_code")) || result == QStringLiteral("ready")) st.minCode = res.value(QStringLiteral("min_code")).toInt();
+            if (const auto d = res.value(QStringLiteral("download")).toObject(); !d.isEmpty()) {
+                // No addresses: sizes, the route's name and counts only.
+                Journal::Event("app", "update-download", result == QStringLiteral("ready") ? "ok" : "fail",
+                               QStringLiteral("size=%1 resumed=%2 done=%3 route=%4 attempts=%5 stalls=%6")
+                                   .arg(d.value(QStringLiteral("size")).toInteger()).arg(d.value(QStringLiteral("resumed")).toInteger())
+                                   .arg(d.value(QStringLiteral("done")).toInteger()).arg(d.value(QStringLiteral("route")).toString())
+                                   .arg(d.value(QStringLiteral("attempts")).toInt()).arg(d.value(QStringLiteral("stalls")).toInt()));
+            }
             if (result == QStringLiteral("ready")) {
                 const QString version = res.value(QStringLiteral("version")).toString();
                 LOG_INFO(QStringLiteral("[update] %1 is ready").arg(version));
                 setReady(version);
+                st.notes = res.value(QStringLiteral("notes")).toString();
                 if (manual) {
                     installNow();
                     return;
                 }
+                QTimer::singleShot(0, qApp, [] { lookAtReady(); });
                 // Found in the background: the accent and the tooltip say so; the line stays quiet.
                 setBusy(false);
                 if (st.status && st.status->property("slError").toBool()) showStatus({});
@@ -451,11 +523,19 @@ namespace Shadowlos::Updater {
                 currentCheck() = nullptr;
                 onResult({}, -1, proc->errorString());
             });
-            proc->start(coreExe(), {QStringLiteral("selfupdate"), QStringLiteral("check"),
-                                       QStringLiteral("-base"), baseUrl(),
-                                       QStringLiteral("-appid"), appId(),
-                                       QStringLiteral("-code"), QString::number(SHADOWLOS_VERSION_CODE),
-                                       QStringLiteral("-work"), workDir()});
+            QStringList args{QStringLiteral("selfupdate"), QStringLiteral("check"),
+                             QStringLiteral("-base"), baseUrl(),
+                             QStringLiteral("-appid"), appId(),
+                             QStringLiteral("-code"), QString::number(SHADOWLOS_VERSION_CODE),
+                             QStringLiteral("-work"), workDir()};
+            // With the VPN up the package goes through it first: a filter on the user's own
+            // network may let the small «latest» answer pass and freeze the big download.
+            if (vpnOn()) {
+                const auto &settings = Configs::dataManager->settingsRepo;
+                args << QStringLiteral("-proxy")
+                     << QStringLiteral("http://%1:%2").arg(settings->inbound_address).arg(settings->inbound_socks_port);
+            }
+            proc->start(coreExe(), args);
         }
 
         // «Обновить» pressed: a downloaded update installs at once; otherwise check now.
@@ -519,12 +599,30 @@ namespace Shadowlos::Updater {
         every->setInterval(kCheckEveryMs);
         QObject::connect(every, &QTimer::timeout, button, [] { runCheck(false); });
         every->start();
+        auto *look = new QTimer(button);
+        look->setInterval(kReadyLookMs);
+        QObject::connect(look, &QTimer::timeout, button, [] { lookAtReady(); });
+        look->start();
 #else
         Q_UNUSED(window)
         button->hide();
         status->hide();
 #endif
         return status;
+    }
+
+    bool MustUpdateBeforeConnect() {
+        if (!outdated()) return false;
+        auto &st = state();
+        if (!st.ready.isEmpty() && packageReady()) {
+            if (!st.reminder) remind();
+            else st.reminder->raise();
+            return true;
+        }
+        // Not downloaded yet: the VPN may be the only way the package gets through, so the
+        // connect goes on and a check starts now.
+        runCheck(false);
+        return false;
     }
 
     bool LaunchApply(int resumeProfileId) {

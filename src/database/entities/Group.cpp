@@ -156,16 +156,27 @@ namespace Configs
             case GroupSortMethod::ByName:
             case GroupSortMethod::ByTestResult:
             case GroupSortMethod::ByLatency:
+            case GroupSortMethod::ByService:
             case GroupSortMethod::ByTraffic:
             case GroupSortMethod::BySecurity:
             case GroupSortMethod::ByType: {
                 auto get_latency_for_sort = [](const std::shared_ptr<Profile>& prof) {
-                    auto i = prof->latency;
+                    // Shadowlos: the list shows the last full check's latency, so sort by it.
+                    auto i = prof->HasServerCheck() ? prof->CheckLatency() : 0;
                     if (i == 0) i = 100000;
                     if (i < 0) i = 99999;
                     return i;
                 };
-                std::ranges::sort(profiles,
+                // Best first: opens, opens slowly, does not open, not checked; equal ones by latency.
+                auto get_service_for_sort = [&](const std::shared_ptr<Profile>& prof) {
+                    switch (prof->CheckService(sortAction.service)) {
+                        case ServiceState::Opens: return 0;
+                        case ServiceState::Slow: return 1;
+                        case ServiceState::Fails: return 2;
+                        default: return 3;
+                    }
+                };
+                std::ranges::stable_sort(profiles,
                                   [&](int a, int b) {
                                       auto profA = dataManager->profilesRepo->GetProfile(a);
                                       auto profB = dataManager->profilesRepo->GetProfile(b);
@@ -202,6 +213,11 @@ namespace Configs
                                           if (test_sort_by == testBy::ipOut) {
                                               return sortAction.descending ? profA->ip_out > profB->ip_out : profA->ip_out < profB->ip_out;
                                           }
+                                      } else if (sortAction.method == GroupSortMethod::ByService) {
+                                          const int rankA = get_service_for_sort(profA);
+                                          const int rankB = get_service_for_sort(profB);
+                                          if (rankA != rankB) return sortAction.descending ? rankA > rankB : rankA < rankB;
+                                          return get_latency_for_sort(profA) < get_latency_for_sort(profB);
                                       } else if (sortAction.method == GroupSortMethod::ByTraffic) {
                                           if (traffic_sort_by == trafficBy::total) {
                                               auto totalA = profA->traffic_downlink + profA->traffic_uplink;

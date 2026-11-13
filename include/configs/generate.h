@@ -39,6 +39,8 @@ namespace Configs
         QJsonObject xrayConfig;
         // Opaque full configs, one instance each; never merged into xrayConfig.
         QStringList xrayFullConfigs;
+        // Shadowlos: .srs URLs this config reads from Throne's saved copies (RefreshRuleSetFiles).
+        QStringList localRuleSetUrls;
         std::shared_ptr<ExtraCoreData> extraCoreData = std::make_shared<ExtraCoreData>();
 
         QList<TrafficChainGroup> chainGroups;
@@ -113,8 +115,8 @@ namespace Configs
     std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile> &ent,
                                                           const QString &directDnsOverride = {});
 
-    // Shadowlos: where Throne keeps its own copy of a .srs rule set. A fresh copy is used instead of
-    // the core's download on the next build.
+    // Shadowlos: where Throne keeps its own copy of a .srs rule set. A copy that is there is used
+    // instead of the core's download, whatever its age.
     QString LocalRuleSetPath(const QString &url);
 
     // Shadowlos: downloads the .srs rule sets the core was told to download (coreConfig from
@@ -123,6 +125,11 @@ namespace Configs
     // adapter: "The requested address is not valid in its context"). Blocks; not on the UI thread.
     // Empty when every one was saved, otherwise the first error.
     QString FetchRuleSetFiles(const QJsonObject &coreConfig);
+
+    // Shadowlos: renews the saved copies behind these URLs (BuildConfigResult::localRuleSetUrls) that
+    // are older than a day, over the user's own network. A failure keeps the saved copy. The new
+    // files are read on the next start. Blocks; not on the UI thread.
+    void RefreshRuleSetFiles(const QStringList &urls);
 
     // coreUnreachable is set when a false came from a failed core call rather than from the config.
     bool IsValid(const std::shared_ptr<Profile> &ent, bool *coreUnreachable = nullptr);

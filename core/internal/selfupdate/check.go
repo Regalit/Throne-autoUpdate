@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -8,10 +9,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -34,6 +37,34 @@ type checkResult struct {
 	Error   string `json:"error,omitempty"`
 	// Kind sorts an error for the GUI, which shows a sentence per kind, not Error.
 	Kind string `json:"kind,omitempty"`
+	// MinCode is the channel's min_supported_code: a build below it has to update.
+	MinCode int `json:"min_code,omitempty"`
+	// How a download went, for the journal; nil when nothing was downloaded.
+	Download *downloadStats `json:"download,omitempty"`
+}
+
+// downloadStats is one check's download: no addresses, only counts.
+type downloadStats struct {
+	Size     int64  `json:"size"`
+	Resumed  int64  `json:"resumed"`  // bytes already held when the check began
+	Done     int64  `json:"done"`     // bytes held when it ended
+	Route    string `json:"route"`    // the route of the last attempt: direct | tunnel
+	Attempts int    `json:"attempts"` // connections made
+	Stalls   int    `json:"stalls"`   // attempts cut after stallTimeout without a byte
+}
+
+// A connection that carries nothing for this long is frozen (a filter that lets a big
+// download start and then drops its packets): cut it and resume at once, not at the next check.
+var stallTimeout = 15 * time.Second
+
+// Attempts in one check. An attempt that brought nothing counts double, so a dead route
+// ends the check after a few tries while a route that keeps moving bytes is kept going.
+const maxDownloadAttempts = 8
+
+// route is one way out for the package download.
+type route struct {
+	name   string
+	client *http.Client
 }
 
 // Error kinds.
@@ -101,6 +132,7 @@ func runCheck(args []string) error {
 	appID := fs.String("appid", "", "expected app_id")
 	code := fs.Int("code", 0, "running version_code")
 	work := fs.String("work", "", "work dir")
+	proxy := fs.String("proxy", "", "the running VPN's local HTTP proxy (http://127.0.0.1:port); tried first for the package")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -111,9 +143,17 @@ func runCheck(args []string) error {
 		return err
 	}
 	progress := &progressPrinter{out: os.Stdout, every: progressEvery, now: time.Now}
-	res := checkWithProgress(&http.Client{Timeout: 10 * time.Minute}, strings.TrimRight(*base, "/"),
-		*appID, *code, *work, progress.report)
+	direct := &http.Client{Timeout: 10 * time.Minute}
+	routes := []route{{"direct", direct}}
+	if u, err := url.Parse(*proxy); *proxy != "" && err == nil {
+		tunnel := &http.Client{Timeout: 10 * time.Minute, Transport: &http.Transport{Proxy: http.ProxyURL(u)}}
+		routes = []route{{"tunnel", tunnel}, {"direct", direct}}
+	}
+	res := checkRoutes(direct, routes, strings.TrimRight(*base, "/"), *appID, *code, *work, progress.report)
 	logf(*work, "check: %s %s %d %s %s", res.State, res.Version, res.Code, res.Kind, res.Error)
+	if d := res.Download; d != nil {
+		logf(*work, "download: %d of %d, resumed at %d, %s, %d attempts, %d stalls", d.Done, d.Size, d.Resumed, d.Route, d.Attempts, d.Stalls)
+	}
 	return json.NewEncoder(os.Stdout).Encode(res)
 }
 
@@ -124,8 +164,18 @@ func check(client *http.Client, base, appID string, code int, work string) check
 // checkWithProgress is check that calls progress (when not nil) as the package downloads.
 func checkWithProgress(client *http.Client, base, appID string, code int, work string,
 	progress func(version string, done, size int64)) checkResult {
+	return checkRoutes(client, []route{{"direct", client}}, base, appID, code, work, progress)
+}
+
+// checkRoutes asks the channel over client and downloads a new package over routes, in order.
+func checkRoutes(client *http.Client, routes []route, base, appID string, code int, work string,
+	progress func(version string, done, size int64)) checkResult {
 	sweep(work)
 	rel, err := fetchLatest(client, base)
+	if err != nil && len(routes) > 1 {
+		// The channel itself may be cut off on the user's network while the VPN reaches it.
+		rel, err = fetchLatest(routes[0].client, base)
+	}
 	if err != nil {
 		return failed(err)
 	}
@@ -139,7 +189,7 @@ func checkWithProgress(client *http.Client, base, appID string, code int, work s
 	if err := rel.validate(appID, publicKey); err != nil {
 		return checkResult{State: "error", Error: "refused: " + err.Error(), Kind: kindVerify}
 	}
-	ready := checkResult{State: "ready", Version: rel.Version, Code: rel.VersionCode, Notes: rel.Notes}
+	ready := checkResult{State: "ready", Version: rel.Version, Code: rel.VersionCode, Notes: rel.Notes, MinCode: rel.MinSupportedCode}
 	if prev, err := readRelease(filepath.Join(work, readyFile)); err == nil && *prev == *rel {
 		if ok, _ := fileMatches(filepath.Join(work, packageFile), rel.Size, rel.SHA256); ok {
 			return ready
@@ -148,10 +198,64 @@ func checkWithProgress(client *http.Client, base, appID string, code int, work s
 	// A finished package of another release goes; a part download stays for download to resume.
 	_ = os.Remove(filepath.Join(work, readyFile))
 	_ = os.Remove(filepath.Join(work, packageFile))
-	if err := download(client, base, rel, work, progress); err != nil {
-		return failed(err)
+	stats, err := downloadRoutes(routes, base, rel, work, progress)
+	if err != nil {
+		res := failed(err)
+		res.Version, res.Code, res.MinCode, res.Download = rel.Version, rel.VersionCode, rel.MinSupportedCode, stats
+		return res
 	}
+	ready.Download = stats
 	return ready
+}
+
+// downloadRoutes keeps the download going through freezes and broken connections: every attempt
+// resumes the part file, a route that brings nothing twice in a row gives way to the next one,
+// and only a network error is tried again.
+func downloadRoutes(routes []route, base string, rel *Release, work string,
+	progress func(version string, done, size int64)) (*downloadStats, error) {
+	held := func() int64 {
+		if prev, err := readRelease(filepath.Join(work, partMeta)); err != nil || *prev != *rel {
+			return 0
+		}
+		st, err := os.Stat(filepath.Join(work, partFile))
+		if err != nil {
+			return 0
+		}
+		return st.Size()
+	}
+	stats := &downloadStats{Size: rel.Size, Resumed: held()}
+	stats.Done = stats.Resumed
+	var err error
+	idx, idle := 0, 0
+	for budget := maxDownloadAttempts; budget > 0 && idx < len(routes); {
+		before := held()
+		stats.Route = routes[idx].name
+		stats.Attempts++
+		var stalled bool
+		stalled, err = download(routes[idx].client, base, rel, work, progress)
+		if err == nil {
+			stats.Done = rel.Size
+			return stats, nil
+		}
+		if stalled {
+			stats.Stalls++
+		}
+		stats.Done = held()
+		var ke *kindError
+		if !errors.As(err, &ke) || ke.kind != kindNetwork {
+			return stats, err
+		}
+		budget--
+		if stats.Done > before {
+			idle = 0
+			continue
+		}
+		budget--
+		if idle++; idle >= 2 {
+			idx, idle = idx+1, 0
+		}
+	}
+	return stats, err
 }
 
 func fetchLatest(client *http.Client, base string) (*Release, error) {
@@ -180,9 +284,10 @@ func fetchLatest(client *http.Client, base string) (*Release, error) {
 }
 
 // download fetches the package into pkg.part, resuming a part of the same
-// release, and only renames it to pkg.zip once size and sha256 match.
+// release, and only renames it to pkg.zip once size and sha256 match. stalled
+// is set when the attempt was cut for carrying nothing for stallTimeout.
 func download(client *http.Client, base string, rel *Release, work string,
-	progress func(version string, done, size int64)) error {
+	progress func(version string, done, size int64)) (stalled bool, err error) {
 	part := filepath.Join(work, partFile)
 	var have int64
 	if prev, err := readRelease(filepath.Join(work, partMeta)); err == nil && *prev == *rel {
@@ -193,20 +298,30 @@ func download(client *http.Client, base string, rel *Release, work string,
 	if have == 0 {
 		_ = os.Remove(part)
 		if err := writeJSON(filepath.Join(work, partMeta), rel); err != nil {
-			return err
+			return false, err
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodGet, base+"/download?platform=windows", nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Cuts the attempt when neither the answer nor a byte of the body came for stallTimeout.
+	var cut atomic.Bool
+	watchdog := time.AfterFunc(stallTimeout, func() { cut.Store(true); cancel() })
+	defer func() {
+		watchdog.Stop()
+		stalled = err != nil && cut.Load()
+	}()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/download?platform=windows", nil)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if have > 0 {
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return withKind(kindNetwork, err)
+		return false, withKind(kindNetwork, err)
 	}
 	defer resp.Body.Close()
 
@@ -218,34 +333,49 @@ func download(client *http.Client, base string, rel *Release, work string,
 		flags |= os.O_TRUNC
 		have = 0
 	default:
-		return withKind(kindServer, fmt.Errorf("download: HTTP %d", resp.StatusCode))
+		return false, withKind(kindServer, fmt.Errorf("download: HTTP %d", resp.StatusCode))
 	}
 	f, err := os.OpenFile(part, flags, 0o644)
 	if err != nil {
-		return err
+		return false, err
 	}
-	copyErr := copyProgress(f, io.LimitReader(resp.Body, rel.Size-have+1), have, rel, progress)
+	body := &aliveReader{r: io.LimitReader(resp.Body, rel.Size-have+1), alive: func() { watchdog.Reset(stallTimeout) }}
+	copyErr := copyProgress(f, body, have, rel, progress)
 	if err := f.Close(); copyErr == nil {
 		copyErr = err
 	}
 	if copyErr != nil {
-		return fmt.Errorf("download: %w", copyErr) // the part stays for the next try
+		return false, fmt.Errorf("download: %w", copyErr) // the part stays for the next try
 	}
 
 	ok, err := fileMatches(part, rel.Size, rel.SHA256)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !ok {
 		_ = os.Remove(part)
 		_ = os.Remove(filepath.Join(work, partMeta))
-		return withKind(kindVerify, errors.New("download: size or sha256 mismatch"))
+		return false, withKind(kindVerify, errors.New("download: size or sha256 mismatch"))
 	}
 	if err := os.Rename(part, filepath.Join(work, packageFile)); err != nil {
-		return err
+		return false, err
 	}
 	_ = os.Remove(filepath.Join(work, partMeta))
-	return writeJSON(filepath.Join(work, readyFile), rel)
+	return false, writeJSON(filepath.Join(work, readyFile), rel)
+}
+
+// aliveReader calls alive on every read that brought bytes.
+type aliveReader struct {
+	r     io.Reader
+	alive func()
+}
+
+func (a *aliveReader) Read(p []byte) (int, error) {
+	n, err := a.r.Read(p)
+	if n > 0 {
+		a.alive()
+	}
+	return n, err
 }
 
 // copyProgress copies body into f and reports how much of the package is held,

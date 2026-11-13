@@ -1784,7 +1784,7 @@ namespace Shadowlos::Chrome {
         for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col)
             title = std::max({title, header->sectionSizeHint(col),
                               titleMetrics.horizontalAdvance(Configs::kCheckServices.value(col - ProfilesTableModel::ColServiceFirst)) +
-                                  (simple ? 52 : 16)});
+                                  (simple ? 44 : 16)});
         const int serviceCount = ProfilesTableModel::ColServiceLast - ProfilesTableModel::ColServiceFirst + 1;
         int fixed = test + traffic;
         if (simple) {
@@ -1797,7 +1797,8 @@ namespace Shadowlos::Chrome {
                     !header->isSectionHidden(col))
                     fixed += header->sectionSize(col);
         }
-        const int roomy = title + (simple ? 20 : 8);
+        // Ivan 2026-11-13: the app columns sit close together; the room left goes to traffic.
+        const int roomy = title + (simple ? 8 : 4);
         const int service = std::clamp((viewport - fixed) / serviceCount, title, roomy);
         int services = 0;
         for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col) {
@@ -1820,6 +1821,21 @@ namespace Shadowlos::Chrome {
         setWidth(ProfilesTableModel::ColTestResult, test);
         setWidth(ProfilesTableModel::ColTraffic, traffic);
         setWidth(ProfilesTableModel::ColName, name);
+        // Last guard: fonts and scaling differ between PCs (Ivan's 15.6" Windows laptop still had
+        // a sideways scroll in 1.0.23-dev), so if the row is still wider than the list, the app
+        // columns shrink further (down to their bare title), then the name.
+        int over = header->length() - viewport;
+        if (over > 0) {
+            int bare = 0;
+            for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col)
+                bare = std::max(bare, titleMetrics.horizontalAdvance(Configs::kCheckServices.value(col - ProfilesTableModel::ColServiceFirst)) +
+                                          (simple ? 30 : 8));
+            const int narrower = std::max(bare, service - (over + serviceCount - 1) / serviceCount);
+            for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col)
+                setWidth(col, narrower);
+            over = header->length() - viewport;
+        }
+        if (over > 0) setWidth(ProfilesTableModel::ColName, std::max(120, header->sectionSize(ProfilesTableModel::ColName) - over));
     }
 
     void applySimpleView(Ui::MainWindow *ui) {

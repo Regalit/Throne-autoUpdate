@@ -161,7 +161,8 @@ namespace Configs
             case GroupSortMethod::BySecurity:
             case GroupSortMethod::ByType: {
                 auto get_latency_for_sort = [](const std::shared_ptr<Profile>& prof) {
-                    auto i = prof->latency;
+                    // Shadowlos: the list shows the last full check's latency, so sort by it.
+                    auto i = prof->HasServerCheck() ? prof->CheckLatency() : 0;
                     if (i == 0) i = 100000;
                     if (i < 0) i = 99999;
                     return i;

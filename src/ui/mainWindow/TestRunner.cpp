@@ -154,8 +154,10 @@ void TestRunner::applyUrlResult(const std::shared_ptr<Configs::Profile>& ent, co
     for (size_t i = 0; i < res.services.size() && i < res.service_ms.size(); i++) {
         services.insert(QString::fromStdString(res.services[i]), res.service_ms[i]);
     }
-    ent->SetServerCheck(fullCheck && ent->latency != 0 && (!error.isEmpty() || !check.isEmpty()),
-                        failed.join(QStringLiteral(", ")), checkNet_, services);
+    // A quick latency test leaves the last full check (and its dots) as it was.
+    if (fullCheck && ent->latency != 0 && (!error.isEmpty() || !check.isEmpty())) {
+        ent->SetServerCheck(failed.join(QStringLiteral(", ")), services);
+    }
     Configs::dataManager->profilesRepo->Save(ent);
 }
 

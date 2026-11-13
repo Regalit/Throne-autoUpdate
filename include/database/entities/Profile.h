@@ -41,8 +41,6 @@ namespace Configs {
     // Shadowlos `latency` sentinel: the latency step answered but 128 KB did not get through
     // (a full server check, core probe/servercheck.go). Counts as unavailable.
     constexpr int kLatencyBlocked = -3;
-    // Shadowlos: a full check older than this is shown as "check" again, not as a result.
-    constexpr qint64 kServerCheckFreshSecs = 10 * 60;
     // Shadowlos: the services a full check asks through each server, one list column each, in
     // this order (core probe/servercheck.go checkServices).
     inline const QStringList kCheckServices = {
@@ -74,14 +72,15 @@ namespace Configs {
 
         QString runningCountryInfo; // volatile, not saved to db
 
-        // Shadowlos: the last full server check of this run is kept outside the entity, by id:
-        // the repo holds entities weakly, so a row that is not on screen is reloaded from the
-        // database and would lose it. Only a full check made on the network the PC is on now
-        // is shown as a result ("green means it opens").
+        // Shadowlos: the last full server check is kept outside the entity, by id, and in
+        // config/server-checks.json, so it survives a restart. Quick latency tests (auto
+        // selector, subscription update) do not touch it. Records `latency` as the check's answer.
         // `services`: time to each service's answer in ms, -1 when it did not open.
-        void SetServerCheck(bool full, const QString &failed, const QByteArray &net,
-                            const QHash<QString, int> &services = {}) const;
-        // What the last fresh full check says about one service; Unknown when there is none
+        void SetServerCheck(const QString &failed, const QHash<QString, int> &services = {}) const;
+        void ClearServerCheck() const;
+        // The latency the last full check got (0 = none).
+        [[nodiscard]] int CheckLatency() const;
+        // What the last full check says about one service; Unknown when there is none
         // or the server itself did not pass.
         [[nodiscard]] ServiceState CheckService(const QString &name) const;
         // Services that did not answer, e.g. "Instagram, Facebook".
@@ -95,8 +94,8 @@ namespace Configs {
         // Always set latency through here: it also stamps latency_at.
         void SetLatency(int ms);
 
-        // Shadowlos: a full check from this run, at most kServerCheckFreshSecs old, on this network.
-        [[nodiscard]] bool HasFreshServerCheck() const;
+        // Shadowlos: there is a full check result for this server (from any run).
+        [[nodiscard]] bool HasServerCheck() const;
 
         // Untested profiles are neither; a kLatencyConnectOnly tunnel counts as working.
         [[nodiscard]] bool IsWorking() const { return latency > 0 || latency == kLatencyConnectOnly; }

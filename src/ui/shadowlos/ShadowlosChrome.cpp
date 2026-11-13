@@ -37,6 +37,7 @@
 #include <QFrame>
 #include <QKeyEvent>
 #include <QRegularExpression>
+#include <QGraphicsOpacityEffect>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -1419,8 +1420,7 @@ namespace Shadowlos::ChromeImpl {
 
     // The bottom bar's left part for the view and the improve setting. Обычный:
     // «Улучшение обхода [switch]», then the blocking badge and region when it is on, or a grey
-    // hint when it is off. Продвинутый: the badge and region when it is on (the switch is in
-    // its toggles card). The same in prod and dev builds.
+    // hint when it is off. Продвинутый: the same. The same in prod and dev builds.
     void syncImprove() {
         Shell &s = shell();
         bool on = false;
@@ -1431,14 +1431,16 @@ namespace Shadowlos::ChromeImpl {
         const auto show = [](QWidget *w, bool visible) {
             if (w != nullptr && w->isVisibleTo(w->parentWidget()) != visible) w->setVisible(visible);
         };
+        // Ivan 2026-11-13: Продвинутый has the switch in the bottom bar too, as Обычный.
+        const bool bar = normal || advanced;
         const bool hasSwitch = s.improveSwitch != nullptr;
-        show(s.improveSep, hasSwitch && (normal || (advanced && on)));
-        show(s.improveLabel, hasSwitch && normal);
-        show(s.improveSwitch, hasSwitch && normal);
-        show(s.improveHint, hasSwitch && normal && !on);
-        show(s.badgeSep, hasSwitch && normal && on);
-        show(s.badge, s.badge != nullptr && on && (normal || advanced));
-        show(s.improveRow, advanced);
+        show(s.improveSep, hasSwitch && bar);
+        show(s.improveLabel, hasSwitch && bar);
+        show(s.improveSwitch, hasSwitch && bar);
+        show(s.improveHint, hasSwitch && bar && !on);
+        show(s.badgeSep, hasSwitch && bar && on);
+        show(s.badge, s.badge != nullptr && on && bar);
+        show(s.improveRow, false);
     }
 
 
@@ -1766,12 +1768,37 @@ namespace Shadowlos::Chrome {
                 if (header->sectionSize(col) < 40) header->resizeSection(col, 140);
         }
         const int viewport = table->viewport()->width();
-        const int test = fit(ProfilesTableModel::ColTestResult);
-        int traffic = fit(ProfilesTableModel::ColTraffic);
-        // The service columns hold one dot each: as wide as their title, all the same.
-        int service = 0;
+        // Test result and traffic need less air than the name to read well in a narrow window.
+        const int test = fit(ProfilesTableModel::ColTestResult) - padding / 2;
+        int traffic = fit(ProfilesTableModel::ColTraffic) - padding / 2;
+        // The service columns hold one dot each: as wide as their title, all the same. Their
+        // spare room goes first when the window is narrow, so traffic still fits and the list
+        // does not scroll sideways (Ivan 2026-11-13).
+        // The title's own width plus the sheet's section padding (24 + 12 in the simple view)
+        // and some air (the drawn title runs a little wider than these metrics),
+        // which sectionSizeHint does not count, so a narrow column never clips its title.
+        QFont titleFont = header->font();
+        if (simple) titleFont.setPixelSize(13); // the sheet's simple-view header size
+        const QFontMetrics titleMetrics(titleFont);
+        int title = 0;
         for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col)
-            service = std::max(service, header->sectionSizeHint(col) + (simple ? 20 : 8));
+            title = std::max({title, header->sectionSizeHint(col),
+                              titleMetrics.horizontalAdvance(Configs::kCheckServices.value(col - ProfilesTableModel::ColServiceFirst)) +
+                                  (simple ? 52 : 16)});
+        const int serviceCount = ProfilesTableModel::ColServiceLast - ProfilesTableModel::ColServiceFirst + 1;
+        int fixed = test + traffic;
+        if (simple) {
+            fixed += 170; // the name column's least width below
+        } else {
+            fixed += 160;
+            for (int col = 0; col < header->count(); ++col)
+                if (col < ProfilesTableModel::ColServiceFirst && col != ProfilesTableModel::ColName &&
+                    col != ProfilesTableModel::ColTestResult && col != ProfilesTableModel::ColTraffic &&
+                    !header->isSectionHidden(col))
+                    fixed += header->sectionSize(col);
+        }
+        const int roomy = title + (simple ? 20 : 8);
+        const int service = std::clamp((viewport - fixed) / serviceCount, title, roomy);
         int services = 0;
         for (int col = ProfilesTableModel::ColServiceFirst; col <= ProfilesTableModel::ColServiceLast; ++col) {
             setWidth(col, service);
@@ -1784,8 +1811,8 @@ namespace Shadowlos::Chrome {
                 others += header->sectionSize(col);
         int name;
         if (simple) {
-            name = std::clamp(fit(ProfilesTableModel::ColName), 240,
-                              std::max(240, viewport - test - services - traffic));
+            name = std::clamp(fit(ProfilesTableModel::ColName), 170,
+                              std::max(170, viewport - test - services - traffic));
             traffic = std::max(traffic, viewport - name - test - services);
         } else {
             name = std::max(160, viewport - others - test - traffic);
@@ -1907,8 +1934,8 @@ namespace Shadowlos::Chrome {
             s.viewWords[i]->setProperty("slCurrent", i == static_cast<int>(view));
             repolish(s.viewWords[i]);
         }
-        // Обычный: the toggles on one line each, «Улучшение обхода» in the bottom bar.
-        // Продвинутый: two-line toggles and «Улучшение обхода» among them, as in 1.0.13.
+        // Обычный: the toggles on one line each. Продвинутый: two-line toggles.
+        // «Улучшение обхода» is in the bottom bar in both.
         for (const auto &toggle : s.toggleLabels) {
             if (toggle.isNull()) continue;
             toggle->setProperty("slCompact", view != View::Advanced);
@@ -2049,6 +2076,58 @@ namespace Shadowlos::Chrome {
         };
         QObject::connect(tabs, &QTabWidget::currentChanged, button, showForLog);
         showForLog(tabs->currentIndex());
+    }
+
+    // Until any server in the list has a check result, a pale hint over the empty app columns
+    // says how to get one, with the «Замерить отклик» button's own icon (Ivan 2026-11-13,
+    // mockup svetofor-empty-hint-mockup-v2.png). It takes no clicks and hides itself once a
+    // result is there (results are kept across restarts, Profile.cpp server-checks.json).
+    void installCheckHint(Ui::MainWindow *ui) {
+        auto *table = ui->profilesTableView;
+        auto *viewport = table->viewport();
+        auto *hint = new QLabel(viewport);
+        hint->setObjectName(QStringLiteral("slCheckHint"));
+        hint->setAttribute(Qt::WA_TransparentForMouseEvents);
+        hint->setAlignment(Qt::AlignCenter);
+        hint->setWordWrap(true);
+        hint->setTextFormat(Qt::RichText);
+        auto *fade = new QGraphicsOpacityEffect(hint);
+        fade->setOpacity(0.55);
+        hint->setGraphicsEffect(fade);
+        hint->hide();
+        const auto sync = [table, viewport, hint] {
+            auto *model = table->model();
+            const int rows = model == nullptr ? 0 : model->rowCount();
+            bool checked = false;
+            for (int row = 0; row < rows && row < 500 && !checked; ++row)
+                checked = !model->index(row, ProfilesTableModel::ColTestResult).data().toString().isEmpty();
+            const int left = table->columnViewportPosition(ProfilesTableModel::ColServiceFirst);
+            const int right = table->columnViewportPosition(ProfilesTableModel::ColServiceLast) +
+                              table->columnWidth(ProfilesTableModel::ColServiceLast);
+            const bool show = rows > 0 && !checked && table->isVisible() && left >= 0 && right - left > 160;
+            if (!show) {
+                if (hint->isVisible()) hint->hide();
+                return;
+            }
+            const bool simple = table->property("slSimple").toBool();
+            const int px = simple ? 15 : 12;
+            const int icon = simple ? 16 : 13;
+            const QString text = QStringLiteral(
+                "<span style=\"color:#8A979D; font-size:%1px;\">Чтобы узнать, какие приложения открываются "
+                "через каждый сервер,<br>нажмите кнопку&nbsp;<img src=\":/shadowlos/icons/latency@2x.png\" "
+                "width=\"%2\" height=\"%2\" style=\"vertical-align:middle\">&nbsp;Замерить отклик</span>")
+                .arg(px).arg(icon);
+            if (hint->text() != text) hint->setText(text);
+            int bottom = table->rowViewportPosition(rows - 1) + table->rowHeight(rows - 1);
+            bottom = std::min(std::max(bottom, 0), viewport->height());
+            const QRect area(left, 0, right - left, std::max(bottom, hint->sizeHint().height()));
+            if (hint->geometry() != area) hint->setGeometry(area);
+            if (!hint->isVisible()) hint->show();
+        };
+        auto *timer = new QTimer(hint);
+        timer->setInterval(400);
+        QObject::connect(timer, &QTimer::timeout, hint, sync);
+        timer->start();
     }
 
     // Measures latency once at startup, as the "Measure latency" pill would, as soon as the
@@ -2413,6 +2492,7 @@ namespace Shadowlos::Chrome {
             else if (demoHas("advanced")) view = View::Advanced;
             applyView(view, false);
             installStartupLatencyTest(window, ui);
+            installCheckHint(ui);
             installLogPause(ui);
             if (demoHas("max")) {
                 // The primary screen's whole work area, once the test has put the window on screen

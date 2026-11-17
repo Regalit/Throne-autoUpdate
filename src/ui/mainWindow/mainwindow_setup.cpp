@@ -279,9 +279,43 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->menu_start->setShortcuts({QKeySequence(Qt::Key_Return), QKeySequence(Qt::Key_Enter)});
     connect(ui->menu_start, &QAction::triggered, this, [=,this]() { profile_start(); });
     connect(ui->menu_stop, &QAction::triggered, this, [=,this]() { profile_stop(false, false, true); });
+    // Shadowlos (Ivan 2026-11-17): servers now rotate every few hours, so the power button
+    // refreshes the subscription each time. «Вкл» waits for the fresh list (at most
+    // kRefreshBeforeStartMs, then starts with what it has); «Выкл» refreshes once the tunnel is
+    // down, so the next «Вкл» already has it.
     connect(ui->toolButton_startstop, &QAbstractButton::clicked, this, [=,this]() {
-        if (running != nullptr) profile_stop(false, false, true);
-        else profile_start();
+        static bool waitingForList = false;
+        if (running != nullptr) {
+            profile_stop(false, false, true);
+            QTimer::singleShot(2000, this, [] { Subscription::updater()->RefreshAll(false); });
+            return;
+        }
+        if (waitingForList) return;
+        const int startId = get_profile_to_start();
+        const auto ent = startId >= 0 ? Configs::dataManager->profilesRepo->GetProfile(startId) : nullptr;
+        const auto group = ent != nullptr ? Configs::dataManager->groupsRepo->GetGroup(ent->gid) : nullptr;
+        if (group == nullptr || group->url.isEmpty() || group->archive) {
+            profile_start();
+            return;
+        }
+        constexpr int kRefreshBeforeStartMs = 8000;
+        waitingForList = true;
+        static_cast<StartStopButton *>(ui->toolButton_startstop)->setState(StartStopButton::State::Connecting);
+        MW_show_log(tr("Updating the server list before connecting..."));
+        auto done = std::make_shared<bool>(false);
+        const QPointer<MainWindow> self(this);
+        const auto startNow = [self, done, startId] {
+            if (*done || self.isNull()) return;
+            *done = true;
+            waitingForList = false;
+            if (self->running != nullptr) return;
+            // The refresh keeps a server's id when it only changed its settings; a server that
+            // left the list is gone, and then the usual pick decides.
+            if (Configs::dataManager->profilesRepo->GetProfile(startId) != nullptr) self->profile_start(startId);
+            else self->profile_start();
+        };
+        Subscription::updater()->RefreshGroup(group->id, [startNow] { runOnUiThread(startNow); }, false);
+        QTimer::singleShot(kRefreshBeforeStartMs, this, startNow);
     });
     connect(ui->tabWidget->tabBar(), &QTabBar::tabMoved, this, [=,this](int from, int to) {
         QList<int> tabOrder;

@@ -377,7 +377,7 @@ namespace Shadowlos::ChromeImpl {
         void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override {
             const bool running = Shadowlos::Chrome::ThemeActive() && isRunningRow(index);
             if (running) painter->fillRect(option.rect, hex(0x1A374D));
-            QStyledItemDelegate::paint(painter, option, index);
+            if (!paintKeptColour(painter, option, index)) QStyledItemDelegate::paint(painter, option, index);
             if (!running) return;
 
             // After the base paint, which draws the sheet's row separator over the bottom edge.
@@ -391,6 +391,36 @@ namespace Shadowlos::ChromeImpl {
                 painter->drawLine(r.topRight(), r.bottomRight());
             }
             painter->restore();
+        }
+
+    private:
+        // Ivan 2026-11-17: a selected row kept its traffic light and latency colours. The sheet's
+        // ::item:selected colour (white) overrides the model's colour, so these cells draw their
+        // background through the style and their text here, in the cell's own colour.
+        bool paintKeptColour(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const {
+            if (!Shadowlos::Chrome::ThemeActive() || !(option.state & QStyle::State_Selected)) return false;
+            const int col = index.column();
+            if (col != ProfilesTableModel::ColTestResult &&
+                (col < ProfilesTableModel::ColServiceFirst || col > ProfilesTableModel::ColServiceLast))
+                return false;
+            if (!index.data(Qt::ForegroundRole).isValid()) return false;
+            QStyleOptionViewItem opt(option);
+            initStyleOption(&opt, index);
+            const QString text = opt.text;
+            opt.text.clear();
+            const QWidget *widget = option.widget;
+            QStyle *style = widget != nullptr ? widget->style() : QApplication::style();
+            style->drawControl(QStyle::CE_ItemViewItem, &opt, painter, widget);
+            // The same inset the style gives item text (QCommonStyle's viewItemDrawText).
+            const int margin = style->pixelMetric(QStyle::PM_FocusFrameHMargin, nullptr, widget) + 1;
+            const QRect textRect =
+                style->subElementRect(QStyle::SE_ItemViewItemText, &opt, widget).adjusted(margin, 0, -margin, 0);
+            painter->save();
+            painter->setFont(opt.font);
+            painter->setPen(opt.palette.color(QPalette::Text));
+            painter->drawText(textRect, int(opt.displayAlignment), QFontMetrics(opt.font).elidedText(text, opt.textElideMode, textRect.width()));
+            painter->restore();
+            return true;
         }
 
     protected:

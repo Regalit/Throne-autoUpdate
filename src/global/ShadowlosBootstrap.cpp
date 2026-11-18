@@ -85,6 +85,24 @@ namespace Shadowlos {
             settings->Save();
         }
 
+        // Sites failing to open on the first try in TUN mode (Логи К4, 18.11): the default remote
+        // DNS was DoH, one HTTP/2 connection for every query, and the core resets that connection
+        // whenever a single query times out, failing all the others in flight with it («http2:
+        // client connection force closed»). DoT keeps queries apart and asks a broken one again on
+        // a new connection. The optimistic cache answers a known name at once while it refreshes,
+        // and the cache is kept across restarts. Applied once; a user's own values stay.
+        void applyDnsDefaults() {
+            constexpr int kDnsRevision = 1;
+            auto* settings = Configs::dataManager->settingsRepo.get();
+            if (settings->shadowlos_dns_revision >= kDnsRevision) return;
+            if (settings->remote_dns == QStringLiteral("https://8.8.8.8/dns-query")) settings->remote_dns = QStringLiteral("tls://8.8.8.8");
+            if (!settings->dns_disable_cache && !settings->dns_disable_expire) settings->dns_optimistic = true;
+            settings->dns_persist_cache = true;
+            if (settings->dns_query_timeout.isEmpty()) settings->dns_query_timeout = QStringLiteral("5s");
+            settings->shadowlos_dns_revision = kDnsRevision;
+            settings->Save();
+        }
+
         // Installs made before the rename still carry the old names ("Default" from upstream,
         // "Shadowlos" from the archive); they get the names new installs get.
         void renameRoutes() {
@@ -275,6 +293,7 @@ namespace Shadowlos {
         applyUiDefaults();
         renameRoutes();
         applyTestDefaults();
+        applyDnsDefaults();
 
         QFile file(QDir::current().filePath(BootstrapFileName));
         if (!file.exists()) return; // plain upstream build, nothing to do

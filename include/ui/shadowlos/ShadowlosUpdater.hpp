@@ -30,6 +30,10 @@ namespace Shadowlos::Updater {
     // While the package is still missing the connect is allowed, so it can come through the VPN.
     bool MustUpdateBeforeConnect();
 
+    // A connect came up. An update download left unfinished (direct downloads are often cut
+    // on the user's network, through the VPN they finish) goes on through the VPN at once.
+    void Connected();
+
     // After an update: the profile that was running before it, once; -1 otherwise.
     int TakeResumeProfile();
 

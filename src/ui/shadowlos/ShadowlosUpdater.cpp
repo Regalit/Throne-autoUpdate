@@ -534,6 +534,7 @@ namespace Shadowlos::Updater {
                 const auto &settings = Configs::dataManager->settingsRepo;
                 args << QStringLiteral("-proxy")
                      << QStringLiteral("http://%1:%2").arg(settings->inbound_address).arg(settings->inbound_socks_port);
+                proc->setProperty("slTunnel", true);
             }
             proc->start(coreExe(), args);
         }
@@ -669,6 +670,29 @@ namespace Shadowlos::Updater {
 #else
         Q_UNUSED(resumeProfileId)
         return false;
+#endif
+    }
+
+    void Connected() {
+#ifdef Q_OS_WIN
+        // Only an unfinished download is worth it; the regular checks find anything else.
+        if (!state().button || packageReady() || !QFileInfo::exists(workDir() + QStringLiteral("/pkg.part"))) return;
+        // A few seconds for the tunnel to settle, then the download goes on through it.
+        QTimer::singleShot(3000, state().button, [] {
+            if (!vpnOn() || state().applying) return;
+            QPointer<QProcess> proc = currentCheck();
+            if (!proc) {
+                runCheck(false);
+                return;
+            }
+            if (proc->property("slTunnel").toBool()) return; // already through the VPN
+            // A check started before the connect goes direct only: stop it, the part stays
+            // and the next check resumes it through the tunnel.
+            QObject::connect(proc, &QProcess::finished, state().button, [] {
+                QTimer::singleShot(500, state().button, [] { runCheck(false); });
+            });
+            proc->kill();
+        });
 #endif
     }
 

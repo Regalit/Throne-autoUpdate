@@ -41,6 +41,8 @@ type checkResult struct {
 	MinCode int `json:"min_code,omitempty"`
 	// How a download went, for the journal; nil when nothing was downloaded.
 	Download *downloadStats `json:"download,omitempty"`
+	// How the direct route found our server when its name did not resolve: doh or cache; empty when it did.
+	Fallback string `json:"fallback,omitempty"`
 }
 
 // downloadStats is one check's download: no addresses, only counts.
@@ -57,9 +59,19 @@ type downloadStats struct {
 // download start and then drops its packets): cut it and resume at once, not at the next check.
 var stallTimeout = 15 * time.Second
 
-// Attempts in one check. An attempt that brought nothing counts double, so a dead route
-// ends the check after a few tries while a route that keeps moving bytes is kept going.
-const maxDownloadAttempts = 8
+// One check downloads for at most downloadBudget and maxDownloadAttempts connections. A route
+// that brings nothing twice in a row gives way to the next, so a dead route ends the check after
+// a few tries while a route that keeps moving bytes is kept going.
+var downloadBudget = 30 * time.Minute
+
+const maxDownloadAttempts = 60
+
+// retryPause is the wait before the next attempt after a broken one.
+var retryPause = 2 * time.Second
+
+// chunkSize is how much one request asks for; 0 asks for the rest of the file.
+// 4 MB: on the networks seen in the logs a connection freezes after about 9 MB (18.11).
+var chunkSize int64 = 4 << 20
 
 // route is one way out for the package download.
 type route struct {
@@ -143,14 +155,19 @@ func runCheck(args []string) error {
 		return err
 	}
 	progress := &progressPrinter{out: os.Stdout, every: progressEvery, now: time.Now}
-	direct := &http.Client{Timeout: 10 * time.Minute}
+	// The direct route finds our server a second way when the name does not resolve (resolve.go).
+	fallback := newFallbackDialer(*work)
+	directTransport := http.DefaultTransport.(*http.Transport).Clone()
+	directTransport.DialContext = fallback.DialContext
+	direct := &http.Client{Timeout: 10 * time.Minute, Transport: directTransport}
 	routes := []route{{"direct", direct}}
 	if u, err := url.Parse(*proxy); *proxy != "" && err == nil {
 		tunnel := &http.Client{Timeout: 10 * time.Minute, Transport: &http.Transport{Proxy: http.ProxyURL(u)}}
 		routes = []route{{"tunnel", tunnel}, {"direct", direct}}
 	}
 	res := checkRoutes(direct, routes, strings.TrimRight(*base, "/"), *appID, *code, *work, progress.report)
-	logf(*work, "check: %s %s %d %s %s", res.State, res.Version, res.Code, res.Kind, res.Error)
+	res.Fallback = fallback.Used()
+	logf(*work, "check: %s %s %d %s %s %s", res.State, res.Version, res.Code, res.Kind, res.Error, res.Fallback)
 	if d := res.Download; d != nil {
 		logf(*work, "download: %d of %d, resumed at %d, %s, %d attempts, %d stalls", d.Done, d.Size, d.Resumed, d.Route, d.Attempts, d.Stalls)
 	}
@@ -210,7 +227,9 @@ func checkRoutes(client *http.Client, routes []route, base, appID string, code i
 
 // downloadRoutes keeps the download going through freezes and broken connections: every attempt
 // resumes the part file, a route that brings nothing twice in a row gives way to the next one,
-// and only a network error is tried again.
+// and only a network error is tried again. While attempts keep bringing bytes the check goes on
+// until downloadBudget is spent, not after a fixed number of tries: a network that cuts every
+// connection after ~10 MB needs seven good attempts in a row for one 68 MB package.
 func downloadRoutes(routes []route, base string, rel *Release, work string,
 	progress func(version string, done, size int64)) (*downloadStats, error) {
 	held := func() int64 {
@@ -227,7 +246,8 @@ func downloadRoutes(routes []route, base string, rel *Release, work string,
 	stats.Done = stats.Resumed
 	var err error
 	idx, idle := 0, 0
-	for budget := maxDownloadAttempts; budget > 0 && idx < len(routes); {
+	deadline := time.Now().Add(downloadBudget)
+	for idx < len(routes) && stats.Attempts < maxDownloadAttempts {
 		before := held()
 		stats.Route = routes[idx].name
 		stats.Attempts++
@@ -245,15 +265,15 @@ func downloadRoutes(routes []route, base string, rel *Release, work string,
 		if !errors.As(err, &ke) || ke.kind != kindNetwork {
 			return stats, err
 		}
-		budget--
+		if time.Now().After(deadline) {
+			break
+		}
 		if stats.Done > before {
 			idle = 0
-			continue
-		}
-		budget--
-		if idle++; idle >= 2 {
+		} else if idle++; idle >= 2 {
 			idx, idle = idx+1, 0
 		}
+		time.Sleep(retryPause)
 	}
 	return stats, err
 }
@@ -283,9 +303,11 @@ func fetchLatest(client *http.Client, base string) (*Release, error) {
 	return &rel, nil
 }
 
-// download fetches the package into pkg.part, resuming a part of the same
-// release, and only renames it to pkg.zip once size and sha256 match. stalled
-// is set when the attempt was cut for carrying nothing for stallTimeout.
+// download fetches the package into pkg.part in chunks of chunkSize, resuming a part of
+// the same release, and only renames it to pkg.zip once size and sha256 match. Every chunk
+// is its own request on a fresh connection: some networks cut a long download from a
+// foreign address after about two minutes, and a chunk is over before that. stalled is set
+// when the attempt was cut for carrying nothing for stallTimeout.
 func download(client *http.Client, base string, rel *Release, work string,
 	progress func(version string, done, size int64)) (stalled bool, err error) {
 	part := filepath.Join(work, partFile)
@@ -301,51 +323,15 @@ func download(client *http.Client, base string, rel *Release, work string,
 			return false, err
 		}
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	// Cuts the attempt when neither the answer nor a byte of the body came for stallTimeout.
-	var cut atomic.Bool
-	watchdog := time.AfterFunc(stallTimeout, func() { cut.Store(true); cancel() })
-	defer func() {
-		watchdog.Stop()
-		stalled = err != nil && cut.Load()
-	}()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/download?platform=windows", nil)
-	if err != nil {
-		return false, err
-	}
-	if have > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", have))
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, withKind(kindNetwork, err)
-	}
-	defer resp.Body.Close()
-
-	flags := os.O_WRONLY | os.O_CREATE
-	switch {
-	case have > 0 && resp.StatusCode == http.StatusPartialContent:
-		flags |= os.O_APPEND
-	case resp.StatusCode == http.StatusOK:
-		flags |= os.O_TRUNC
-		have = 0
-	default:
-		return false, withKind(kindServer, fmt.Errorf("download: HTTP %d", resp.StatusCode))
-	}
-	f, err := os.OpenFile(part, flags, 0o644)
-	if err != nil {
-		return false, err
-	}
-	body := &aliveReader{r: io.LimitReader(resp.Body, rel.Size-have+1), alive: func() { watchdog.Reset(stallTimeout) }}
-	copyErr := copyProgress(f, body, have, rel, progress)
-	if err := f.Close(); copyErr == nil {
-		copyErr = err
-	}
-	if copyErr != nil {
-		return false, fmt.Errorf("download: %w", copyErr) // the part stays for the next try
+	for have < rel.Size {
+		end := rel.Size
+		if chunkSize > 0 && have+chunkSize < end {
+			end = have + chunkSize
+		}
+		have, stalled, err = fetchChunk(client, base, rel, part, have, end, progress)
+		if err != nil {
+			return stalled, err
+		}
 	}
 
 	ok, err := fileMatches(part, rel.Size, rel.SHA256)
@@ -362,6 +348,73 @@ func download(client *http.Client, base string, rel *Release, work string,
 	}
 	_ = os.Remove(filepath.Join(work, partMeta))
 	return false, writeJSON(filepath.Join(work, readyFile), rel)
+}
+
+// fetchChunk asks for bytes have..end-1 of the package and appends them to part. It returns
+// how much of the package part holds afterwards. A server that ignores Range answers 200
+// with the whole file: part is then written from the start, to the end.
+func fetchChunk(client *http.Client, base string, rel *Release, part string, have, end int64,
+	progress func(version string, done, size int64)) (held int64, stalled bool, err error) {
+	held = have
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Cuts the attempt when neither the answer nor a byte of the body came for stallTimeout.
+	var cut atomic.Bool
+	watchdog := time.AfterFunc(stallTimeout, func() { cut.Store(true); cancel() })
+	defer func() {
+		watchdog.Stop()
+		stalled = err != nil && cut.Load()
+	}()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/download?platform=windows", nil)
+	if err != nil {
+		return held, false, err
+	}
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", have, end-1))
+	req.Close = true // a fresh connection per chunk, see download
+	resp, err := client.Do(req)
+	if err != nil {
+		return held, false, withKind(kindNetwork, err)
+	}
+	defer resp.Body.Close()
+
+	flags := os.O_WRONLY | os.O_CREATE
+	var want int64
+	switch resp.StatusCode {
+	case http.StatusPartialContent:
+		var start int64 = -1
+		_, _ = fmt.Sscanf(resp.Header.Get("Content-Range"), "bytes %d-", &start)
+		if start != have {
+			return held, false, withKind(kindServer, fmt.Errorf("download: range %q for %d", resp.Header.Get("Content-Range"), have))
+		}
+		if have > 0 {
+			flags |= os.O_APPEND
+		} else {
+			flags |= os.O_TRUNC
+		}
+		want = end - have
+	case http.StatusOK:
+		flags |= os.O_TRUNC
+		have, held, want = 0, 0, rel.Size
+	default:
+		return held, false, withKind(kindServer, fmt.Errorf("download: HTTP %d", resp.StatusCode))
+	}
+	f, err := os.OpenFile(part, flags, 0o644)
+	if err != nil {
+		return held, false, err
+	}
+	body := &aliveReader{r: io.LimitReader(resp.Body, want), alive: func() { watchdog.Reset(stallTimeout) }}
+	held, copyErr := copyProgress(f, body, have, rel, progress)
+	if err := f.Close(); copyErr == nil {
+		copyErr = err
+	}
+	if copyErr != nil {
+		return held, false, fmt.Errorf("download: %w", copyErr) // the part stays for the next try
+	}
+	if held < have+want {
+		return held, false, withKind(kindNetwork, fmt.Errorf("download: body ended at %d of %d", held, have+want))
+	}
+	return held, false, nil
 }
 
 // aliveReader calls alive on every read that brought bytes.
@@ -382,7 +435,7 @@ func (a *aliveReader) Read(p []byte) (int, error) {
 // counting the have bytes of a resumed part. A read error is the network's, a
 // write error the disk's.
 func copyProgress(f io.Writer, body io.Reader, have int64, rel *Release,
-	progress func(version string, done, size int64)) error {
+	progress func(version string, done, size int64)) (int64, error) {
 	report := func(done int64) {
 		if progress != nil {
 			progress(rel.Version, min(done, rel.Size), rel.Size)
@@ -394,16 +447,16 @@ func copyProgress(f io.Writer, body io.Reader, have int64, rel *Release,
 		n, rerr := body.Read(buf)
 		if n > 0 {
 			if _, werr := f.Write(buf[:n]); werr != nil {
-				return withKind(kindDisk, werr)
+				return have, withKind(kindDisk, werr)
 			}
 			have += int64(n)
 			report(have)
 		}
 		if rerr == io.EOF {
-			return nil
+			return have, nil
 		}
 		if rerr != nil {
-			return withKind(kindNetwork, rerr)
+			return have, withKind(kindNetwork, rerr)
 		}
 	}
 }

@@ -1,6 +1,7 @@
 package selfupdate
 
 import (
+	"fmt"
 	"archive/zip"
 	"bytes"
 	"crypto/ed25519"
@@ -30,6 +31,7 @@ func TestMain(m *testing.M) {
 	case "crash":
 		os.Exit(3)
 	}
+	retryPause = 0
 	os.Exit(m.Run())
 }
 
@@ -93,7 +95,7 @@ func (f *fakeServer) start(t *testing.T) string {
 				}
 				return
 			}
-			if n == 1 && f.cutAfter > 0 && r.Header.Get("Range") == "" {
+			if n == 1 && f.cutAfter > 0 {
 				w.Header().Set("Content-Length", "999999")
 				w.Write(f.pkg[:f.cutAfter])
 				w.(http.Flusher).Flush()
@@ -193,7 +195,7 @@ func TestCheckResumesCutDownload(t *testing.T) {
 	if res.State != "ready" {
 		t.Fatalf("got %+v", res)
 	}
-	if len(f.ranges) != 2 || f.ranges[1] != "bytes=100-" {
+	if want := fmt.Sprintf("bytes=100-%d", len(pkg)-1); len(f.ranges) != 2 || f.ranges[1] != want {
 		t.Fatalf("second download did not resume: ranges %q", f.ranges)
 	}
 	if d := res.Download; d == nil || d.Attempts != 2 || d.Done != int64(len(pkg)) || d.Route != "direct" {
@@ -409,4 +411,98 @@ func TestCheckSweepsLeftoversOfAFinishedApply(t *testing.T) {
 	if !exists(filepath.Join(work, previousDir)) {
 		t.Fatal("previous swept while an apply still has to be undone")
 	}
+}
+
+// A network that cuts every connection after a few bytes (as some filters do with a long
+// download from abroad) still gets the whole package in one check: each chunk is a fresh
+// request, and attempts that keep bringing bytes are not counted against a small budget.
+func TestCheckDownloadsInChunksThroughConnectionCuts(t *testing.T) {
+	useTestKey(t)
+	old := chunkSize
+	chunkSize = 30000
+	t.Cleanup(func() { chunkSize = old })
+	pkg := noisy(400000)
+	rel := release(pkg, 10001, testPriv)
+	const cutAt = 50000 // more than a chunk, so a chunk passes; a whole-file request never would
+	var ranges []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/latest") {
+			json.NewEncoder(w).Encode(rel)
+			return
+		}
+		ranges = append(ranges, r.Header.Get("Range"))
+		from, to := 0, len(pkg)-1
+		fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &from, &to)
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", from, to, len(pkg)))
+		w.Header().Set("Content-Length", strconv.Itoa(to-from+1))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(pkg[from:min(to+1, from+cutAt)])
+		w.(http.Flusher).Flush()
+		if to+1 > from+cutAt { // the filter's cut
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	res := check(http.DefaultClient, srv.URL, "shadowlos-throne-dev", 10000, t.TempDir())
+	if res.State != "ready" {
+		t.Fatalf("got %+v", res)
+	}
+	if want := (len(pkg) + 29999) / 30000; len(ranges) != want {
+		t.Fatalf("%d requests, want %d: %q", len(ranges), want, ranges)
+	}
+	if ranges[0] != "bytes=0-29999" || ranges[1] != "bytes=30000-59999" {
+		t.Fatalf("ranges %q", ranges[:2])
+	}
+}
+
+// A connection cut in the middle of every chunk: many attempts, each bringing bytes,
+// and the check keeps going past the old limit of 8 until the package is whole.
+func TestCheckKeepsGoingWhileAttemptsBringBytes(t *testing.T) {
+	useTestKey(t)
+	old := chunkSize
+	chunkSize = 0 // one request for the rest of the file
+	t.Cleanup(func() { chunkSize = old })
+	pkg := noisy(300000)
+	rel := release(pkg, 10001, testPriv)
+	const perConn = 20000
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/latest") {
+			json.NewEncoder(w).Encode(rel)
+			return
+		}
+		var from int
+		fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-", &from)
+		to := min(from+perConn, len(pkg))
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", from, len(pkg)-1, len(pkg)))
+		w.Header().Set("Content-Length", strconv.Itoa(len(pkg)-from))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(pkg[from:to])
+		w.(http.Flusher).Flush()
+		if to < len(pkg) {
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Close()
+		}
+	}))
+	t.Cleanup(srv.Close)
+	res := check(http.DefaultClient, srv.URL, "shadowlos-throne-dev", 10000, t.TempDir())
+	if res.State != "ready" {
+		t.Fatalf("got %+v", res)
+	}
+	if d := res.Download; d == nil || d.Attempts <= 8 {
+		t.Fatalf("stats %+v", res.Download)
+	}
+}
+
+// noisy is n bytes that do not compress, so a test package really is n bytes long.
+func noisy(n int) []byte {
+	b := make([]byte, n)
+	x := uint32(2463534242)
+	for i := range b {
+		x ^= x << 13
+		x ^= x >> 17
+		x ^= x << 5
+		b[i] = byte(x)
+	}
+	return b
 }

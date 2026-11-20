@@ -20,9 +20,13 @@ public:
         ColAddress,
         ColName,
         ColTestResult,
+        // Shadowlos: one column per checked service (Configs::kCheckServices), a coloured dot.
+        ColServiceFirst,
+        ColServiceLast = ColServiceFirst + 6,
         ColTraffic,
         ColumnCount,
     };
+    static bool isServiceColumn(int column) { return column >= ColServiceFirst && column <= ColServiceLast; }
 
     struct FilterKey {
         QString type;

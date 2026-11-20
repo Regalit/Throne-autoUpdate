@@ -30,6 +30,15 @@ public:
 
     void runUrlTests(const QList<int>& profileIDs, const std::function<void()>& onFinished = {});
 
+    // Shadowlos: the user's own test. After the latency step each server also has to carry 128 KB
+    // and answer for YouTube, Instagram and Facebook; only this fills the Test column. UI thread.
+    void runServerChecks(const QList<int>& profileIDs);
+
+    // Shadowlos: the text for a full check of the live connection (TestReq.test_current with
+    // full_check): "87 ms", "87 ms, does not open: Instagram" or "blocked"; empty when the
+    // latency step itself failed.
+    static QString serverCheckText(const libcore::URLTestResp& res);
+
     // Waits out a running session instead of refusing it; returns at once and is safe from any thread.
     void queueUrlTests(const QList<int>& profileIDs, const std::function<void()>& onFinished);
 
@@ -60,16 +69,17 @@ private:
     };
 
     void runLatencyGroup(LatencyKind kind, const QList<int>& requestedIDs,
-                         const std::function<void()>& onFinished, bool waitForSession = false);
+                         const std::function<void()>& onFinished, bool waitForSession = false,
+                         bool fullCheck = false);
 
-    void runUrlProbe(const Target& target);
+    void runUrlProbe(const Target& target, bool fullCheck);
 
     void runIpProbe(const Target& target);
 
     void runSpeedProbe(const Target& target);
 
     void applyUrlResult(const std::shared_ptr<Configs::Profile>& ent, const libcore::URLTestResp& res,
-                        const QHash<QString, bool>* vpnConnected = nullptr);
+                        const QHash<QString, bool>* vpnConnected = nullptr, bool fullCheck = false);
 
     void applyIpResult(const std::shared_ptr<Configs::Profile>& ent, const libcore::IPTestRes& res);
 
@@ -92,6 +102,10 @@ private:
     std::atomic<quint64> sessionGen_ = 0;
     std::atomic<bool> stopRequested_ = false;
     std::atomic<bool> testingCurrent_ = false;
+    // Shadowlos: the network a runServerChecks session was started on (set on the UI thread
+    // before the session, read by its probes).
+    QByteArray checkNet_;
+    QString checkNetType_;
 
     // Tests bypass the clash tracker, so their bytes are counted only here, diffed per tag.
     QMutex creditMu_;

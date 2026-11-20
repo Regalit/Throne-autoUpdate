@@ -98,6 +98,32 @@ QVariant ProfilesTableModel::data(const QModelIndex &index, int role) const {
     const bool isRunning = (profile->id == startedId);
     QColor linkColor = isRunning ? QApplication::palette().link().color() : QColor();
 
+    if (isServiceColumn(index.column())) {
+        const auto name = Configs::kCheckServices.value(index.column() - ColServiceFirst);
+        const auto state = profile->CheckService(name);
+        switch (role) {
+        case Qt::DisplayRole:
+            return state == Configs::ServiceState::Unknown ? QString() : QStringLiteral("\u25CF");
+        case Qt::TextAlignmentRole:
+            return int(Qt::AlignCenter);
+        case Qt::ForegroundRole:
+            switch (state) {
+            case Configs::ServiceState::Opens: return QColor(0x4F, 0xC4, 0x6A);
+            case Configs::ServiceState::Slow: return QColor(0xE0, 0xB2, 0x3A);
+            case Configs::ServiceState::Fails: return QColor(0xE2, 0x57, 0x4C);
+            default: return {};
+            }
+        case Qt::ToolTipRole:
+            switch (state) {
+            case Configs::ServiceState::Opens: return tr("%1 opens").arg(name);
+            case Configs::ServiceState::Slow: return tr("%1 opens slowly").arg(name);
+            case Configs::ServiceState::Fails: return tr("%1 does not open").arg(name);
+            default: return {};
+            }
+        default:
+            return {};
+        }
+    }
     if (role == Qt::DisplayRole) {
         switch (index.column()) {
         case ColType: {
@@ -135,6 +161,11 @@ QVariant ProfilesTableModel::data(const QModelIndex &index, int role) const {
 }
 
 QVariant ProfilesTableModel::headerData(int section, Qt::Orientation orientation, int role) const {
+    if (orientation == Qt::Horizontal && isServiceColumn(section)) {
+        if (role == Qt::DisplayRole) return Configs::kCheckServices.value(section - ColServiceFirst);
+        if (role == Qt::TextAlignmentRole) return int(Qt::AlignCenter);
+        return {};
+    }
     if (role != Qt::DisplayRole) return {};
     if (orientation == Qt::Horizontal) {
         switch (section) {

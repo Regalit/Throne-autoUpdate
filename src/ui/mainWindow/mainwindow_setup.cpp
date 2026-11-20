@@ -279,9 +279,18 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->menu_start->setShortcuts({QKeySequence(Qt::Key_Return), QKeySequence(Qt::Key_Enter)});
     connect(ui->menu_start, &QAction::triggered, this, [=,this]() { profile_start(); });
     connect(ui->menu_stop, &QAction::triggered, this, [=,this]() { profile_stop(false, false, true); });
+    // Shadowlos (Ivan 2026-11-17/18): servers now rotate every few hours, so the power button
+    // refreshes the subscription each time. «Вкл» connects at once with the saved list and
+    // refreshes the subscription alongside, so a changed config is there next time; «Выкл»
+    // refreshes once the tunnel is down.
     connect(ui->toolButton_startstop, &QAbstractButton::clicked, this, [=,this]() {
-        if (running != nullptr) profile_stop(false, false, true);
-        else profile_start();
+        if (running != nullptr) {
+            profile_stop(false, false, true);
+            QTimer::singleShot(2000, this, [] { Subscription::updater()->RefreshAll(false); });
+            return;
+        }
+        profile_start();
+        Subscription::updater()->RefreshAll(false);
     });
     connect(ui->tabWidget->tabBar(), &QTabBar::tabMoved, this, [=,this](int from, int to) {
         QList<int> tabOrder;
@@ -462,6 +471,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
             action.method = GroupSortMethod::ByTestResult;
         } else if (logicalIndex == ProfilesTableModel::ColTraffic) {
             action.method = GroupSortMethod::ByTraffic;
+        } else if (ProfilesTableModel::isServiceColumn(logicalIndex)) {
+            action.method = GroupSortMethod::ByService;
+            action.service = Configs::kCheckServices.value(logicalIndex - ProfilesTableModel::ColServiceFirst);
         } else {
             return;
         }
@@ -1009,10 +1021,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         refresh_proxy_list();
     });
     connect(ui->actionUrl_Test_Selected, &QAction::triggered, this, [=,this]() {
-        testRunner->runUrlTests(get_now_selected_list());
+        testRunner->runServerChecks(get_now_selected_list());
     });
     connect(ui->actionUrl_Test_Group, &QAction::triggered, this, [=,this]() {
-        testRunner->runUrlTests(Configs::dataManager->groupsRepo->CurrentGroup()->Profiles());
+        testRunner->runServerChecks(Configs::dataManager->groupsRepo->CurrentGroup()->Profiles());
     });
     connect(ui->actionSpeedtest_Current, &QAction::triggered, this, [=,this]()
     {

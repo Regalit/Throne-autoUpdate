@@ -2,6 +2,7 @@
 
 #include "include/ui/mainwindow.h"
 #include "include/ui/stats/dialog_endpoint_details.h"
+#include "include/ui/mainWindow/TestRunner.h"
 #include "include/api/RPC.h"
 #include "include/configs/sub/GroupUpdater.hpp"
 #include "include/stats/traffic/TrafficLooper.hpp"
@@ -358,12 +359,13 @@ void RuntimeStatsWidget::probeEgress() {
             libcore::TestReq req;
             req.test_current = true;
             req.url = Configs::dataManager->settingsRepo->test_latency_url.toStdString();
+            req.full_check = true; // Shadowlos: the number means sites open
             bool ok = false;
-            const auto res = API::defaultClient->Test(&ok, req);
+            const auto res = API::defaultClient->Test(&ok, req, nullptr, 30000);
             if (ok && !res.results.empty()) {
                 const int lat = res.results[0].latency_ms.value();
                 const auto vpnText = lat > 0 ? QString() : MainWindow::liveVpnConnectOkText();
-                pingText = lat > 0 ? QStringLiteral("%1 ms").arg(lat)
+                pingText = lat > 0 ? TestRunner::serverCheckText(res.results[0])
                                    : (vpnText.isEmpty() ? RuntimeStatsWidget::tr("Unavailable") : vpnText);
             } else {
                 pingText = RuntimeStatsWidget::tr("N/A");

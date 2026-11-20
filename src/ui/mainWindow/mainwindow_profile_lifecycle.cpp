@@ -26,6 +26,7 @@
 #include "include/global/RunningProfiles.hpp"
 #include "include/global/VpnCredentialOverride.hpp"
 #include "include/ui/profile/dialog_vpn_auth.h"
+#include "include/ui/shadowlos/ShadowlosUpdater.hpp"
 #include "include/ui/shadowlos/ShadowlosChrome.hpp"
 #include "include/ui/shadowlos/ShadowlosErrorText.hpp"
 #include "include/ui/shadowlos/ShadowlosJournal.hpp"
@@ -231,6 +232,8 @@ bool MainWindow::handleXrayGeoAssetError(const QString& error, const QString& co
 
 void MainWindow::profile_start(int _id) {
     if (Configs::dataManager->settingsRepo->prepare_exit) return;
+    // Shadowlos: a build the update channel no longer supports installs its update first.
+    if (Shadowlos::Updater::MustUpdateBeforeConnect()) return;
 #ifdef Q_OS_LINUX
     if (Configs::dataManager->settingsRepo->enable_dns_server && Configs::dataManager->settingsRepo->dns_server_listen_port <= 1024) {
         if (!get_elevated_permissions()) {
@@ -435,6 +438,7 @@ void MainWindow::profile_start(int _id) {
             start_vpn_challenge_poll();
             refresh_status();
             Shadowlos::Chrome::ConnectStopwatch(running != nullptr); // Shadowlos: corner stopwatch; a crash may have stopped it already
+            if (running != nullptr) Shadowlos::Updater::Connected(); // Shadowlos: an unfinished update download goes on through the VPN
             refresh_proxy_list({ent->id});
             refresh_auto_selector_view();
 
@@ -545,6 +549,10 @@ void MainWindow::profile_start(int _id) {
         }
         Shadowlos::Journal::ConnectEnd(started); // Shadowlos: connect state (geo, census, summary); dev journal
         mu_starting.unlock();
+        // Shadowlos: the start ran on saved rule sets; renew the old ones now that nothing waits on it.
+        if (started && lastResult && !lastResult->localRuleSetUrls.isEmpty()) {
+            runOnNewThread([urls = lastResult->localRuleSetUrls] { Configs::RefreshRuleSetFiles(urls); });
+        }
         runOnUiThread([=, this] {
             if (restartPrompt) restartPrompt->dismiss();
             m_profileConnecting = false;

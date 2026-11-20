@@ -102,6 +102,7 @@ namespace Configs {
             {"shadowlos_regional_route", &shadowlos_regional_route},
             {"shadowlos_ui_revision", &shadowlos_ui_revision},
             {"shadowlos_test_revision", &shadowlos_test_revision},
+            {"shadowlos_dns_revision", &shadowlos_dns_revision},
             {"shadowlos_simple_view", &shadowlos_simple_view},
             {"shadowlos_view", &shadowlos_view},
             {"shadowlos_send_journal", &shadowlos_send_journal},

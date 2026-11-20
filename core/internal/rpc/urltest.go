@@ -31,7 +31,7 @@ func (s *server) Test(ctx context.Context, in *gen.TestReq) (*gen.TestResp, erro
 	// A muxed config needs a warm connection; the live instance already is one.
 	twice := !in.GetTestCurrent()
 	results := probe.BatchURLTest(testCtx, env.box, env.tags, in.GetUrl(),
-		int(in.GetMaxConcurrency()), twice, time.Duration(in.GetTestTimeoutMs())*time.Millisecond)
+		int(in.GetMaxConcurrency()), twice, time.Duration(in.GetTestTimeoutMs())*time.Millisecond, in.GetFullCheck())
 
 	res := make([]*gen.URLTestResp, 0, len(results))
 	failed := make(map[string]bool, len(results))
@@ -41,11 +41,11 @@ func (s *server) Test(ctx context.Context, in *gen.TestReq) (*gen.TestResp, erro
 			errStr = data.Error.Error()
 		}
 		failed[env.tags[idx]] = errStr != ""
-		res = append(res, &gen.URLTestResp{
+		res = append(res, withCheck(&gen.URLTestResp{
 			OutboundTag: To(env.tags[idx]),
 			LatencyMs:   To(int32(data.Duration.Milliseconds())),
 			Error:       To(errStr),
-		})
+		}, data.Check))
 	}
 
 	out := &gen.TestResp{Results: res}
@@ -63,6 +63,25 @@ func (s *server) Test(ctx context.Context, in *gen.TestReq) (*gen.TestResp, erro
 	return out, nil
 }
 
+func withCheck(resp *gen.URLTestResp, check *probe.ServerCheck) *gen.URLTestResp {
+	if check != nil {
+		resp.Check = To(check.State)
+		resp.FailedServices = check.Failed
+		resp.BulkBytes = To(int32(check.BulkBytes))
+		resp.BulkMs = To(int32(check.BulkMs))
+		for _, svc := range check.Services {
+			resp.Services = append(resp.Services, svc.Name)
+			ms := int32(-1)
+			if svc.OK {
+				ms = int32(svc.Ms)
+			}
+			resp.ServiceMs = append(resp.ServiceMs, ms)
+			resp.ServiceNotes = append(resp.ServiceNotes, svc.Note)
+		}
+	}
+	return resp
+}
+
 func (s *server) StopTest(ctx context.Context, in *gen.EmptyReq) (*gen.EmptyResp, error) {
 	probe.CancelTests()
 
@@ -77,11 +96,11 @@ func (s *server) QueryURLTest(ctx context.Context, in *gen.EmptyReq) (out *gen.Q
 		if r.Error != nil {
 			errStr = r.Error.Error()
 		}
-		out.Results = append(out.Results, &gen.URLTestResp{
+		out.Results = append(out.Results, withCheck(&gen.URLTestResp{
 			OutboundTag: To(r.Tag),
 			LatencyMs:   To(int32(r.Duration.Milliseconds())),
 			Error:       To(errStr),
-		})
+		}, r.Check))
 	}
 	return
 }

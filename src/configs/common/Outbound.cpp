@@ -11,6 +11,7 @@ namespace Configs {
         if (type == "http") return "HTTP";
         if (type == "httpupgrade") return "HTTPUpgrade";
         if (type == "xhttp") return "XHTTP";
+        if (type == "kcp") return "mKCP";
         if (type == "quic") return "QUIC";
         return type.toUpper();
     }

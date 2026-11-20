@@ -1932,18 +1932,15 @@ namespace Configs {
 
         // --------------------------------------------------------------- route
 
-        // A week: older copies go back to the core's download, which refreshes them.
-        constexpr qint64 localRuleSetMaxAgeSecs = 7 * 24 * 3600;
-
         QJsonArray buildRuleSetArray(const BuildContext &ctx) {
             QJsonArray ruleSetArray;
             for (const auto &item: ctx.prerequisites.routing.neededRuleSets) {
                 if (auto url = QUrl(item); url.isValid() && url.fileName().contains(".srs")) {
-                    // Shadowlos: a copy Throne fetched itself (FetchRuleSetFiles) wins while fresh, so a
-                    // core that cannot download (see below) still starts.
-                    if (const QFileInfo local(LocalRuleSetPath(item));
-                        local.exists() && local.size() > 0 &&
-                        local.lastModified().secsTo(QDateTime::currentDateTime()) < localRuleSetMaxAgeSecs) {
+                    // Shadowlos: a saved copy (shipped in the archive or fetched by Throne) always wins,
+                    // whatever its age, so the start never waits on a download that a blocked network
+                    // cannot finish. RefreshRuleSetFiles renews the copies once the VPN is up.
+                    if (const QFileInfo local(LocalRuleSetPath(item)); local.exists() && local.size() > 0) {
+                        ctx.result->localRuleSetUrls << item;
                         ruleSetArray += QJsonObject{
                                     {"type", "local"},
                                     {"tag", get_rule_set_name(item)},
@@ -2739,6 +2736,27 @@ namespace Configs {
         return QDir::current().absoluteFilePath(QStringLiteral("rule_sets/") + QUrl(url).fileName());
     }
 
+    namespace {
+        // Downloads one .srs over the user's own network and saves it at LocalRuleSetPath.
+        // Empty on success, otherwise the error; the saved copy is untouched on failure.
+        QString saveRuleSetFile(const QString &url) {
+            HttpGetOptions options;
+            options.direct = true;   // the user's own network, as a browser goes
+            options.strictTls = true;
+            options.maxBytes = 32LL * 1024 * 1024;
+            const auto reply = NetworkRequestHelper::HttpGet(url, options);
+            if (!reply.error.isEmpty()) return reply.error;
+            if (reply.data.isEmpty()) return QStringLiteral("empty response");
+            const QString path = LocalRuleSetPath(url);
+            QDir().mkpath(QFileInfo(path).absolutePath());
+            QSaveFile file(path);
+            if (!file.open(QIODevice::WriteOnly) || file.write(reply.data) != reply.data.size() || !file.commit()) {
+                return file.errorString();
+            }
+            return {};
+        }
+    }
+
     QString FetchRuleSetFiles(const QJsonObject &coreConfig) {
         const auto ruleSets = coreConfig.value("route").toObject().value("rule_set").toArray();
         QString firstError;
@@ -2748,30 +2766,7 @@ namespace Configs {
             // Only ours (buildRuleSetArray: .srs over the direct outbound), not jsDelivr lists.
             if (rs.value("type").toString() != "remote" || rs.value("download_detour").toString() != tags::direct) continue;
             const QString url = rs.value("url").toString();
-            HttpGetOptions options;
-            options.direct = true;   // the user's own network, as a browser goes
-            options.strictTls = true;
-            options.maxBytes = 32LL * 1024 * 1024;
-            const auto reply = NetworkRequestHelper::HttpGet(url, options);
-            QString error = reply.error;
-            if (error.isEmpty() && reply.data.isEmpty()) error = QStringLiteral("empty response");
-            if (error.isEmpty()) {
-                const QString path = LocalRuleSetPath(url);
-                QDir().mkpath(QFileInfo(path).absolutePath());
-                QSaveFile file(path);
-                if (!file.open(QIODevice::WriteOnly) || file.write(reply.data) != reply.data.size() || !file.commit()) {
-                    error = file.errorString();
-                }
-            }
-            if (!error.isEmpty()) {
-                // An old copy beats no start: keep using it for another week, then the core tries again.
-                QFile old(LocalRuleSetPath(url));
-                if (old.exists() && old.size() > 0 && old.open(QIODevice::ReadWrite) &&
-                    old.setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime)) {
-                    MW_show_log("[Rule sets] " + url + ": " + error + ", keeping the saved copy");
-                    error.clear();
-                }
-            }
+            const QString error = saveRuleSetFile(url);
             if (error.isEmpty()) {
                 fetched++;
             } else if (firstError.isEmpty()) {
@@ -2780,5 +2775,24 @@ namespace Configs {
         }
         if (fetched == 0 && firstError.isEmpty()) firstError = QStringLiteral("no remote rule sets to fetch");
         return firstError;
+    }
+
+    void RefreshRuleSetFiles(const QStringList &urls) {
+        constexpr qint64 refreshAfterSecs = 24 * 3600;
+        for (const auto &url : urls) {
+            const QFileInfo local(LocalRuleSetPath(url));
+            if (local.exists() && local.lastModified().secsTo(QDateTime::currentDateTime()) < refreshAfterSecs) continue;
+            const QString error = saveRuleSetFile(url);
+            const QString name = QUrl(url).fileName();
+            if (error.isEmpty()) {
+                MW_show_log("[Rule sets] " + name + " refreshed, used from the next start");
+                continue;
+            }
+            MW_show_log("[Rule sets] " + name + ": " + error + ", keeping the saved copy");
+            // Not again for a day: a blocked mirror would otherwise be asked on every connect.
+            if (QFile old(local.absoluteFilePath()); old.open(QIODevice::ReadWrite)) {
+                old.setFileTime(QDateTime::currentDateTime(), QFileDevice::FileModificationTime);
+            }
+        }
     }
 }

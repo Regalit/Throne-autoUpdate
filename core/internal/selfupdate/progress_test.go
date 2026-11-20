@@ -128,7 +128,7 @@ func TestCheckErrorKinds(t *testing.T) {
 	})
 	t.Run("download cut off", func(t *testing.T) {
 		big := makeZip(t, map[string][]byte{"App.exe": bytes.Repeat([]byte("x"), 200000)})
-		f := &fakeServer{pkg: big, rel: release(big, 10001, testPriv), cutAfter: 100}
+		f := &fakeServer{pkg: big, rel: release(big, 10001, testPriv), cutAlways: true}
 		res := check(http.DefaultClient, f.start(t), "shadowlos-throne-dev", 10000, t.TempDir())
 		if res.State != "error" || res.Kind != kindNetwork {
 			t.Fatalf("got %+v", res)
@@ -162,7 +162,7 @@ func TestCheckDropsReadyPackageForANewerRelease(t *testing.T) {
 	}
 
 	big := makeZip(t, map[string][]byte{"App.exe": bytes.Repeat([]byte("y"), 200000)})
-	f.pkg, f.rel, f.cutAfter = big, release(big, 10002, testPriv), 100
+	f.pkg, f.rel, f.cutAlways = big, release(big, 10002, testPriv), true
 	f.downloads.Store(0)
 	if res := check(http.DefaultClient, base, "shadowlos-throne-dev", 10000, work); res.State != "error" || res.Kind != kindNetwork {
 		t.Fatalf("got %+v", res)

@@ -63,6 +63,7 @@ namespace Configs
         if (dataManager->settingsRepo->xray_vless_preference == Xray::AllVLESS
             || rawHttpOverTls
             || transport == "xhttp"
+            || transport == "kcp" || transport == "mkcp" // mKCP exists only in Xray
             || query.hasQueryItem("fm")
             || query.hasQueryItem("finalmask")
             || (security == "reality" && dataManager->settingsRepo->xray_vless_preference == Xray::XhttpAndReality)

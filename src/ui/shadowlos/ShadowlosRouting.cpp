@@ -157,6 +157,8 @@ namespace Shadowlos::Routing {
         void maybeRefresh() {
             const qint64 now = QDateTime::currentSecsSinceEpoch();
             if (now < nextRefresh() || settings()->started_id >= 0) return;
+            // No network or one just switched: the poll tries again in a second, not in 30 min.
+            if (!Journal::NetworkSettled()) return;
             QString token;
             // The Sl-Sub token comes from the managed subscription; nothing without it.
             if (!ApiToken(&token)) return;

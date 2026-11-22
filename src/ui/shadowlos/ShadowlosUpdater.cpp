@@ -481,6 +481,19 @@ namespace Shadowlos::Updater {
                 showStatus(st.progressText.isEmpty() ? translate("Checking for updates...") : st.progressText);
             }
             if (currentCheck() || !st.button) return;
+            if (!manual && !Journal::NetworkSettled()) {
+                // No network or one just switched: a check now only fails (logs 21.11). One retry
+                // waits; a press always checks.
+                static bool waiting = false;
+                if (!waiting) {
+                    waiting = true;
+                    QTimer::singleShot(30 * 1000, st.button, [] {
+                        waiting = false;
+                        runCheck(false);
+                    });
+                }
+                return;
+            }
             if (!QFileInfo::exists(coreExe())) {
                 onResult({}, -1, QStringLiteral("no ThroneCore.exe"));
                 return;

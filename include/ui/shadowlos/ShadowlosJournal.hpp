@@ -125,6 +125,12 @@ namespace Shadowlos::Journal {
     // switch), with the same key rules. UI thread.
     QByteArray FreshNetworkKey(QString *netType = nullptr);
 
+    // Whether requests to our server are worth making now: a network is up and has not changed
+    // for kSettleMs. Right after a switch or with no network they fail with «Host not found» or
+    // EOF and only fill the journal (logs 21.11); callers skip and try again later. Always true
+    // off Windows, where the network is not looked at. UI thread.
+    bool NetworkSettled();
+
     // Whether our TUN adapter (throne-tun, Wintun) is still up: a torn-down tunnel takes a
     // moment to leave. UI thread.
     bool TunAdapterUp();

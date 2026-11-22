@@ -444,6 +444,8 @@ namespace Shadowlos::Journal {
             auto &u = up();
             if (u.busy || !ConsentOn() || QDateTime::currentSecsSinceEpoch() < u.holdUntil) return;
             if (Connecting()) return;
+            // No network or one just switched: the next tick sends, without a failure and its backoff.
+            if (!NetworkSettled()) return;
             QString token;
             if (!ApiToken(&token)) return;
             if (const QStringList crashes = crashFiles(); !crashes.isEmpty()) {

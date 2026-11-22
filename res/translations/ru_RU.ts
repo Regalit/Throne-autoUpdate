@@ -13,7 +13,7 @@
     </message>
     <message>
         <source>Filter...</source>
-        <translation>Фильтр...</translation>
+        <translation>Фильтр…</translation>
     </message>
 </context>
 <context>
@@ -253,7 +253,7 @@ It stays a preference, not a lock: if that profile stops working the selector st
     </message>
     <message>
         <source>Re-checking every profile...</source>
-        <translation>Повторная проверка всех профилей...</translation>
+        <translation>Повторная проверка всех профилей…</translation>
     </message>
     <message>
         <source>Profile</source>
@@ -724,7 +724,7 @@ It stays a preference, not a lock: if that profile stops working the selector st
     </message>
     <message>
         <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Show each config&apos;s security next to its type in the proxy list, e.g. &quot;Trojan (WebSocket+TLS)&quot;. Insecure configs are marked with a warning sign.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
-        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Отображать безопасность каждой конфигурации рядом с ее типом в списке прокси-серверов, например, &quot;Trojan (WebSocket+TLS)&quot;. Небезопасные конфигурации помечены предупреждающим знаком.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
+        <translation>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Отображать безопасность каждой конфигурации рядом с её типом в списке прокси-серверов, например, &quot;Trojan (WebSocket+TLS)&quot;. Небезопасные конфигурации помечены предупреждающим знаком.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</translation>
     </message>
     <message>
         <source>Show Config Security</source>
@@ -2550,7 +2550,7 @@ For more information, see the document &quot;Configuration/DNS&quot;.</source>
     </message>
     <message>
         <source>Registration Domains…</source>
-        <translation>Домены регистрации...</translation>
+        <translation>Домены регистрации…</translation>
     </message>
     <message>
         <source>Answer AAAA queries sent to this server with an empty result.</source>
@@ -2869,7 +2869,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Cancelling...</source>
-        <translation>Отмена...</translation>
+        <translation>Отмена…</translation>
     </message>
     <message>
         <source>No remote profiles</source>
@@ -2881,7 +2881,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Updating...</source>
-        <translation>Обновление...</translation>
+        <translation>Обновление…</translation>
     </message>
     <message>
         <source>Updating (%1 / %2)</source>
@@ -2984,11 +2984,11 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>Add manually...</source>
-        <translation>Добавить вручную...</translation>
+        <translation>Добавить вручную…</translation>
     </message>
     <message>
         <source>From link or text...</source>
-        <translation>Из ссылки или из текста...</translation>
+        <translation>Из ссылки или из текста…</translation>
     </message>
     <message>
         <source>Import OTP</source>
@@ -3004,7 +3004,7 @@ Use a number followed by ns, us, ms, s, m, h or d.</source>
     </message>
     <message>
         <source>From QR image file...</source>
-        <translation>Из файла с изображением QR-кода...</translation>
+        <translation>Из файла с изображением QR-кода…</translation>
     </message>
     <message>
         <source>Unable to capture screen</source>
@@ -3729,7 +3729,7 @@ https://matsuridayo.github.io/n-configuration/#vpn-tun</translation>
     </message>
     <message>
         <source>The group whose profiles this selector picks from. New servers added by a subscription update join automatically — you never have to edit this profile again.</source>
-        <translation>Группа, из профилей которой осуществляется автовыбор. Новые серверы, добавленные в результате обновления подписки, присоединяются автоматически — вам больше не придется редактировать этот профиль.</translation>
+        <translation>Группа, из профилей которой осуществляется автовыбор. Новые серверы, добавленные в результате обновления подписки, присоединяются автоматически — вам больше не придётся редактировать этот профиль.</translation>
     </message>
     <message>
         <source>Only names matching</source>
@@ -6988,7 +6988,7 @@ URL: %2</translation>
     </message>
     <message>
         <source>Testing</source>
-        <translation>Проверка...</translation>
+        <translation>Проверка…</translation>
     </message>
     <message>
         <source>Unavailable</source>
@@ -7360,7 +7360,7 @@ Download them now?</source>
     </message>
     <message>
         <source>Profile manager data is corrupted, try again.</source>
-        <translation>Данные менеджера профилей повреждены, попробуйте еще раз.</translation>
+        <translation>Данные менеджера профилей повреждены, попробуйте ещё раз.</translation>
     </message>
     <message>
         <source>Speedtest finished!</source>
@@ -7384,7 +7384,7 @@ Download them now?</source>
 Please try again.</source>
         <translation>Гео-файлы были успешно загружены.
 
-Пожалуйста, попробуйте еще раз.</translation>
+Пожалуйста, попробуйте ещё раз.</translation>
     </message>
     <message>
         <source>BuildConfig return error</source>
@@ -7546,7 +7546,7 @@ Name: %1</source>
     </message>
     <message>
         <source>[Auto selector] Measuring %1 not-yet-tested profiles...</source>
-        <translation>[Автовыбор] Выполняется замер %1 ещё не протестированных профилей...</translation>
+        <translation>[Автовыбор] Выполняется замер %1 ещё не протестированных профилей…</translation>
     </message>
     <message>
         <source>[Auto selector] Ranked %1 profiles.</source>
@@ -7690,11 +7690,11 @@ Please type /config into @shadowlos_bot and input one of the URLs that work:</so
     </message>
     <message>
         <source>Debug check: updating subscriptions...</source>
-        <translation>Проверка: обновление подписок...</translation>
+        <translation>Проверка: обновление подписок…</translation>
     </message>
     <message>
         <source>Debug check: starting checks for %1 VLess profile(s)...</source>
-        <translation>Проверка: запуск проверки для %1 профиля(ей) VLess...</translation>
+        <translation>Проверка: запуск проверки для %1 профиля(ей) VLess…</translation>
     </message>
     <message>
         <source>Debug check [%1/%2]: %3</source>
@@ -7800,11 +7800,11 @@ Disabling Strict Route may cause DNS leaks.</source>
     <name>ProfilesTableFilterHeader</name>
     <message>
         <source>Filter...</source>
-        <translation>Фильтр...</translation>
+        <translation>Фильтр…</translation>
     </message>
     <message>
         <source>Filter by country...</source>
-        <translation>Фильтр по странам...</translation>
+        <translation>Фильтр по странам…</translation>
     </message>
     <message>
         <source>Disable Filter</source>
@@ -7948,11 +7948,11 @@ How to update?</source>
     </message>
     <message>
         <source>Clearing servers...</source>
-        <translation>Очистка серверов...</translation>
+        <translation>Очистка серверов…</translation>
     </message>
     <message>
         <source>Processing subscription data...</source>
-        <translation>Идёт обработка данных подписки...</translation>
+        <translation>Идёт обработка данных подписки…</translation>
     </message>
     <message>
         <source>Failed to parse the Clash configuration.</source>
@@ -8012,7 +8012,7 @@ How to update?</source>
     </message>
     <message>
         <source>Process complete, applying...</source>
-        <translation>Процесс завершён, применение...</translation>
+        <translation>Процесс завершён, применение…</translation>
     </message>
     <message>
         <source>The URL of %1 changed during the update, so the result was discarded.</source>
@@ -8098,7 +8098,7 @@ To fix this, share the hotspot from the throne-tun adapter instead of &quot;%1&q
     </message>
     <message>
         <source>Restarting the core ...</source>
-        <translation>Перезапуск ядра...</translation>
+        <translation>Перезапуск ядра…</translation>
     </message>
     <message>
         <source>Download Profiles</source>
@@ -8536,7 +8536,7 @@ Release note:
     </message>
     <message>
         <source>%1 route prefer</source>
-        <translation type="unfinished"></translation>
+        <translation>%1: предпочтительный маршрут</translation>
     </message>
     <message>
         <source>Connected</source>
@@ -9046,7 +9046,7 @@ Debug info does not contain any personal information.</source>
     </message>
     <message>
         <source>Wait...</source>
-        <translation>Подождите...</translation>
+        <translation>Подождите…</translation>
     </message>
     <message>
         <source>Copy to Clipboard</source>
@@ -9078,7 +9078,7 @@ Debug info does not contain any personal information.</source>
     </message>
     <message>
         <source>[UpdateConf] Already updating, please wait...</source>
-        <translation>[UpdateConf] Обновление уже выполняется, подождите...</translation>
+        <translation>[UpdateConf] Обновление уже выполняется, подождите…</translation>
     </message>
     <message>
         <source>[UpdateConf] Starting update — %1 group(s) in tab order.</source>
@@ -9294,7 +9294,7 @@ outbounds и другие функции Throne. Только для опытн�
     </message>
     <message>
         <source>https://... (throne://route link, base64, or JSON)</source>
-        <translation>https://... (throne://route link, base64, или JSON)</translation>
+        <translation>https://… (throne://route link, base64, или JSON)</translation>
     </message>
     <message>
         <source>Re-fetch this profile from the URL when subscriptions auto-update.
@@ -9426,7 +9426,7 @@ Your local edits are overwritten on each update.</source>
     </message>
     <message>
         <source>%1 route prefer</source>
-        <translation type="unfinished"></translation>
+        <translation>%1: предпочтительный маршрут</translation>
     </message>
     <message>
         <source>Invalid operation</source>
@@ -10231,19 +10231,19 @@ Remove that endpoint from this routing profile as well?</source>
     </message>
     <message>
         <source>ShadowLos or another VPN may be running twice. Close all copies of ShadowLos and other VPNs, then start ShadowLos again.</source>
-        <translation>Возможно, ShadowLos или другой VPN запущен дважды. Закройте все копии ShadowLos и другие VPN, затем запустите ShadowLos снова.</translation>
+        <translation>Возможно, Shadowlos или другой VPN запущен дважды. Закройте все копии Shadowlos и другие VPN, затем запустите Shadowlos снова.</translation>
     </message>
     <message>
         <source>ShadowLos may be running twice. Port %1 is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
-        <translation>Возможно, ShadowLos запущен дважды. Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
+        <translation>Возможно, Shadowlos запущен дважды. Порт %1 уже занят. Закройте программу, которая его использует (например, вторую копию Shadowlos), или смените порт в настройках.</translation>
     </message>
     <message>
         <source>ShadowLos may be running twice. A port the app needs is already in use. Close the program that uses it (for example, a second copy of ShadowLos) or change the port in Settings.</source>
-        <translation>Возможно, ShadowLos запущен дважды. Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию ShadowLos), или смените порт в настройках.</translation>
+        <translation>Возможно, Shadowlos запущен дважды. Нужный порт уже занят. Закройте программу, которая его использует (например, вторую копию Shadowlos), или смените порт в настройках.</translation>
     </message>
     <message>
         <source>ShadowLos may be running twice. Close all copies of ShadowLos and start it again.</source>
-        <translation>Возможно, ShadowLos запущен дважды. Закройте все копии ShadowLos и запустите снова.</translation>
+        <translation>Возможно, Shadowlos запущен дважды. Закройте все копии Shadowlos и запустите снова.</translation>
     </message>
     <message>
         <source>Could not download the GeoIP database (the region lists for routing). Check the internet connection and try again.</source>
@@ -10255,7 +10255,7 @@ Remove that endpoint from this routing profile as well?</source>
     </message>
     <message>
         <source>ShadowLos or a VPN runs twice. Close the extra ones</source>
-        <translation>ShadowLos или VPN запущен дважды. Закройте лишнее</translation>
+        <translation>Shadowlos или VPN запущен дважды. Закройте лишнее</translation>
     </message>
     <message>
         <source>TUN mode failed. Restart the app</source>
@@ -10263,15 +10263,15 @@ Remove that endpoint from this routing profile as well?</source>
     </message>
     <message>
         <source>Port %1 is busy. ShadowLos may run twice</source>
-        <translation>Порт %1 занят. Возможно, ShadowLos запущен дважды</translation>
+        <translation>Порт %1 занят. Возможно, Shadowlos запущен дважды</translation>
     </message>
     <message>
         <source>A port is busy. ShadowLos may run twice</source>
-        <translation>Порт занят. Возможно, ShadowLos запущен дважды</translation>
+        <translation>Порт занят. Возможно, Shadowlos запущен дважды</translation>
     </message>
     <message>
         <source>ShadowLos runs twice. Close the extra copies</source>
-        <translation>ShadowLos запущен дважды. Закройте лишние копии</translation>
+        <translation>Shadowlos запущен дважды. Закройте лишние копии</translation>
     </message>
     <message>
         <source>GeoIP database did not download. Check the internet</source>

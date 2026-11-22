@@ -56,6 +56,19 @@ func TestFallbackDialerFindsServerWhenNameDoesNotResolve(t *testing.T) {
 		t.Fatalf("used %q", d2.Used())
 	}
 
+	// No DoH, no remembered address: the built-in address of our server.
+	defer func(old map[string][]string) { builtinAddrs = old }(builtinAddrs)
+	builtinAddrs = map[string][]string{host: {"127.0.0.1"}}
+	d4 := newFallbackDialer(t.TempDir())
+	d4.doh = func(context.Context, string) ([]string, error) { return nil, errors.New("doh blocked") }
+	if err := get(d4); err != nil {
+		t.Fatal(err)
+	}
+	if d4.Used() != "builtin" {
+		t.Fatalf("used %q", d4.Used())
+	}
+	builtinAddrs = nil
+
 	// Nothing to fall back on: the original DNS error comes back.
 	d3 := newFallbackDialer(t.TempDir())
 	d3.doh = func(context.Context, string) ([]string, error) { return nil, errors.New("doh blocked") }

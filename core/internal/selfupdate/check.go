@@ -41,8 +41,10 @@ type checkResult struct {
 	MinCode int `json:"min_code,omitempty"`
 	// How a download went, for the journal; nil when nothing was downloaded.
 	Download *downloadStats `json:"download,omitempty"`
-	// How the direct route found our server when its name did not resolve: doh or cache; empty when it did.
+	// How the direct route found our server when its name did not resolve: doh, cache or builtin; empty when it did.
 	Fallback string `json:"fallback,omitempty"`
+	// Route is the route that read the channel: tunnel or direct; empty when none did.
+	Route string `json:"route,omitempty"`
 }
 
 // downloadStats is one check's download: no addresses, only counts.
@@ -167,7 +169,7 @@ func runCheck(args []string) error {
 	}
 	res := checkRoutes(direct, routes, strings.TrimRight(*base, "/"), *appID, *code, *work, progress.report)
 	res.Fallback = fallback.Used()
-	logf(*work, "check: %s %s %d %s %s %s", res.State, res.Version, res.Code, res.Kind, res.Error, res.Fallback)
+	logf(*work, "check: %s %s %d %s %s route=%s fallback=%s", res.State, res.Version, res.Code, res.Kind, res.Error, res.Route, res.Fallback)
 	if d := res.Download; d != nil {
 		logf(*work, "download: %d of %d, resumed at %d, %s, %d attempts, %d stalls", d.Done, d.Size, d.Resumed, d.Route, d.Attempts, d.Stalls)
 	}
@@ -188,14 +190,27 @@ func checkWithProgress(client *http.Client, base, appID string, code int, work s
 func checkRoutes(client *http.Client, routes []route, base, appID string, code int, work string,
 	progress func(version string, done, size int64)) checkResult {
 	sweep(work)
-	rel, err := fetchLatest(client, base)
-	if err != nil && len(routes) > 1 {
-		// The channel itself may be cut off on the user's network while the VPN reaches it.
-		rel, err = fetchLatest(routes[0].client, base)
+	// The channel is read through the routes in order: with the VPN on, the tunnel first,
+	// since the user's network may cut our server off or fail to resolve its name.
+	var rel *Release
+	var err error
+	var via string
+	for _, r := range routes {
+		if rel, err = fetchLatest(r.client, base); err == nil {
+			via = r.name
+			break
+		}
 	}
 	if err != nil {
 		return failed(err)
 	}
+	res := checkRoutesFrom(rel, routes, base, appID, code, work, progress)
+	res.Route = via
+	return res
+}
+
+func checkRoutesFrom(rel *Release, routes []route, base, appID string, code int, work string,
+	progress func(version string, done, size int64)) checkResult {
 	if rel == nil || rel.AppID != appID || rel.VersionCode <= code || isBad(work, rel.VersionCode) {
 		// Nothing newer. A stale package from an older announcement is dropped.
 		if rel != nil && rel.VersionCode <= code {
@@ -278,8 +293,18 @@ func downloadRoutes(routes []route, base string, rel *Release, work string,
 	return stats, err
 }
 
+// latestTimeout bounds reading the channel's latest release on one route.
+var latestTimeout = 30 * time.Second
+
 func fetchLatest(client *http.Client, base string) (*Release, error) {
-	resp, err := client.Get(base + "/latest?platform=windows")
+	// Small answer: a route that hangs gives way to the next one instead of holding the check.
+	ctx, cancel := context.WithTimeout(context.Background(), latestTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/latest?platform=windows", nil)
+	if err != nil {
+		return nil, withKind(kindServer, err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, withKind(kindNetwork, err)
 	}

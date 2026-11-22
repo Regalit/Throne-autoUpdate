@@ -511,8 +511,15 @@ namespace Shadowlos::Updater {
                 const QString state = result->value(QStringLiteral("state")).toString();
                 // The core made the request; the journal gets its outcome, not an HTTP status.
                 const bool checked = state == QStringLiteral("ready") || state == QStringLiteral("none");
+                // Route that read the channel (tunnel | direct) and how the name was found when DNS
+                // failed (doh | cache | builtin): names only, no addresses.
+                const QString route = result->value(QStringLiteral("route")).toString();
+                const QString fallback = result->value(QStringLiteral("fallback")).toString();
                 Journal::Event("api", "call", checked ? "ok" : "fail",
-                               QStringLiteral("GET %1 selfupdate %2").arg(QUrl(baseUrl()).path(), checked ? state : QStringLiteral("failed")),
+                               QStringLiteral("GET %1 selfupdate %2 route=%3 fallback=%4")
+                                   .arg(QUrl(baseUrl()).path(), checked ? state : QStringLiteral("failed"),
+                                        route.isEmpty() ? QStringLiteral("none") : route,
+                                        fallback.isEmpty() ? QStringLiteral("none") : fallback),
                                checked ? QString() : result->value(QStringLiteral("error")).toString(), clock->elapsed());
                 onResult(*result, code, QString::fromUtf8(proc->readAllStandardError()).trimmed());
             });

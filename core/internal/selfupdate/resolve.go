@@ -30,6 +30,10 @@ const addrFile = "addr.json"
 // fallbackDoH are asked in order; IP literals, so they need no DNS of their own.
 var fallbackDoH = []string{"https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"}
 
+// builtinAddrs are the last resort, used when neither DoH nor a remembered address worked
+// (a first check on a network that blocks public DoH). The address of server main.
+var builtinAddrs = map[string][]string{"master.shadowlos.xyz": {"37.27.44.35"}}
+
 // dohTimeout bounds one DoH question.
 var dohTimeout = 5 * time.Second
 
@@ -41,7 +45,7 @@ type fallbackDialer struct {
 	doh    func(ctx context.Context, host string) ([]string, error)
 
 	mu   sync.Mutex
-	used string // "", "doh" or "cache": the last connection that needed the fallback
+	used string // "", "doh", "cache" or "builtin": the last connection that needed the fallback
 }
 
 func newFallbackDialer(work string) *fallbackDialer {
@@ -50,7 +54,7 @@ func newFallbackDialer(work string) *fallbackDialer {
 	return d
 }
 
-// Used is how the last fallback connection found the address: "" (none was needed), doh or cache.
+// Used is how the last fallback connection found the address: "" (none was needed), doh, cache or builtin.
 func (d *fallbackDialer) Used() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -79,6 +83,10 @@ func (d *fallbackDialer) DialContext(ctx context.Context, network, addr string) 
 	}
 	if c := d.dialAny(ctx, network, d.remembered(host), port); c != nil {
 		d.setUsed("cache")
+		return c, nil
+	}
+	if c := d.dialAny(ctx, network, builtinAddrs[host], port); c != nil {
+		d.setUsed("builtin")
 		return c, nil
 	}
 	return nil, err

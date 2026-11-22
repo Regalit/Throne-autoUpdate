@@ -257,6 +257,28 @@ func TestCheckFallsBackToNextRoute(t *testing.T) {
 	if d := res.Download; d == nil || d.Route != "direct" || d.Attempts != 3 {
 		t.Fatalf("stats %+v", res.Download)
 	}
+	if res.Route != "direct" {
+		t.Fatalf("channel read via %q", res.Route)
+	}
+}
+
+// With the VPN on, the channel is read through the tunnel first: here the user's network
+// cannot resolve our server's name at all, and the tunnel (a proxy) still reaches it.
+func TestCheckReadsChannelThroughTunnelFirst(t *testing.T) {
+	useTestKey(t)
+	pkg := makeZip(t, map[string][]byte{"App.exe": []byte("new")})
+	f := &fakeServer{pkg: pkg, rel: release(pkg, 10001, testPriv)}
+	srv, _ := url.Parse(f.start(t))
+	base := "http://update.invalid:" + srv.Port()
+	tunnel := &http.Client{Transport: &http.Transport{Proxy: http.ProxyURL(srv)}}
+	routes := []route{{"tunnel", tunnel}, {"direct", http.DefaultClient}}
+	res := checkRoutes(http.DefaultClient, routes, base, "shadowlos-throne-dev", 10000, t.TempDir(), nil)
+	if res.State != "ready" || res.Route != "tunnel" {
+		t.Fatalf("got %+v", res)
+	}
+	if d := res.Download; d == nil || d.Route != "tunnel" {
+		t.Fatalf("stats %+v", res.Download)
+	}
 }
 
 // prepare puts an installed "old" app and a verified ready package for a new

@@ -15,7 +15,14 @@ if (WIN32)
     if (CMAKE_MATCH_1 GREATER 99 OR CMAKE_MATCH_2 GREATER 99 OR CMAKE_MATCH_3 GREATER 99)
         message(FATAL_ERROR "Version '${NKR_VERSION}': each part must be 0..99")
     endif ()
-    math(EXPR SHADOWLOS_VERSION_CODE "${CMAKE_MATCH_1} * 10000 + ${CMAKE_MATCH_2} * 100 + ${CMAKE_MATCH_3}")
+    # The shared scheme 0.X.Y (X common to all platforms, 26.11): 20000 + X*100 + Y, so that
+    # 0.65.0 (26500) is above every 1.0.x (10000 + ...) already installed; the updater compares
+    # only this code. mobile-api/deploy/publish-desktop.sh computes the same number.
+    if (CMAKE_MATCH_1 EQUAL 0)
+        math(EXPR SHADOWLOS_VERSION_CODE "20000 + ${CMAKE_MATCH_2} * 100 + ${CMAKE_MATCH_3}")
+    else ()
+        math(EXPR SHADOWLOS_VERSION_CODE "${CMAKE_MATCH_1} * 10000 + ${CMAKE_MATCH_2} * 100 + ${CMAKE_MATCH_3}")
+    endif ()
     if (SHADOWLOS_DEV AND NOT CMAKE_MATCH_4)
         message(FATAL_ERROR "SHADOWLOS_DEV=ON needs a -dev version, got '${NKR_VERSION}'")
     elseif (NOT SHADOWLOS_DEV AND CMAKE_MATCH_4)

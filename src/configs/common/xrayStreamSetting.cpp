@@ -769,6 +769,7 @@ namespace Configs {
         }
 
         if (query.hasQueryItem("type")) network = query.queryItemValue("type").replace("tcp", "raw");
+        if (network == "mkcp") network = "kcp";
         if (!Configs::XrayNetworks.contains(network)) return false;
         if (network == "raw" && query.queryItemValue("headerType") == "http") {
             QJsonObject request;
@@ -782,6 +783,20 @@ namespace Configs {
             QJsonObject header{{"type", "http"}};
             if (!request.isEmpty()) header["request"] = request;
             rawSettings = QJsonObject{{"header", header}};
+        }
+        if (network == "kcp") {
+            // mKCP over UDP. Newer servers put the packet disguise in fm (finalmask, mkcp-legacy);
+            // older links carry headerType and seed here.
+            kcpSettings = {};
+            for (const char *key : {"mtu", "tti", "uplinkCapacity", "downlinkCapacity"}) {
+                bool ok = false;
+                const int v = query.queryItemValue(key).toInt(&ok);
+                if (ok && v > 0) kcpSettings[key] = v;
+            }
+            if (const auto header = query.queryItemValue("headerType"); !header.isEmpty() && header != "none") {
+                kcpSettings["header"] = QJsonObject{{"type", header}};
+            }
+            if (const auto seed = query.queryItemValue("seed", QUrl::FullyDecoded); !seed.isEmpty()) kcpSettings["seed"] = seed;
         }
         if (query.hasQueryItem("security")) security = query.queryItemValue("security");
         if (security == "tls") TLS->ParseFromLink(link);
@@ -808,6 +823,7 @@ namespace Configs {
         if (object.contains("method")) network = object.value("method").toString();
         else if (object.contains("network")) network = object.value("network").toString();
         if (network == "tcp") network = "raw";
+        if (network == "mkcp") network = "kcp";
         if (!Configs::XrayNetworks.contains(network)) return false;
         if (network == "raw") {
             if (object["rawSettings"].isObject()) rawSettings = object["rawSettings"].toObject();
@@ -820,6 +836,7 @@ namespace Configs {
         if (network == "ws" && object["wsSettings"].isObject()) ws->ParseFromJson(object["wsSettings"].toObject());
         if (network == "httpupgrade" && object["httpupgradeSettings"].isObject()) httpupgrade->ParseFromJson(object["httpupgradeSettings"].toObject());
         if (network == "grpc" && object["grpcSettings"].isObject()) grpc->ParseFromJson(object["grpcSettings"].toObject());
+        if (network == "kcp" && object["kcpSettings"].isObject()) kcpSettings = object["kcpSettings"].toObject();
         return true;
     }
 
@@ -871,6 +888,14 @@ namespace Configs {
         if (network == "ws") mergeUrlQuery(query, ws->ExportToLink());
         if (network == "httpupgrade") mergeUrlQuery(query, httpupgrade->ExportToLink());
         if (network == "grpc") mergeUrlQuery(query, grpc->ExportToLink());
+        if (network == "kcp") {
+            for (const char *key : {"mtu", "tti", "uplinkCapacity", "downlinkCapacity"}) {
+                if (kcpSettings.contains(key)) query.addQueryItem(key, QString::number(kcpSettings.value(key).toInt()));
+            }
+            const auto header = kcpSettings.value("header").toObject().value("type").toString();
+            query.addQueryItem("headerType", header.isEmpty() ? "none" : header);
+            if (const auto seed = kcpSettings.value("seed").toString(); !seed.isEmpty()) query.addQueryItem("seed", seed);
+        }
         return query.toString(QUrl::FullyEncoded);
     }
 
@@ -887,6 +912,7 @@ namespace Configs {
         if (network == "ws") object["wsSettings"] = ws->ExportToJson();
         if (network == "httpupgrade") object["httpupgradeSettings"] = httpupgrade->ExportToJson();
         if (network == "grpc") object["grpcSettings"] = grpc->ExportToJson();
+        if (network == "kcp" && !kcpSettings.isEmpty()) object["kcpSettings"] = kcpSettings;
         return object;
     }
 

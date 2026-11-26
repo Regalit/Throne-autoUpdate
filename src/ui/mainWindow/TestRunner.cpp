@@ -7,6 +7,7 @@
 #include "include/database/GroupsRepo.h"
 #include "include/database/ProfilesRepo.h"
 #include "include/stats/traffic/TrafficStatsManager.hpp"
+#include "include/ui/shadowlos/ShadowlosJournal.hpp"
 
 #include <QSemaphore>
 #include <QThread>
@@ -48,15 +49,21 @@ namespace {
     constexpr int kTunnelHandshakeMs = 10000;
     constexpr int kCoreMaxConcurrency = 100;
     constexpr int kRpcSlackMs = 30000;
+    // Shadowlos full check (core probe/servercheck.go): its own budget and concurrency cap.
+    constexpr int kServerCheckBudgetMs = 9000;
+    constexpr int kServerCheckConcurrency = 4;
 
     // Test/IPTest answer only once the whole batch is done, so the deadline covers its worst case.
-    int batchRpcTimeoutMs(qsizetype tagCount, int requestsPerTag) {
+    int batchRpcTimeoutMs(qsizetype tagCount, int requestsPerTag, bool fullCheck = false) {
         const auto& settings = Configs::dataManager->settingsRepo;
         int concurrency = settings->test_concurrent;
         if (concurrency <= 0 || concurrency >= 500) concurrency = kCoreMaxConcurrency;
+        if (fullCheck) concurrency = qMin(concurrency, kServerCheckConcurrency);
         const qint64 timeoutMs = settings->url_test_timeout_ms > 0 ? settings->url_test_timeout_ms : kCoreDefaultTimeoutMs;
         const qint64 rounds = (qMax<qsizetype>(tagCount, 1) + concurrency - 1) / concurrency;
-        const qint64 total = rounds * (kTunnelHandshakeMs + requestsPerTag * timeoutMs + kTunnelStartupMs) + kRpcSlackMs;
+        const qint64 perRound = kTunnelHandshakeMs + requestsPerTag * timeoutMs + kTunnelStartupMs
+                                + (fullCheck ? kServerCheckBudgetMs : 0);
+        const qint64 total = rounds * perRound + kRpcSlackMs;
         return static_cast<int>(qMin<qint64>(total, std::numeric_limits<int>::max()));
     }
 
@@ -125,10 +132,14 @@ QString TestRunner::contextName(int entID) const {
 }
 
 void TestRunner::applyUrlResult(const std::shared_ptr<Configs::Profile>& ent, const libcore::URLTestResp& res,
-                                const QHash<QString, bool>* vpnConnected) {
+                                const QHash<QString, bool>* vpnConnected, bool fullCheck) {
     const auto error = QString::fromStdString(res.error.value());
+    const auto check = QString::fromStdString(res.check.value());
+    QStringList failed;
+    for (const auto& name : res.failed_services) failed << QString::fromStdString(name);
     if (error.isEmpty()) {
-        ent->SetLatency(res.latency_ms.value());
+        // Shadowlos: the latency answered but the volume did not pass: not a working server.
+        ent->SetLatency(check == QStringLiteral("blocked") ? Configs::kLatencyBlocked : res.latency_ms.value());
     } else if (isTestAborted(error)) {
         ent->SetLatency(0);
     } else if (vpnConnected != nullptr && isVpnProfile(ent)
@@ -138,7 +149,49 @@ void TestRunner::applyUrlResult(const std::shared_ptr<Configs::Profile>& ent, co
         ent->SetLatency(-1);
         MW_show_log(MainWindow::tr("[%1] test error: %2").arg(ent->outbound->DisplayTypeAndName(), error));
     }
+    // A full check that ran to a verdict; an aborted one leaves the server unchecked.
+    QHash<QString, int> services;
+    for (size_t i = 0; i < res.services.size() && i < res.service_ms.size(); i++) {
+        services.insert(QString::fromStdString(res.services[i]), res.service_ms[i]);
+    }
+    // A quick latency test leaves the last full check (and its dots) as it was.
+    if (fullCheck && ent->latency != 0 && (!error.isEmpty() || !check.isEmpty())) {
+        ent->SetServerCheck(failed.join(QStringLiteral(", ")), services);
+    }
     Configs::dataManager->profilesRepo->Save(ent);
+}
+
+namespace {
+    // One line per checked server, keys as in the Android app: only the server's name, no address.
+    void journalServerCheck(const std::shared_ptr<Configs::Profile>& ent, const libcore::URLTestResp& res,
+                            const QString& netType) {
+        if (ent->latency == 0) return; // aborted
+        const auto check = QString::fromStdString(res.check.value());
+        const bool answered = res.error.value().empty();
+        QStringList failed;
+        for (const auto& name : res.failed_services) failed << QString::fromStdString(name);
+        const auto service = [&](const char *name) {
+            if (check != QStringLiteral("ok") && check != QStringLiteral("service")) return QStringLiteral("none");
+            return failed.contains(QLatin1String(name)) ? QStringLiteral("fail") : QStringLiteral("ok");
+        };
+        const QString d = QStringLiteral("label=%1 net=%2 rtt_ms=%3 bulk=%4 bytes=%5 ms=%6 yt=%7 ig=%8 fb=%9")
+            .arg(ent->outbound->name, netType.isEmpty() ? QStringLiteral("none") : netType,
+                 answered ? QString::number(res.latency_ms.value()) : QStringLiteral("none"),
+                 !answered ? QStringLiteral("none") : check == QStringLiteral("blocked") ? QStringLiteral("fail") : QStringLiteral("ok"))
+            .arg(res.bulk_bytes.value()).arg(res.bulk_ms.value())
+            .arg(service("YouTube"), service("Instagram"), service("Facebook"))
+            + QStringLiteral(" wa=%1 x=%2 gm=%3 gpt=%4 trigger=refresh")
+                  .arg(service("WhatsApp"), service("X"), service("Gemini"), service("ChatGPT"));
+        Shadowlos::Journal::Event("app", "server-check", check == QStringLiteral("ok") ? "ok" : "fail", d);
+        // What the services with a refusal page really answered: the refusal text is learnt from here.
+        for (size_t i = 0; i < res.services.size() && i < res.service_notes.size(); i++) {
+            if (res.service_notes[i].empty()) continue;
+            Shadowlos::Journal::Event("app", "server-check-note", "ok",
+                                      QStringLiteral("label=%1 service=%2 %3")
+                                          .arg(ent->outbound->name, QString::fromStdString(res.services[i]),
+                                               QString::fromStdString(res.service_notes[i])));
+        }
+    }
 }
 
 void TestRunner::applyIpResult(const std::shared_ptr<Configs::Profile>& ent, const libcore::IPTestRes& res) {
@@ -156,7 +209,7 @@ void TestRunner::applyIpResult(const std::shared_ptr<Configs::Profile>& ent, con
     Configs::dataManager->profilesRepo->Save(ent);
 }
 
-void TestRunner::runUrlProbe(const Target& target) {
+void TestRunner::runUrlProbe(const Target& target, bool fullCheck) {
     if (stopRequested_.load()) {
         MW_show_log(MainWindow::tr("Profile test aborted"));
         return;
@@ -167,6 +220,7 @@ void TestRunner::runUrlProbe(const Target& target) {
     req.url = Configs::dataManager->settingsRepo->test_latency_url.toStdString();
     req.max_concurrency = Configs::dataManager->settingsRepo->test_concurrent;
     req.test_timeout_ms = Configs::dataManager->settingsRepo->url_test_timeout_ms;
+    req.full_check = fullCheck;
 
     // The test box dies with the RPC, so the verdict has to be asked for up front.
     for (auto it = target.tag2entID.cbegin(); it != target.tag2entID.cend(); ++it) {
@@ -179,7 +233,7 @@ void TestRunner::runUrlProbe(const Target& target) {
     QString coreError;
     libcore::TestResp result;
     {
-        ResultPoller poller([this, gen = sessionGen_.load(), tag2entID = target.tag2entID] {
+        ResultPoller poller([this, fullCheck, gen = sessionGen_.load(), tag2entID = target.tag2entID] {
             if (staleGen(gen)) return;
             bool ok = false;
             const auto resp = defaultClient->QueryURLTest(&ok);
@@ -195,7 +249,7 @@ void TestRunner::runUrlProbe(const Target& target) {
                 if (entid == -1) continue;
                 auto ent = Configs::dataManager->profilesRepo->GetProfile(entid);
                 if (ent == nullptr) continue;
-                applyUrlResult(ent, res);
+                applyUrlResult(ent, res, nullptr, fullCheck);
                 updated << entid;
             }
             if (updated.isEmpty()) return;
@@ -203,7 +257,7 @@ void TestRunner::runUrlProbe(const Target& target) {
             runOnUiThread([=, this] { mw_->refresh_proxy_list(updated); });
         }, kLatencyPollIntervalMs);
 
-        result = defaultClient->Test(&rpcOK, req, &coreError, batchRpcTimeoutMs(target.outboundTags.size(), 3));
+        result = defaultClient->Test(&rpcOK, req, &coreError, batchRpcTimeoutMs(target.outboundTags.size(), 3, fullCheck));
     }
 
     if (!rpcOK || result.results.empty()) {
@@ -227,7 +281,8 @@ void TestRunner::runUrlProbe(const Target& target) {
             MW_show_log(MainWindow::tr("Profile manager data is corrupted, try again."));
             continue;
         }
-        applyUrlResult(ent, res, &vpnConnected);
+        applyUrlResult(ent, res, &vpnConnected, fullCheck);
+        if (fullCheck) journalServerCheck(ent, res, checkNetType_);
     }
 }
 
@@ -296,6 +351,21 @@ void TestRunner::runUrlTests(const QList<int>& profileIDs, const std::function<v
     runLatencyGroup(LatencyKind::Url, profileIDs, onFinished);
 }
 
+QString TestRunner::serverCheckText(const libcore::URLTestResp& res) {
+    if (!res.error.value().empty() || res.latency_ms.value() <= 0) return {};
+    if (res.check.value() == "blocked") return QObject::tr("blocked");
+    QString text = QStringLiteral("%1 ms").arg(res.latency_ms.value());
+    QStringList failed;
+    for (const auto& name : res.failed_services) failed << QString::fromStdString(name);
+    if (!failed.isEmpty()) text += ", " + QObject::tr("does not open: %1").arg(failed.join(QStringLiteral(", ")));
+    return text;
+}
+
+void TestRunner::runServerChecks(const QList<int>& profileIDs) {
+    checkNet_ = Shadowlos::Journal::CurrentNetworkKey(&checkNetType_);
+    runLatencyGroup(LatencyKind::Url, profileIDs, {}, false, true);
+}
+
 void TestRunner::queueUrlTests(const QList<int>& profileIDs, const std::function<void()>& onFinished) {
     runOnNewThread([=, this] { runLatencyGroup(LatencyKind::Url, profileIDs, onFinished, true); });
 }
@@ -305,7 +375,7 @@ void TestRunner::runIpTests(const QList<int>& profileIDs) {
 }
 
 void TestRunner::runLatencyGroup(LatencyKind kind, const QList<int>& requestedIDs,
-                                 const std::function<void()>& onFinished, bool waitForSession) {
+                                 const std::function<void()>& onFinished, bool waitForSession, bool fullCheck) {
     const bool isUrl = kind == LatencyKind::Url;
     const auto panelKind = isUrl ? DataViewHtmlGenerator::LatencyTestPanelState::Kind::Url
                                  : DataViewHtmlGenerator::LatencyTestPanelState::Kind::Ip;
@@ -331,12 +401,12 @@ void TestRunner::runLatencyGroup(LatencyKind kind, const QList<int>& requestedID
     }
     sessionGen_.fetch_add(1);
 
-    runOnNewThread([this, profileIDs, panelKind, isUrl, finish]() {
+    runOnNewThread([this, profileIDs, panelKind, isUrl, fullCheck, finish]() {
         stopRequested_.store(false);
         mw_->dataViewHtmlGenerator_.seedLatencyTest(panelKind, profileIDs.size());
         mw_->UpdateDataView(true);
 
-        auto runBatch = [this, isUrl](const QList<std::shared_ptr<Configs::Profile>>& profileSlice, const QList<int>& ids) {
+        auto runBatch = [this, isUrl, fullCheck](const QList<std::shared_ptr<Configs::Profile>>& profileSlice, const QList<int>& ids) {
             // Per batch, not per probe: a batch's probes drain each other's results, and tags restart each batch.
             sessionGen_.fetch_add(1);
             auto buildObject = Configs::BuildTestConfig(profileSlice);
@@ -349,10 +419,10 @@ void TestRunner::runLatencyGroup(LatencyKind kind, const QList<int>& requestedID
             if (testCount == 0) return;
 
             QSemaphore batchDone;
-            const auto probe = [this, isUrl, &batchDone](const Target& target) {
-                mw_->parallelCoreCallPool->start([this, isUrl, target, &batchDone] {
+            const auto probe = [this, isUrl, fullCheck, &batchDone](const Target& target) {
+                mw_->parallelCoreCallPool->start([this, isUrl, fullCheck, target, &batchDone] {
                     const QSemaphoreReleaser releaser(batchDone);
-                    if (isUrl) runUrlProbe(target);
+                    if (isUrl) runUrlProbe(target, fullCheck);
                     else runIpProbe(target);
                 });
             };

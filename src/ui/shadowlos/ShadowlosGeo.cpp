@@ -101,6 +101,7 @@ namespace Shadowlos::Journal {
             bool checked = false;
             int checks = 0; // looks taken at the network (the 15 s check, a connect's)
             bool busy = false;
+            qint64 changedAtMs = 0; // when the 15 s check last saw the network change (0 never)
             QString pendingLine; // a net line waiting for the answer in flight ("" none)
         };
 
@@ -256,7 +257,7 @@ namespace Shadowlos::Journal {
         // Straight from the user's network: never our proxy. With TUN on the tunnel takes every
         // socket, so nothing is asked while connected in TUN mode.
         bool mayFetch() {
-            if (!g().nam || g().busy || g().net.key.isEmpty()) return false;
+            if (!g().nam || g().busy || g().net.key.isEmpty() || !NetworkSettled()) return false;
             // The consent window may look before the answer: it shows what the user gets.
             if (!ConsentOn() && !ConsentPreview()) return false;
             if (settings()->spmode_vpn && TunnelActive()) return false;
@@ -344,6 +345,7 @@ namespace Shadowlos::Journal {
             auto &s = g();
             const Net net = currentNet();
             const bool changed = s.checked && (net.key != s.net.key || net.type != s.net.type);
+            if (changed) s.changedAtMs = QDateTime::currentMSecsSinceEpoch();
             s.net = net;
             ++s.checks;
             if (!s.checked) {
@@ -422,6 +424,19 @@ namespace Shadowlos::Journal {
         const Net net = currentNet();
         if (netType) *netType = net.type;
         return net.key;
+    }
+
+    bool NetworkSettled() {
+#ifdef Q_OS_WIN
+        constexpr qint64 kSettleMs = 10 * 1000;
+        const Net net = currentNet();
+        if (net.key.isEmpty()) return false;
+        // A key the 15 s check has not seen yet: the switch is happening now.
+        if (g().checked && net.key != g().net.key) return false;
+        return QDateTime::currentMSecsSinceEpoch() - g().changedAtMs >= kSettleMs;
+#else
+        return true;
+#endif
     }
 
     bool TunAdapterUp() {

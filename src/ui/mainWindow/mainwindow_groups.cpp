@@ -242,7 +242,7 @@ void MainWindow::show_group_tab_menu(const QPoint &p) {
     }
     if (clickedGroup != nullptr) {
         connect(menu.addAction(tr("Url Test selected Group")), &QAction::triggered, this, [=,this]{
-            testRunner->runUrlTests(clickedGroup->Profiles());
+            testRunner->runServerChecks(clickedGroup->Profiles());
         });
         connect(menu.addAction(tr("Speed Test selected Group")), &QAction::triggered, this, [=,this]{
             testRunner->runSpeedTests(clickedGroup->Profiles());

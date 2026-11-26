@@ -2,7 +2,7 @@
 #include "include/configs/baseConfig.h"
 
 namespace Configs {
-    inline QStringList XrayNetworks = {"raw", "xhttp", "ws", "httpupgrade", "grpc"};
+    inline QStringList XrayNetworks = {"raw", "xhttp", "ws", "httpupgrade", "grpc", "kcp"};
     inline QStringList XrayXHTTPModes = {"auto", "packet-up", "stream-up", "stream-one"};
     inline QStringList XrayXHTTPMetaPlacements = {"", "path", "cookie", "header", "query"};
     inline QStringList XrayXHTTPUplinkDataPlacements = {"", "auto", "body", "cookie", "header"};
@@ -147,6 +147,7 @@ namespace Configs {
         QString network = "raw";
         QString security = "none";
         QJsonObject rawSettings;
+        QJsonObject kcpSettings; // mKCP: mtu, tti, uplinkCapacity, downlinkCapacity, header, seed
         QJsonObject finalmask;
         QJsonObject sockopt;
         std::shared_ptr<xrayTLS> TLS = std::make_shared<xrayTLS>();
